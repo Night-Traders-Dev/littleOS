@@ -1,18 +1,14 @@
 // kernel.c
-#include <stdint.h>
 #include <stdio.h>
 
-void little_uart_init(void);
+// Forward declaration for the shell entry point
 void shell_run(void);
-void char_puts(const char *s);
 
-// Core kernel entry point used by the rest of your code
+// Core kernel entry point
 void kernel_main(void) {
-    little_uart_init();
+    // The Pico SDK's stdio is already initialized in boot.c
+    printf("\r\nRP2040 tiny OS kernel\r\n> ");
 
-    char_puts("\r\nRP2040 tiny OS kernel\r\n> ");
-
+    // Start the command shell
     shell_run();
 }
-
-

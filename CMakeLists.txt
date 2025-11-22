@@ -8,7 +8,7 @@ include(pico_sdk_import.cmake)
 
 project(littleOS C CXX ASM)
 
-# Let the SDK choose the right boot2 for Pico; no override needed. [web:169][web:171]
+# Let the SDK choose the right boot2 for Pico; no override needed.
 pico_sdk_init()
 
 set(CPU_FLAGS "-mcpu=cortex-m0plus -mthumb -ffreestanding -fno-builtin")
@@ -21,9 +21,7 @@ set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} ${CPU_FLAGS} -O2 -g")
 message(STATUS "Using PICO_SDK_PATH=${PICO_SDK_PATH}")
 
 # Core library with your OS code
-# NOTE: do NOT add boot/boot.c here; SDK crt0 provides reset/startup. [web:107][web:151]
 add_library(littleos_core STATIC
-    boot/boot.c
     src/kernel.c
     src/shell/shell.c
 )
@@ -32,12 +30,15 @@ target_include_directories(littleos_core PUBLIC
     ${CMAKE_SOURCE_DIR}/include
 )
 
-# Link against pico_stdlib so you inherit SDK runtime and headers. [web:151][web:160]
+# Link against pico_stdlib so you inherit SDK runtime and headers.
 target_link_libraries(littleos_core PUBLIC pico_stdlib)
 
-# Final ELF image – no duplicate sources, just link the core library
-add_executable(littleos)
+# Final ELF image - this contains your main() function
+add_executable(littleos
+    boot/boot.c
+)
 
+# Link your final executable against the core OS library and hardware libraries
 target_link_libraries(littleos PRIVATE
     littleos_core
     hardware_uart
@@ -45,6 +46,7 @@ target_link_libraries(littleos PRIVATE
     hardware_timer
 )
 
+# Enable stdio over both UART and USB
 pico_enable_stdio_uart(littleos 1)
 pico_enable_stdio_usb(littleos 1)
 
@@ -53,5 +55,5 @@ target_link_options(littleos PRIVATE
     -Wl,-Map=${CMAKE_BINARY_DIR}/littleos.map
 )
 
-# Generate .elf, .bin, .uf2, etc. [web:151][web:157]
+# Generate .elf, .bin, .uf2, etc.
 pico_add_extra_outputs(littleos)
