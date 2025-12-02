@@ -68,6 +68,7 @@ add_library(littleos_core STATIC
     src/shell/shell.c
     src/uart.c
     src/script_storage.c
+    src/hal/gpio.c
 )
 
 target_include_directories(littleos_core PUBLIC
@@ -81,6 +82,7 @@ target_link_libraries(littleos_core PUBLIC pico_stdlib)
 if(SAGELANG_AVAILABLE)
     target_sources(littleos_core PRIVATE
         src/sage_embed.c
+        src/sage_gpio.c
         src/shell/cmd_sage.c
         src/shell/cmd_script.c
     )
@@ -93,7 +95,7 @@ if(SAGELANG_AVAILABLE)
     target_link_libraries(littleos_core PUBLIC sagelang)
     target_compile_definitions(littleos_core PUBLIC SAGE_ENABLED=1)
     
-    message(STATUS "SageLang integration enabled")
+    message(STATUS "SageLang integration enabled with GPIO support")
 else()
     message(STATUS "Building without SageLang support")
 endif()
