@@ -1,105 +1,47 @@
-// dmesg.c - Kernel Debug Message Buffer Implementation
-#include "dmesg.h"
-#include <stdio.h>
-#include <string.h>
-#include <stdarg.h>
-#include "pico/time.h"
+// dmesg.h - Kernel Debug Message Buffer Header
+#ifndef DMESG_H
+#define DMESG_H
 
-/* Global dmesg buffer and state */
-static dmesg_entry_t dmesg_buffer[DMESG_BUFFER_SIZE];
-static uint32_t dmesg_write_index = 0;
-static uint32_t dmesg_total_messages = 0;
-static uint32_t dmesg_boot_time_us = 0;
-static int dmesg_initialized = 0;
+#include <stdint.h>
 
-/* Level name strings */
-static const char *level_names[] = {
-    "EMERG", "ALERT", "CRIT", "ERR", "WARN", "NOTC", "INFO", "DBG"
-};
+/* Log level definitions (similar to Linux kernel) */
+#define DMESG_LEVEL_EMERG   0  /* System is unusable */
+#define DMESG_LEVEL_ALERT   1  /* Action must be taken immediately */
+#define DMESG_LEVEL_CRIT    2  /* Critical conditions */
+#define DMESG_LEVEL_ERR     3  /* Error conditions */
+#define DMESG_LEVEL_WARN    4  /* Warning conditions */
+#define DMESG_LEVEL_NOTICE  5  /* Normal but significant condition */
+#define DMESG_LEVEL_INFO    6  /* Informational */
+#define DMESG_LEVEL_DEBUG   7  /* Debug-level messages */
 
-/* Initialize dmesg system - call this early in boot */
-void dmesg_init(void) {
-    if (dmesg_initialized) return;
-    dmesg_boot_time_us = time_us_32();
-    dmesg_write_index = 0;
-    dmesg_total_messages = 0;
-    dmesg_initialized = 1;
-    dmesg_info("littleOS dmesg initialized");
-    dmesg_info("Boot sequence started");
-}
+/* Configuration */
+#define DMESG_BUFFER_SIZE   128  /* Number of messages to store */
+#define DMESG_MSG_MAX       120  /* Max message length */
 
-/* Get current uptime in milliseconds */
-uint32_t dmesg_get_uptime(void) {
-    if (!dmesg_initialized) return 0;
-    return (time_us_32() - dmesg_boot_time_us) / 1000;
-}
+/* Message entry structure */
+typedef struct {
+    uint32_t timestamp_ms;          /* Milliseconds since boot */
+    uint8_t  level;                 /* Log level */
+    char     message[DMESG_MSG_MAX]; /* Message text */
+} dmesg_entry_t;
 
-/* Log a message with variable arguments */
-void dmesg_log(uint8_t level, const char *fmt, ...) {
-    if (!dmesg_initialized) return;
-    if (level > DMESG_LEVEL_DEBUG) level = DMESG_LEVEL_DEBUG;
-    
-    dmesg_entry_t *entry = &dmesg_buffer[dmesg_write_index];
-    entry->timestamp_ms = dmesg_get_uptime();
-    entry->level = level;
-    
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(entry->message, DMESG_MSG_MAX, fmt, args);
-    va_end(args);
-    
-    dmesg_write_index = (dmesg_write_index + 1) % DMESG_BUFFER_SIZE;
-    dmesg_total_messages++;
-    
-    printf("[%5lums] <%s> %s\n", entry->timestamp_ms, level_names[level], entry->message);
-}
+/* Core API functions */
+void dmesg_init(void);
+void dmesg_log(uint8_t level, const char *fmt, ...);
+uint32_t dmesg_get_count(void);
+uint32_t dmesg_get_uptime(void);
+void dmesg_print_all(void);
+void dmesg_print_level(uint8_t min_level);
+void dmesg_clear(void);
 
-/* Get number of messages in buffer */
-uint32_t dmesg_get_count(void) {
-    return (dmesg_total_messages > DMESG_BUFFER_SIZE) ? DMESG_BUFFER_SIZE : dmesg_total_messages;
-}
+/* Convenience macros for different log levels */
+#define dmesg_emerg(fmt, ...)   dmesg_log(DMESG_LEVEL_EMERG,  fmt, ##__VA_ARGS__)
+#define dmesg_alert(fmt, ...)   dmesg_log(DMESG_LEVEL_ALERT,  fmt, ##__VA_ARGS__)
+#define dmesg_crit(fmt, ...)    dmesg_log(DMESG_LEVEL_CRIT,   fmt, ##__VA_ARGS__)
+#define dmesg_err(fmt, ...)     dmesg_log(DMESG_LEVEL_ERR,    fmt, ##__VA_ARGS__)
+#define dmesg_warn(fmt, ...)    dmesg_log(DMESG_LEVEL_WARN,   fmt, ##__VA_ARGS__)
+#define dmesg_notice(fmt, ...)  dmesg_log(DMESG_LEVEL_NOTICE, fmt, ##__VA_ARGS__)
+#define dmesg_info(fmt, ...)    dmesg_log(DMESG_LEVEL_INFO,   fmt, ##__VA_ARGS__)
+#define dmesg_debug(fmt, ...)   dmesg_log(DMESG_LEVEL_DEBUG,  fmt, ##__VA_ARGS__)
 
-/* Print all buffered messages */
-void dmesg_print_all(void) {
-    uint32_t count = dmesg_get_count();
-    uint32_t start_idx = (dmesg_total_messages >= DMESG_BUFFER_SIZE) ? dmesg_write_index : 0;
-    
-    printf("\n========== littleOS Kernel Message Buffer ==========\n");
-    printf("Total messages: %lu | Uptime: %lums\n", dmesg_total_messages, dmesg_get_uptime());
-    printf("=====================================================\n");
-    
-    for (uint32_t i = 0; i < count; i++) {
-        uint32_t idx = (start_idx + i) % DMESG_BUFFER_SIZE;
-        dmesg_entry_t *entry = &dmesg_buffer[idx];
-        printf("[%5lums] <%s> %s\n", entry->timestamp_ms, level_names[entry->level], entry->message);
-    }
-    
-    printf("=====================================================\n\n");
-}
-
-/* Print messages from specific log level and above */
-void dmesg_print_level(uint8_t min_level) {
-    if (min_level > DMESG_LEVEL_DEBUG) min_level = DMESG_LEVEL_DEBUG;
-    uint32_t count = dmesg_get_count();
-    uint32_t start_idx = (dmesg_total_messages >= DMESG_BUFFER_SIZE) ? dmesg_write_index : 0;
-    
-    printf("\n========== Filtered Kernel Messages (level >= %s) ==========\n", level_names[min_level]);
-    
-    for (uint32_t i = 0; i < count; i++) {
-        uint32_t idx = (start_idx + i) % DMESG_BUFFER_SIZE;
-        dmesg_entry_t *entry = &dmesg_buffer[idx];
-        if (entry->level <= min_level) {
-            printf("[%5lums] <%s> %s\n", entry->timestamp_ms, level_names[entry->level], entry->message);
-        }
-    }
-    
-    printf("==========================================================\n\n");
-}
-
-/* Clear the message buffer */
-void dmesg_clear(void) {
-    dmesg_write_index = 0;
-    dmesg_total_messages = 0;
-    memset(dmesg_buffer, 0, sizeof(dmesg_buffer));
-    dmesg_info("dmesg buffer cleared");
-}
+#endif /* DMESG_H */
