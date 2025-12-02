@@ -4,6 +4,7 @@
 #include "pico/stdlib.h"
 #include "sage_embed.h"
 #include "config_storage.h"
+#include "watchdog.h"
 
 // Forward declarations
 void shell_run(void);
@@ -16,6 +17,17 @@ sage_context_t* sage_ctx = NULL;
 void kernel_main(void) {
     // The Pico SDK's stdio is already initialized in boot.c
     printf("\r\nRP2040 littleOS kernel\r\n");
+    
+    // Initialize watchdog timer (8 second timeout)
+    // This allows recovery from hangs/crashes
+    watchdog_init(8000);
+    
+    // Check if we recovered from a watchdog reset
+    if (watchdog_get_reset_reason() == WATCHDOG_RESET_TIMEOUT) {
+        printf("\r\n*** RECOVERED FROM CRASH ***\r\n");
+        printf("System was reset by watchdog timer\r\n\r\n");
+        sleep_ms(2000);  // Give user time to see message
+    }
     
     // Initialize configuration storage
     config_init();
@@ -57,6 +69,8 @@ void kernel_main(void) {
     printf("\r\n");
     printf("Welcome to littleOS Shell!\r\n");
     printf("Type 'help' for available commands\r\n");
+    printf("\r\n");
+    printf("Watchdog: Enabled with 8s timeout (system will auto-recover from hangs)\r\n");
     printf("\r\n> ");
 
     // Start the command shell
