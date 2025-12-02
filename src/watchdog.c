@@ -61,8 +61,9 @@ bool watchdog_enable(uint32_t timeout_ms) {
     
     wdt_state.timeout_ms = timeout_ms;
     
-    // Enable watchdog with specified timeout
-    watchdog_enable(timeout_ms, false);
+    // Enable watchdog with specified timeout using Pico SDK function
+    // Note: Pico SDK watchdog_enable takes (delay_ms, pause_on_debug)
+    watchdog_enable(timeout_ms, 1);  // Pause on debug
     
     wdt_state.enabled = true;
     wdt_state.feed_count = 0;
@@ -81,7 +82,7 @@ void watchdog_feed(void) {
         return;
     }
     
-    // Update the watchdog timer
+    // Update the watchdog timer using Pico SDK function
     watchdog_update();
     
     wdt_state.feed_count++;
@@ -99,7 +100,8 @@ void watchdog_disable(void) {
     }
     
     // Set maximum timeout (essentially disabled)
-    watchdog_enable(WATCHDOG_TIMEOUT_MAX_MS, false);
+    // Note: SDK's watchdog_enable takes (delay_ms, pause_on_debug)
+    watchdog_enable(WATCHDOG_TIMEOUT_MAX_MS, 1);
     
     wdt_state.enabled = false;
     
@@ -144,7 +146,8 @@ void watchdog_reboot(uint32_t delay_ms) {
     wdt_state.last_reset_reason = WATCHDOG_RESET_FORCED;
     
     // Enable watchdog with short timeout to force reboot
-    watchdog_enable(delay_ms, false);
+    // SDK's watchdog_enable takes (delay_ms, pause_on_debug)
+    watchdog_enable(delay_ms, 0);  // Don't pause on debug for reboot
     
     // Don't feed it - let it timeout and reboot
     while (1) {
