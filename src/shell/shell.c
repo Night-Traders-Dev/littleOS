@@ -4,6 +4,7 @@
 #include "hardware/watchdog.h"
 #include "watchdog.h"
 #include "supervisor.h"
+#include "dmesg.h"
 
 // Forward declarations
 extern int cmd_sage(int argc, char* argv[]);
@@ -11,6 +12,7 @@ extern int cmd_script(int argc, char* argv[]);
 extern void cmd_health(int argc, char** argv);
 extern void cmd_stats(int argc, char** argv);
 extern void cmd_supervisor(int argc, char** argv);
+extern void cmd_dmesg(int argc, char** argv);
 
 // Command history settings
 #define HISTORY_SIZE 20
@@ -214,6 +216,7 @@ void shell_run() {
                     printf("  health     - Quick system health check\r\n");
                     printf("  stats      - Detailed system statistics\r\n");
                     printf("  supervisor - Supervisor control (start/stop/status/alerts)\r\n");
+                    printf("  dmesg      - View kernel message buffer (type 'dmesg --help')\r\n");
                     printf("  sage       - SageLang interpreter (type 'sage --help')\r\n");
                     printf("  script     - Script management (type 'script' for help)\r\n");
                     printf("\r\nUse UP/DOWN arrows to navigate command history\r\n");
@@ -241,8 +244,11 @@ void shell_run() {
                     cmd_stats(argc, argv);
                 } else if (strcmp(argv[0], "supervisor") == 0) {
                     cmd_supervisor(argc, argv);
+                } else if (strcmp(argv[0], "dmesg") == 0) {
+                    cmd_dmesg(argc, argv);
                 } else if (strcmp(argv[0], "reboot") == 0) {
                     printf("Rebooting system...\r\n");
+                    dmesg_info("System reboot requested by user");
                     sleep_ms(500);  // Give time for message to transmit
                     
                     // Use watchdog to trigger a reset
