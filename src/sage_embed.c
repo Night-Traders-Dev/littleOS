@@ -1,4 +1,5 @@
 #include "sage_embed.h"
+#include "watchdog.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -110,6 +111,9 @@ sage_result_t sage_eval_string(sage_context_t* ctx, const char* source, size_t s
         return SAGE_ERROR_RUNTIME;
     }
     
+    // Feed watchdog before executing user code
+    wdt_feed();
+    
     // Initialize lexer with source
     init_lexer(source);
     parser_init();
@@ -121,6 +125,9 @@ sage_result_t sage_eval_string(sage_context_t* ctx, const char* source, size_t s
             break; // End of input
         }
         
+        // Feed watchdog before interpreting each statement
+        wdt_feed();
+        
         // Interpret the statement
         // Note: interpret() may not return errors directly
         // We'll need to wrap this or check for exceptions
@@ -130,6 +137,9 @@ sage_result_t sage_eval_string(sage_context_t* ctx, const char* source, size_t s
         // The current SageLang interpreter uses exit() on errors
         // which isn't ideal for embedded use
     }
+    
+    // Feed watchdog after execution
+    wdt_feed();
     
     return SAGE_OK;
 }
@@ -196,13 +206,35 @@ sage_result_t sage_repl(sage_context_t* ctx) {
     printf("Type 'exit' to quit\n\n");
 #endif
     
+    // Track time for periodic watchdog feeding
+    uint32_t last_wdt_feed = 0;
+#ifdef PICO_BUILD
+    last_wdt_feed = to_ms_since_boot(get_absolute_time());
+#endif
+    
     while (1) {
+#ifdef PICO_BUILD
+        // Feed watchdog every 1 second in REPL loop
+        uint32_t now = to_ms_since_boot(get_absolute_time());
+        if (now - last_wdt_feed >= 1000) {
+            wdt_feed();
+            last_wdt_feed = now;
+        }
+#endif
+        
 #ifdef PICO_BUILD
         printf("sage> ");
         fflush(stdout);
         
         int idx = 0;
         while (1) {
+            // Feed watchdog while waiting for input
+            now = to_ms_since_boot(get_absolute_time());
+            if (now - last_wdt_feed >= 1000) {
+                wdt_feed();
+                last_wdt_feed = now;
+            }
+            
             int c = getchar_timeout_us(0);
             if (c == PICO_ERROR_TIMEOUT) {
                 sleep_ms(10);
@@ -251,6 +283,9 @@ sage_result_t sage_repl(sage_context_t* ctx) {
             continue;
         }
         
+        // Feed watchdog before evaluating
+        wdt_feed();
+        
         // Evaluate
         sage_result_t result = sage_eval_string(ctx, buffer, strlen(buffer));
         if (result != SAGE_OK) {
@@ -260,6 +295,9 @@ sage_result_t sage_repl(sage_context_t* ctx) {
             printf("Error: %s\n", ctx->error_msg);
 #endif
         }
+        
+        // Feed watchdog after evaluation
+        wdt_feed();
     }
     
     return SAGE_OK;
