@@ -3,7 +3,7 @@
 #include "pico/stdlib.h"
 
 extern void kernel_main(void);
-extern void uart_init(void);
+extern void littleos_uart_init(void);
 
 // Entry point expected by Pico SDK crt0.S
 int main(void) {
@@ -13,7 +13,7 @@ int main(void) {
     sleep_ms(1000);
     
     // Initialize UART for shell communication
-    uart_init();
+    littleos_uart_init();
     
     kernel_main();
     return 0;
