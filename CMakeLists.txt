@@ -89,6 +89,7 @@ if(SAGELANG_AVAILABLE)
         src/sage_embed.c
         src/sage_gpio.c
         src/sage_system.c
+        src/sage_time.c
         src/shell/cmd_sage.c
         src/shell/cmd_script.c
     )
@@ -101,7 +102,7 @@ if(SAGELANG_AVAILABLE)
     target_link_libraries(littleos_core PUBLIC sagelang)
     target_compile_definitions(littleos_core PUBLIC SAGE_ENABLED=1)
     
-    message(STATUS "SageLang integration enabled with GPIO and System Info support")
+    message(STATUS "SageLang integration enabled with GPIO, System Info, and Time support")
 else()
     message(STATUS "Building without SageLang support")
 endif()
