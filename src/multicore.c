@@ -102,12 +102,16 @@ bool multicore_launch_script(const char* script_name) {
         return false;
     }
     
-    // Load script from storage - use fixed buffer size
-    char script_buffer[2048];  // 2KB max script size
-    size_t script_size = script_storage_load(script_name, script_buffer, sizeof(script_buffer));
-    
-    if (script_size == 0) {
+    // Load script from storage
+    const char* script_code = script_load(script_name);
+    if (!script_code) {
         printf("Error: Script not found: %s\r\n", script_name);
+        return false;
+    }
+    
+    size_t script_size = strlen(script_code);
+    if (script_size == 0) {
+        printf("Error: Script is empty: %s\r\n", script_name);
         return false;
     }
     
@@ -118,7 +122,7 @@ bool multicore_launch_script(const char* script_name) {
         return false;
     }
     
-    memcpy(core1_code_buffer, script_buffer, script_size);
+    memcpy(core1_code_buffer, script_code, script_size);
     core1_code_buffer[script_size] = '\0';
     core1_code_buffer_size = script_size;
     
