@@ -15,23 +15,19 @@
  * SageLang: core1_launch_script("blink")
  * Returns: true on success, false on failure
  */
-static Value* sage_core1_launch_script(int arg_count, Value** args) {
-    if (arg_count != 1) {
+static Value sage_core1_launch_script(int argc, Value* args) {
+    if (argc != 1) {
         fprintf(stderr, "Error: core1_launch_script() takes 1 argument\n");
-        return NULL;
+        return val_bool(false);
     }
     
-    if (args[0]->type != VAL_STRING) {
+    if (args[0].type != VAL_STRING) {
         fprintf(stderr, "Error: core1_launch_script() argument must be string\n");
-        return NULL;
+        return val_bool(false);
     }
     
-    bool result = multicore_launch_script(args[0]->as.string);
-    
-    Value* ret = (Value*)malloc(sizeof(Value));
-    ret->type = VAL_BOOL;
-    ret->as.boolean = result;
-    return ret;
+    bool result = multicore_launch_script(args[0].as.string);
+    return val_bool(result);
 }
 
 /**
@@ -40,23 +36,19 @@ static Value* sage_core1_launch_script(int arg_count, Value** args) {
  * SageLang: core1_launch_code("gpio_toggle(25)")
  * Returns: true on success, false on failure
  */
-static Value* sage_core1_launch_code(int arg_count, Value** args) {
-    if (arg_count != 1) {
+static Value sage_core1_launch_code(int argc, Value* args) {
+    if (argc != 1) {
         fprintf(stderr, "Error: core1_launch_code() takes 1 argument\n");
-        return NULL;
+        return val_bool(false);
     }
     
-    if (args[0]->type != VAL_STRING) {
+    if (args[0].type != VAL_STRING) {
         fprintf(stderr, "Error: core1_launch_code() argument must be string\n");
-        return NULL;
+        return val_bool(false);
     }
     
-    bool result = multicore_launch_code(args[0]->as.string);
-    
-    Value* ret = (Value*)malloc(sizeof(Value));
-    ret->type = VAL_BOOL;
-    ret->as.boolean = result;
-    return ret;
+    bool result = multicore_launch_code(args[0].as.string);
+    return val_bool(result);
 }
 
 /**
@@ -65,20 +57,16 @@ static Value* sage_core1_launch_code(int arg_count, Value** args) {
  * SageLang: core1_stop()
  * Returns: true if stopped, false if already idle
  */
-static Value* sage_core1_stop(int arg_count, Value** args) {
+static Value sage_core1_stop(int argc, Value* args) {
     (void)args;
     
-    if (arg_count != 0) {
+    if (argc != 0) {
         fprintf(stderr, "Error: core1_stop() takes no arguments\n");
-        return NULL;
+        return val_bool(false);
     }
     
     bool result = multicore_stop();
-    
-    Value* ret = (Value*)malloc(sizeof(Value));
-    ret->type = VAL_BOOL;
-    ret->as.boolean = result;
-    return ret;
+    return val_bool(result);
 }
 
 /**
@@ -87,20 +75,16 @@ static Value* sage_core1_stop(int arg_count, Value** args) {
  * SageLang: core1_is_running()
  * Returns: true if running, false otherwise
  */
-static Value* sage_core1_is_running(int arg_count, Value** args) {
+static Value sage_core1_is_running(int argc, Value* args) {
     (void)args;
     
-    if (arg_count != 0) {
+    if (argc != 0) {
         fprintf(stderr, "Error: core1_is_running() takes no arguments\n");
-        return NULL;
+        return val_bool(false);
     }
     
     bool result = multicore_is_running();
-    
-    Value* ret = (Value*)malloc(sizeof(Value));
-    ret->type = VAL_BOOL;
-    ret->as.boolean = result;
-    return ret;
+    return val_bool(result);
 }
 
 /**
@@ -109,20 +93,16 @@ static Value* sage_core1_is_running(int arg_count, Value** args) {
  * SageLang: core1_get_state()
  * Returns: State as integer (0=idle, 1=running, 2=error, 3=stopped)
  */
-static Value* sage_core1_get_state(int arg_count, Value** args) {
+static Value sage_core1_get_state(int argc, Value* args) {
     (void)args;
     
-    if (arg_count != 0) {
+    if (argc != 0) {
         fprintf(stderr, "Error: core1_get_state() takes no arguments\n");
-        return NULL;
+        return val_number(0);
     }
     
     int state = (int)multicore_get_state();
-    
-    Value* ret = (Value*)malloc(sizeof(Value));
-    ret->type = VAL_NUMBER;
-    ret->as.number = (double)state;
-    return ret;
+    return val_number((double)state);
 }
 
 /**
@@ -133,23 +113,21 @@ static Value* sage_core1_get_state(int arg_count, Value** args) {
  * 
  * Note: Blocks if FIFO is full (8 entries deep)
  */
-static Value* sage_core_send(int arg_count, Value** args) {
-    if (arg_count != 1) {
+static Value sage_core_send(int argc, Value* args) {
+    if (argc != 1) {
         fprintf(stderr, "Error: core_send() takes 1 argument\n");
-        return NULL;
+        return val_nil();
     }
     
-    if (args[0]->type != VAL_NUMBER) {
+    if (args[0].type != VAL_NUMBER) {
         fprintf(stderr, "Error: core_send() argument must be number\n");
-        return NULL;
+        return val_nil();
     }
     
-    uint32_t data = (uint32_t)args[0]->as.number;
+    uint32_t data = (uint32_t)args[0].as.number;
     multicore_send(data);
     
-    Value* ret = (Value*)malloc(sizeof(Value));
-    ret->type = VAL_NIL;
-    return ret;
+    return val_nil();
 }
 
 /**
@@ -158,24 +136,21 @@ static Value* sage_core_send(int arg_count, Value** args) {
  * SageLang: core_send_nb(42)
  * Returns: true if sent, false if FIFO full
  */
-static Value* sage_core_send_nb(int arg_count, Value** args) {
-    if (arg_count != 1) {
+static Value sage_core_send_nb(int argc, Value* args) {
+    if (argc != 1) {
         fprintf(stderr, "Error: core_send_nb() takes 1 argument\n");
-        return NULL;
+        return val_bool(false);
     }
     
-    if (args[0]->type != VAL_NUMBER) {
+    if (args[0].type != VAL_NUMBER) {
         fprintf(stderr, "Error: core_send_nb() argument must be number\n");
-        return NULL;
+        return val_bool(false);
     }
     
-    uint32_t data = (uint32_t)args[0]->as.number;
+    uint32_t data = (uint32_t)args[0].as.number;
     bool result = multicore_send_nb(data);
     
-    Value* ret = (Value*)malloc(sizeof(Value));
-    ret->type = VAL_BOOL;
-    ret->as.boolean = result;
-    return ret;
+    return val_bool(result);
 }
 
 /**
@@ -186,20 +161,16 @@ static Value* sage_core_send_nb(int arg_count, Value** args) {
  * 
  * Note: Blocks if FIFO is empty
  */
-static Value* sage_core_receive(int arg_count, Value** args) {
+static Value sage_core_receive(int argc, Value* args) {
     (void)args;
     
-    if (arg_count != 0) {
+    if (argc != 0) {
         fprintf(stderr, "Error: core_receive() takes no arguments\n");
-        return NULL;
+        return val_number(0);
     }
     
     uint32_t data = multicore_receive();
-    
-    Value* ret = (Value*)malloc(sizeof(Value));
-    ret->type = VAL_NUMBER;
-    ret->as.number = (double)data;
-    return ret;
+    return val_number((double)data);
 }
 
 /**
@@ -208,25 +179,22 @@ static Value* sage_core_receive(int arg_count, Value** args) {
  * SageLang: let data = core_receive_nb()
  * Returns: Number if available, null if FIFO empty
  */
-static Value* sage_core_receive_nb(int arg_count, Value** args) {
+static Value sage_core_receive_nb(int argc, Value* args) {
     (void)args;
     
-    if (arg_count != 0) {
+    if (argc != 0) {
         fprintf(stderr, "Error: core_receive_nb() takes no arguments\n");
-        return NULL;
+        return val_nil();
     }
     
     uint32_t data;
     bool received = multicore_receive_nb(&data);
     
-    Value* ret = (Value*)malloc(sizeof(Value));
     if (received) {
-        ret->type = VAL_NUMBER;
-        ret->as.number = (double)data;
+        return val_number((double)data);
     } else {
-        ret->type = VAL_NIL;
+        return val_nil();
     }
-    return ret;
 }
 
 /**
@@ -235,20 +203,16 @@ static Value* sage_core_receive_nb(int arg_count, Value** args) {
  * SageLang: core_fifo_available()
  * Returns: Number of values available (0 or 1)
  */
-static Value* sage_core_fifo_available(int arg_count, Value** args) {
+static Value sage_core_fifo_available(int argc, Value* args) {
     (void)args;
     
-    if (arg_count != 0) {
+    if (argc != 0) {
         fprintf(stderr, "Error: core_fifo_available() takes no arguments\n");
-        return NULL;
+        return val_number(0);
     }
     
     int available = multicore_fifo_available();
-    
-    Value* ret = (Value*)malloc(sizeof(Value));
-    ret->type = VAL_NUMBER;
-    ret->as.number = (double)available;
-    return ret;
+    return val_number((double)available);
 }
 
 /**
@@ -257,20 +221,16 @@ static Value* sage_core_fifo_available(int arg_count, Value** args) {
  * SageLang: let core = core_num()
  * Returns: 0 for Core 0, 1 for Core 1
  */
-static Value* sage_core_num(int arg_count, Value** args) {
+static Value sage_core_num(int argc, Value* args) {
     (void)args;
     
-    if (arg_count != 0) {
+    if (argc != 0) {
         fprintf(stderr, "Error: core_num() takes no arguments\n");
-        return NULL;
+        return val_number(0);
     }
     
     uint32_t core_num = multicore_get_core_num();
-    
-    Value* ret = (Value*)malloc(sizeof(Value));
-    ret->type = VAL_NUMBER;
-    ret->as.number = (double)core_num;
-    return ret;
+    return val_number((double)core_num);
 }
 
 /**
@@ -279,44 +239,22 @@ static Value* sage_core_num(int arg_count, Value** args) {
 void sage_register_multicore_functions(Env* env) {
     if (!env) return;
     
-    // Create native function values and register them
-    Value val;
-    val.type = VAL_NATIVE_FUNC;
-    
-    // Core 1 control
-    val.as.native_func = sage_core1_launch_script;
-    env_define(env, "core1_launch_script", 21, val);
-    
-    val.as.native_func = sage_core1_launch_code;
-    env_define(env, "core1_launch_code", 18, val);
-    
-    val.as.native_func = sage_core1_stop;
-    env_define(env, "core1_stop", 10, val);
-    
-    val.as.native_func = sage_core1_is_running;
-    env_define(env, "core1_is_running", 16, val);
-    
-    val.as.native_func = sage_core1_get_state;
-    env_define(env, "core1_get_state", 15, val);
+    // Core 1 control - use val_native() constructor
+    env_define(env, "core1_launch_script", 21, val_native(sage_core1_launch_script));
+    env_define(env, "core1_launch_code", 18, val_native(sage_core1_launch_code));
+    env_define(env, "core1_stop", 10, val_native(sage_core1_stop));
+    env_define(env, "core1_is_running", 16, val_native(sage_core1_is_running));
+    env_define(env, "core1_get_state", 15, val_native(sage_core1_get_state));
     
     // Inter-core communication
-    val.as.native_func = sage_core_send;
-    env_define(env, "core_send", 9, val);
+    env_define(env, "core_send", 9, val_native(sage_core_send));
+    env_define(env, "core_send_nb", 12, val_native(sage_core_send_nb));
+    env_define(env, "core_receive", 12, val_native(sage_core_receive));
+    env_define(env, "core_receive_nb", 15, val_native(sage_core_receive_nb));
+    env_define(env, "core_fifo_available", 19, val_native(sage_core_fifo_available));
+    env_define(env, "core_num", 8, val_native(sage_core_num));
     
-    val.as.native_func = sage_core_send_nb;
-    env_define(env, "core_send_nb", 12, val);
-    
-    val.as.native_func = sage_core_receive;
-    env_define(env, "core_receive", 12, val);
-    
-    val.as.native_func = sage_core_receive_nb;
-    env_define(env, "core_receive_nb", 15, val);
-    
-    val.as.native_func = sage_core_fifo_available;
-    env_define(env, "core_fifo_available", 19, val);
-    
-    val.as.native_func = sage_core_num;
-    env_define(env, "core_num", 8, val);
+    printf("Multi-core: Registered 11 native functions\r\n");
 }
 
 #endif // SAGE_ENABLED
