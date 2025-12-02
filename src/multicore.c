@@ -4,6 +4,7 @@
 #include "watchdog.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #ifdef PICO_BUILD
 #include "pico/multicore.h"
@@ -101,8 +102,8 @@ bool multicore_launch_script(const char* script_name) {
         return false;
     }
     
-    // Load script from storage
-    char script_buffer[SCRIPT_MAX_SIZE];
+    // Load script from storage - use fixed buffer size
+    char script_buffer[2048];  // 2KB max script size
     size_t script_size = script_storage_load(script_name, script_buffer, sizeof(script_buffer));
     
     if (script_size == 0) {
@@ -111,7 +112,7 @@ bool multicore_launch_script(const char* script_name) {
     }
     
     // Allocate buffer for Core 1 (Core 1 will free it)
-    core1_code_buffer = malloc(script_size + 1);
+    core1_code_buffer = (char*)malloc(script_size + 1);
     if (!core1_code_buffer) {
         printf("Error: Failed to allocate memory for script\r\n");
         return false;
@@ -156,7 +157,7 @@ bool multicore_launch_code(const char* code) {
     }
     
     // Allocate buffer for Core 1 (Core 1 will free it)
-    core1_code_buffer = malloc(code_len + 1);
+    core1_code_buffer = (char*)malloc(code_len + 1);
     if (!core1_code_buffer) {
         printf("Error: Failed to allocate memory for code\r\n");
         return false;
