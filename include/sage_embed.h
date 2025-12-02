@@ -123,4 +123,10 @@ void sage_register_time_functions(Env* env);
  */
 void sage_register_config_functions(Env* env);
 
+/**
+ * @brief Register watchdog timer native functions with SageLang environment
+ * @param env SageLang environment to register functions into
+ */
+void sage_register_watchdog_functions(Env* env);
+
 #endif // SAGE_EMBED_H
