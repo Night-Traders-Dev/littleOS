@@ -1,4 +1,4 @@
-#include "regs.h"
+#include "reg.h"
 
 void uart_init() {
     // 1. Deassert reset for UART0 and IO Bank 0
