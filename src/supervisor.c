@@ -68,8 +68,16 @@ static void check_system_health(void) {
         }
     }
     
-    // Check Core 0 heartbeat
+    // Check Core 0 heartbeat with overflow protection
     uint32_t time_since_heartbeat = now - metrics.core0_last_heartbeat;
+    
+    // Detect overflow/underflow - if value is unreasonably large, resync
+    if (time_since_heartbeat > 1000000000) {  // > ~11 days is clearly overflow
+        printf("[SUPERVISOR] Heartbeat timing overflow detected, resynchronizing\r\n");
+        metrics.core0_last_heartbeat = now;
+        time_since_heartbeat = 0;
+    }
+    
     if (time_since_heartbeat > 5000) {  // 5 second timeout
         flags |= HEALTH_FLAG_CORE0_HUNG;
         health = HEALTH_CRITICAL;
@@ -212,6 +220,9 @@ void supervisor_init(void) {
     
     // Wait a moment for Core 1 to start
     sleep_ms(100);
+    
+    // Send immediate heartbeat to establish baseline
+    supervisor_heartbeat();
     
     printf("Supervisor: Launched on Core 1\r\n");
 #endif
