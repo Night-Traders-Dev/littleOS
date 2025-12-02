@@ -5,6 +5,7 @@
 #include "sage_embed.h"
 #include "config_storage.h"
 #include "watchdog.h"
+#include "multicore.h"
 
 // Forward declarations
 void shell_run(void);
@@ -31,6 +32,10 @@ void kernel_main(void) {
     
     // Initialize configuration storage
     config_init();
+    
+    // Initialize multi-core system
+    multicore_init();
+    printf("Multi-core system initialized\r\n");
     
     // Initialize SageLang
     sage_ctx = sage_init();
@@ -74,6 +79,7 @@ void kernel_main(void) {
     // NOW enable watchdog - boot is complete, start monitoring for hangs
     wdt_enable(8000);  // 8 second timeout
     printf("Watchdog: Active (8s timeout - system will auto-recover from hangs)\r\n");
+    printf("Multi-core: Ready (use core1_launch_script or core1_launch_code)\r\n");
     printf("\r\n> ");
 
     // Start the command shell (this will feed watchdog periodically)
