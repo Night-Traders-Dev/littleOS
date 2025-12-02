@@ -1,285 +1,263 @@
 # littleOS for RP2040
 
-A minimal, educational operating system for the Raspberry Pi Pico (RP2040) with an interactive shell interface and embedded SageLang scripting support.
+**A minimal, crash-resistant operating system for Raspberry Pi Pico with embedded SageLang scripting**
 
-## Features
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](CHANGELOG.md)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-RP2040-red.svg)](https://www.raspberrypi.com/documentation/microcontrollers/)
 
-- ✅ **Interactive Shell** - Command-line interface with command history and echo
-- ✅ **SageLang Integration** - Full-featured scripting language embedded in the OS
-- ✅ **Dual I/O Support** - Works with both USB serial and hardware UART
-- ✅ **Minimal Design** - Lightweight kernel suitable for embedded learning
-- ✅ **Built on Pico SDK** - Leverages official Raspberry Pi SDK for hardware abstraction
+## Overview
 
-## SageLang Features
+littleOS is an educational operating system that brings high-level scripting to bare metal RP2040. Write interactive hardware control programs in SageLang—a clean, indentation-based language with classes, generators, and automatic memory management.
 
-- **Interpreter Mode** - Run scripts directly on RP2040
-- **Interactive REPL** - Live coding and testing
-- **Object-Oriented** - Classes, inheritance, methods
-- **Exception Handling** - try/catch/finally blocks
-- **Generators** - yield-based lazy evaluation
-- **Garbage Collection** - Automatic memory management
-- **Memory Optimized** - 64KB heap for embedded use
+### Key Features
+
+- 🛡️ **Watchdog Protection** - Automatic recovery from hangs and crashes (8s timeout)
+- 🎯 **Hardware Integration** - Direct GPIO, timer, and sensor access from scripts
+- 💾 **Persistent Storage** - Save scripts and configurations to flash
+- 🔄 **Auto-boot Scripts** - Run programs automatically on startup
+- 📟 **System Monitoring** - Real-time temperature, memory, and uptime tracking
+- 🚀 **Interactive REPL** - Live coding with immediate feedback
+- 🎓 **Educational** - Clear architecture perfect for learning embedded systems
 
 ## Quick Start
 
-### 1. Clone and Setup
+### Prerequisites
 
 ```bash
-git clone https://github.com/Night-Traders-Dev/littleOS.git
-cd littleOS
+# Ubuntu/Debian
+sudo apt install cmake gcc-arm-none-eabi libnewlib-arm-none-eabi build-essential
 
-# Add SageLang submodule
-git submodule add https://github.com/Night-Traders-Dev/SageLang.git third_party/sagelang
-git submodule update --init --recursive
-```
-
-### 2. Build
-
-```bash
-export PICO_SDK_PATH=/path/to/pico-sdk
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
-```
-
-### 3. Flash to Pico
-
-```bash
-# Hold BOOTSEL button and connect USB
-cp littleos.uf2 /media/$USER/RPI-RP2/
-```
-
-### 4. Connect and Use
-
-```bash
-screen /dev/ttyACM0 115200
-```
-
-```
-Welcome to littleOS Shell!
-> sage
-SageLang REPL (embedded mode)
-
-sage> print "Hello, World!"
-Hello, World!
-sage> let x = 42
-sage> print x * 2
-84
-sage> exit
-> 
-```
-
-## Hardware Requirements
-
-- Raspberry Pi Pico or any RP2040-based board
-- USB cable for programming and serial communication
-- (Optional) UART-to-USB adapter for hardware UART communication
-
-## Software Requirements
-
-- CMake (3.13 or higher)
-- ARM GCC toolchain (`arm-none-eabi-gcc`)
-- Pico SDK (automatically configured via `PICO_SDK_PATH`)
-- Python 3.x (for SDK tools)
-
-### Installing Dependencies
-
-**Ubuntu/Debian:**
-```bash
-sudo apt update
-sudo apt install cmake gcc-arm-none-eabi libnewlib-arm-none-eabi \
-                 build-essential libstdc++-arm-none-eabi-newlib python3
-```
-
-**macOS:**
-```bash
+# macOS
 brew install cmake
 brew tap ArmMbed/homebrew-formulae
 brew install arm-none-eabi-gcc
+
+# Arch Linux
+sudo pacman -S cmake arm-none-eabi-gcc arm-none-eabi-newlib
 ```
 
-**Arch Linux:**
-```bash
-sudo pacman -S cmake arm-none-eabi-gcc arm-none-eabi-newlib python
-```
-
-## Building
-
-### With SageLang (Recommended)
+### Build & Flash
 
 ```bash
-git clone https://github.com/Night-Traders-Dev/littleOS.git
+# Clone with SageLang
+git clone --recursive https://github.com/Night-Traders-Dev/littleOS.git
 cd littleOS
-git submodule update --init --recursive
 
+# Build
 export PICO_SDK_PATH=/path/to/pico-sdk
 mkdir build && cd build
 cmake ..
 make -j$(nproc)
-```
 
-### Without SageLang
+# Flash (hold BOOTSEL button, connect USB)
+cp littleos.uf2 /media/$USER/RPI-RP2/
 
-If you don't initialize the submodule, littleOS will build without SageLang support (basic shell only).
-
-## SageLang Usage
-
-### Shell Commands
-
-```bash
-# Start REPL
-sage
-
-# Execute inline code
-sage -e "print 2 + 2"
-
-# Check memory
-sage -m
-
-# Get help
-sage --help
-```
-
-### Example Programs
-
-**Functions:**
-```sage
-proc fibonacci(n):
-    if n <= 1:
-        return n
-    return fibonacci(n - 1) + fibonacci(n - 2)
-
-print fibonacci(10)
-```
-
-**Classes:**
-```sage
-class Counter:
-    proc init(self, start):
-        self.value = start
-    
-    proc increment(self):
-        self.value = self.value + 1
-
-let c = Counter(0)
-c.increment()
-print c.value
-```
-
-**Exception Handling:**
-```sage
-try:
-    let result = 10 / 0
-catch e:
-    print "Error: " + e
-finally:
-    print "Done"
-```
-
-**Generators:**
-```sage
-proc count_up(n):
-    let i = 0
-    while i < n:
-        yield i
-        i = i + 1
-
-let gen = count_up(5)
-print next(gen)  # 0
-print next(gen)  # 1
-```
-
-### Full Documentation
-
-- **Quick Start**: [SAGELANG_QUICKSTART.md](SAGELANG_QUICKSTART.md)
-- **Integration Guide**: [docs/SAGELANG_INTEGRATION.md](docs/SAGELANG_INTEGRATION.md)
-- **SageLang Documentation**: [third_party/sagelang/README.md](third_party/sagelang/README.md)
-- **Examples**: [third_party/sagelang/examples/](third_party/sagelang/examples/)
-
-## Flashing to Pico
-
-### Method 1: UF2 Drag-and-Drop (Easiest)
-
-1. Hold the BOOTSEL button while plugging in your Pico
-2. The Pico will appear as a USB mass storage device
-3. Copy `littleos.uf2` to the mounted drive
-4. The Pico will automatically reboot and run littleOS
-
-### Method 2: Using picotool
-
-```bash
-picotool load littleos.elf
-picotool reboot
-```
-
-### Method 3: Using OpenOCD (Advanced)
-
-```bash
-openocd -f interface/raspberrypi-swd.cfg -f target/rp2040.cfg \
-        -c "program littleos.elf verify reset exit"
-```
-
-## Connecting to the Shell
-
-### Via USB Serial (Recommended)
-
-The OS waits for a USB connection before starting. Connect using any serial terminal:
-
-**Using screen:**
-```bash
+# Connect
 screen /dev/ttyACM0 115200
 ```
 
-**Using minicom:**
-```bash
-minicom -D /dev/ttyACM0 -b 115200
-```
-
-**Using PuTTY (Windows):**
-- Connection type: Serial
-- Serial line: COM3 (or appropriate COM port)
-- Speed: 115200
-
-### Via Hardware UART
-
-To use hardware UART instead of USB:
-
-1. Comment out the USB wait loop in `boot/boot.c`
-2. Rebuild the project
-3. Connect to GPIO 0 (TX) and GPIO 1 (RX) at 115200 baud
-
-## Shell Commands
-
-- `help` - Display available commands
-- `version` - Show OS version and platform info
-- `reboot` - Reboot the system (placeholder)
-- `sage` - SageLang interpreter (see `sage --help`)
-
-### Example Session
+### First Commands
 
 ```
 Welcome to littleOS Shell!
-Type 'help' for available commands
-> help
-Available commands:
-  help     - Show this help message
-  version  - Show OS version
-  reboot   - Reboot the system
-  sage     - SageLang interpreter (type 'sage --help')
-> version
-littleOS v0.1.0 - RP2040
-With SageLang v0.8.0
-> sage -e "print 2 + 2"
-4
-> sage
-SageLang REPL (embedded mode)
-Type 'exit' to quit
 
-sage> let greeting = "Hello from SageLang!"
-sage> print greeting
-Hello from SageLang!
+> help
+> version
+> sage
+sage> print "Hello, RP2040!"
+Hello, RP2040!
+sage> let temp = sys_temp()
+sage> print "CPU: " + str(temp) + "°C"
+CPU: 28.5°C
 sage> exit
 > 
+```
+
+## System Features
+
+### Watchdog Timer
+
+**Automatic crash recovery** - System automatically reboots after 8 seconds of inactivity:
+
+```sagelang
+# This will trigger watchdog reset
+while(true) {}  # System reboots after 8s
+```
+
+On recovery, you'll see:
+```
+*** RECOVERED FROM CRASH ***
+System was reset by watchdog timer
+```
+
+Protection is active in:
+- Shell command loop
+- SageLang REPL
+- Script execution
+- All system operations
+
+### Hardware Access
+
+**GPIO Control:**
+```sagelang
+# Blink LED on GPIO 25
+gpio_init(25, true)
+while(true):
+    gpio_toggle(25)
+    sleep(500)
+```
+
+**System Monitoring:**
+```sagelang
+# Real-time system dashboard
+while(true):
+    let info = sys_info()
+    print "Temp: " + str(info["temperature"]) + "°C"
+    print "Free RAM: " + str(info["free_ram"]) + " KB"
+    print "Uptime: " + str(sys_uptime()) + "s"
+    sleep(5000)
+```
+
+**Configuration Storage:**
+```sagelang
+# Persistent key-value storage
+config_set("device_name", "my_pico")
+let name = config_get("device_name")
+config_save()  # Write to flash
+```
+
+### Script Storage
+
+Save scripts to flash memory:
+
+```bash
+> storage save blink
+# Paste or type script, end with Ctrl+D
+gpio_init(25, true)
+while(true):
+    gpio_toggle(25)
+    sleep(500)
+^D
+
+> storage list
+Scripts:
+  0: blink (72 bytes)
+
+> storage run blink
+# LED starts blinking
+
+> storage autoboot blink
+# Will run on next boot
+```
+
+## SageLang Reference
+
+### Core Language
+
+**Variables & Types:**
+```sagelang
+let x = 42
+let name = "RP2040"
+let pi = 3.14159
+let active = true
+let items = [1, 2, 3]
+let data = {"key": "value"}
+```
+
+**Functions:**
+```sagelang
+proc calculate(x, y):
+    return x * y + 10
+
+let result = calculate(5, 3)
+```
+
+**Classes:**
+```sagelang
+class Sensor:
+    proc init(self, pin):
+        self.pin = pin
+        gpio_init(pin, false)
+    
+    proc read(self):
+        return gpio_read(self.pin)
+
+let button = Sensor(15)
+if button.read():
+    print "Button pressed!"
+```
+
+### Available Native Functions
+
+**GPIO (see [docs/GPIO_INTEGRATION.md](docs/GPIO_INTEGRATION.md)):**
+- `gpio_init(pin, is_output)` - Initialize pin
+- `gpio_write(pin, value)` - Set output
+- `gpio_read(pin)` - Read input
+- `gpio_toggle(pin)` - Toggle output
+- `gpio_set_pull(pin, mode)` - Pull resistors (0=none, 1=up, 2=down)
+
+**System Info (see [docs/SYSTEM_INFO.md](docs/SYSTEM_INFO.md)):**
+- `sys_version()` - OS version
+- `sys_uptime()` - Uptime in seconds
+- `sys_temp()` - CPU temperature (°C)
+- `sys_clock()` - Clock speed (MHz)
+- `sys_free_ram()` - Free RAM (KB)
+- `sys_total_ram()` - Total RAM (KB)
+- `sys_board_id()` - Unique board ID
+- `sys_info()` - Full info dictionary
+- `sys_print()` - Print formatted report
+
+**Timing:**
+- `sleep(ms)` - Delay milliseconds
+- `sleep_us(us)` - Delay microseconds
+- `time_ms()` - Milliseconds since boot
+- `time_us()` - Microseconds since boot
+
+**Configuration:**
+- `config_set(key, value)` - Set config value
+- `config_get(key)` - Get config value (or null)
+- `config_has(key)` - Check if key exists
+- `config_remove(key)` - Remove key
+- `config_save()` - Write to flash
+- `config_load()` - Read from flash
+
+**Watchdog:**
+- `wdt_enable(timeout_ms)` - Enable watchdog
+- `wdt_disable()` - Disable watchdog
+- `wdt_feed()` - Reset timer
+- `wdt_get_timeout()` - Get timeout value
+
+## Shell Commands
+
+### Core Commands
+
+```bash
+help              # Show available commands
+version           # System and SageLang version
+reboot            # Software reboot
+clear             # Clear screen
+```
+
+### SageLang Commands
+
+```bash
+sage              # Start interactive REPL
+sage -e "code"    # Execute inline code
+sage -m           # Show memory stats
+sage --help       # SageLang help
+```
+
+### Storage Commands
+
+```bash
+storage save <name>     # Save new script
+storage list            # List all scripts
+storage run <name>      # Execute script
+storage delete <name>   # Delete script
+storage show <name>     # Display script
+storage autoboot <name> # Set auto-boot script
+storage noboot          # Disable auto-boot
 ```
 
 ## Project Structure
@@ -287,149 +265,209 @@ sage> exit
 ```
 littleOS/
 ├── boot/
-│   └── boot.c                    # System entry point
+│   └── boot.c                    # System entry & initialization
 ├── src/
-│   ├── kernel.c                  # Core kernel logic
-│   ├── uart.c                    # UART implementation
-│   ├── sage_embed.c              # SageLang embedding layer
+│   ├── kernel.c                  # Kernel main loop
+│   ├── watchdog.c                # Watchdog timer
+│   ├── system_info.c             # System monitoring
+│   ├── config_storage.c          # Persistent config
+│   ├── script_storage.c          # Script flash storage
+│   ├── hal/
+│   │   └── gpio.c                # GPIO hardware abstraction
+│   ├── sage_embed.c              # SageLang runtime
+│   ├── sage_gpio.c               # GPIO bindings
+│   ├── sage_system.c             # System bindings
+│   ├── sage_time.c               # Timing bindings
+│   ├── sage_config.c             # Config bindings
+│   ├── sage_watchdog.c           # Watchdog bindings
 │   └── shell/
-│       ├── shell.c               # Interactive shell
-│       └── cmd_sage.c            # Sage command handler
+│       ├── shell.c               # Shell main loop
+│       ├── cmd_sage.c            # Sage command
+│       └── cmd_storage.c         # Storage commands
 ├── include/
-│   ├── reg.h                     # Hardware registers
-│   └── sage_embed.h              # SageLang API
+│   ├── watchdog.h
+│   ├── system_info.h
+│   ├── config_storage.h
+│   ├── script_storage.h
+│   ├── sage_embed.h
+│   └── hal/
+│       └── gpio.h
 ├── third_party/
 │   └── sagelang/                 # SageLang submodule
-├── docs/
-│   └── SAGELANG_INTEGRATION.md   # Integration guide
-├── CMakeLists.txt                # Build configuration
-├── SAGELANG_QUICKSTART.md        # Quick start guide
-└── README.md                     # This file
+├── docs/                         # Detailed documentation
+└── examples/                     # Example scripts
 ```
 
-## Development
+## Documentation
 
-### Adding New Shell Commands
+### Quick References
+- [CHANGELOG.md](CHANGELOG.md) - Version history
+- [docs/QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md) - Command cheat sheet
 
-Edit `src/shell/shell.c` and add new command handlers in the `shell_run()` function.
+### System Details
+- [docs/BOOT_SEQUENCE.md](docs/BOOT_SEQUENCE.md) - Boot process
+- [docs/SHELL_FEATURES.md](docs/SHELL_FEATURES.md) - Shell capabilities
+- [docs/SYSTEM_INFO.md](docs/SYSTEM_INFO.md) - System monitoring API
+- [docs/SCRIPT_STORAGE.md](docs/SCRIPT_STORAGE.md) - Flash storage
 
-### Updating SageLang
+### Integration Guides
+- [docs/GPIO_INTEGRATION.md](docs/GPIO_INTEGRATION.md) - Hardware control
+- [docs/SAGELANG_INTEGRATION.md](docs/SAGELANG_INTEGRATION.md) - Language embedding
 
-```bash
-cd third_party/sagelang
-git pull origin main
-cd ../..
-git add third_party/sagelang
-git commit -m "Update SageLang to latest version"
+### SageLang Language
+- [third_party/sagelang/README.md](third_party/sagelang/README.md) - Full language docs
+- [third_party/sagelang/examples/](third_party/sagelang/examples/) - Language examples
+
+## Hardware Requirements
+
+- **Board:** Raspberry Pi Pico or any RP2040-based board
+- **USB:** For programming and serial communication
+- **Optional:** UART adapter for hardware serial (GPIO 0/1)
+
+**Pin Reference (Raspberry Pi Pico):**
+```
+GPIO 25 - Built-in LED
+GPIO 0  - UART TX (optional)
+GPIO 1  - UART RX (optional)
+GPIO 0-29 - Available for general use
 ```
 
-### Debugging
+## Memory Layout
 
-The build includes debug symbols (`-g` flag). Use:
+```
+RP2040 RAM (264 KB total):
+├─ littleOS Kernel      ~100 KB
+├─ Stack                ~100 KB
+└─ SageLang Heap         64 KB
 
-- **GDB with OpenOCD** for step debugging
-- **printf debugging** via USB/UART serial
-- **picotool info** to inspect the binary
-
-### Clean Build
-
-```bash
-rm -rf build
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
+Flash (2 MB):
+├─ littleOS Binary      ~150 KB
+├─ Script Storage         4 KB
+├─ Configuration          4 KB
+└─ Free Space          ~1.8 MB
 ```
 
-## Roadmap
+## Performance
 
-### Current Version: v0.2.0
-- [x] Basic kernel initialization
-- [x] Interactive shell with command parsing
-- [x] USB and UART stdio support
-- [x] Core commands (help, version)
-- [x] **SageLang Integration** - Full interpreter embedded
-- [x] **REPL Support** - Interactive programming
-- [x] **Memory Management** - GC with 64KB heap
+- **Boot time:** <1 second to shell
+- **Script execution:** Direct interpretation (no compilation)
+- **GPIO operations:** <10μs latency
+- **Temperature reading:** ~100μs
+- **Watchdog check:** <5μs overhead
 
-### Upcoming: v0.3.0
-- [ ] File system abstraction (LittleFS)
-- [ ] Script storage on flash
-- [ ] Autorun scripts on boot
-- [ ] Module system for SageLang
+## Examples
 
-### Future Enhancements
-- [ ] Hardware access from SageLang (GPIO, SPI, I2C)
-- [ ] Multi-core support (Core 1 utilization)
-- [ ] Network stack (if using Pico W)
-- [ ] Graphics support (for displays)
-- [ ] Power management
-- [ ] SageLang compiler (PC → RP2040 cross-compilation)
+### LED Patterns
 
-## Platform Features
+```sagelang
+proc blink_pattern(pin, pattern):
+    gpio_init(pin, true)
+    for duration in pattern:
+        gpio_toggle(pin)
+        sleep(duration)
 
-### Embedded Mode (RP2040)
-- ✅ Interpreter-only execution
-- ✅ Interactive REPL
-- ✅ 64KB heap limit
-- ✅ Inline code evaluation
-- ⏳ File I/O (planned with LittleFS)
-- ⏳ Persistent storage
+# Morse code "SOS"
+let sos = [200, 200, 200, 200, 200, 600,
+           600, 200, 600, 200, 600, 600,
+           200, 200, 200, 200, 200, 1000]
+blink_pattern(25, sos)
+```
 
-### PC Mode (Testing)
-- ✅ Full interpreter
-- ✅ Unlimited heap
-- ✅ File I/O support
-- ✅ Script execution from files
-- ⏳ Compiler (planned)
+### Temperature Logger
 
-## Memory Constraints
+```sagelang
+proc log_temperature(interval_ms):
+    while(true):
+        let temp = sys_temp()
+        let uptime = sys_uptime()
+        print str(uptime) + "s: " + str(temp) + "°C"
+        
+        if temp > 50.0:
+            print "WARNING: High temperature!"
+        
+        sleep(interval_ms)
 
-**RP2040 RAM Layout:**
-- Total RAM: 264 KB
-- SageLang Heap: 64 KB (configurable)
-- littleOS + Stack: ~200 KB
+log_temperature(10000)  # Every 10 seconds
+```
 
-**Tips for Embedded:**
-- Keep scripts small and modular
-- Use `gc_collect()` in long-running loops
+### Button-Controlled LED
+
+```sagelang
+class LED:
+    proc init(self, pin):
+        self.pin = pin
+        gpio_init(pin, true)
+    
+    proc on(self):
+        gpio_write(self.pin, true)
+    
+    proc off(self):
+        gpio_write(self.pin, false)
+
+class Button:
+    proc init(self, pin):
+        self.pin = pin
+        gpio_init(pin, false)
+        gpio_set_pull(pin, 1)  # Pull-up
+    
+    proc is_pressed(self):
+        return gpio_read(self.pin) == false
+
+let led = LED(25)
+let button = Button(15)
+
+while(true):
+    if button.is_pressed():
+        led.on()
+    else:
+        led.off()
+    sleep(50)
+```
+
+## Troubleshooting
+
+### System Won't Boot
+- Hold BOOTSEL and reconnect USB to enter bootloader mode
+- Re-flash the UF2 file
+- Check serial connection (115200 baud, 8N1)
+
+### Watchdog Resets
+- Normal for infinite loops without `sleep()` or `wdt_feed()`
+- Add `sleep(10)` in tight loops
+- Disable with `wdt_disable()` for debugging
+
+### Script Errors
+- Check syntax (indentation matters!)
+- Verify GPIO pins are valid (0-29)
 - Monitor memory with `sage -m`
-- Avoid deep recursion
+
+### Serial Connection
+- Linux: Check `/dev/ttyACM*` permissions
+- Windows: Verify COM port in Device Manager
+- macOS: Look for `/dev/tty.usbmodem*`
 
 ## Contributing
 
-Contributions are welcome! Please:
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Contributing to SageLang
-
-For language features, contribute to [Night-Traders-Dev/SageLang](https://github.com/Night-Traders-Dev/SageLang).
-
-## License
-
-This project is open source under the MIT License.
+**Areas for Contribution:**
+- Hardware drivers (I2C, SPI, PWM, ADC)
+- Additional SageLang examples
+- Documentation improvements
+- Platform ports (ESP32, STM32)
+- Testing and bug reports
 
 ## Resources
 
-- [Raspberry Pi Pico Documentation](https://www.raspberrypi.com/documentation/microcontrollers/)
 - [RP2040 Datasheet](https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf)
 - [Pico SDK Documentation](https://raspberrypi.github.io/pico-sdk-doxygen/)
 - [SageLang Repository](https://github.com/Night-Traders-Dev/SageLang)
-- [SageLang Documentation](third_party/sagelang/README.md)
+- [Raspberry Pi Pico Documentation](https://www.raspberrypi.com/documentation/microcontrollers/)
 
-## Support
+## License
 
-For issues, questions, or suggestions:
-- Open an issue on GitHub
-- Check existing issues and discussions
-- Refer to the Pico SDK documentation for hardware-specific questions
+MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-**Built with ❤️ for embedded systems education and experimentation**
-
-**Powered by SageLang - A clean, indentation-based systems programming language**
+**Built with ❤️ for embedded education | Powered by SageLang**
