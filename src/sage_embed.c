@@ -72,6 +72,9 @@ sage_context_t* sage_init(void) {
     // Register configuration storage native functions
     sage_register_config_functions(ctx->global_env);
     
+    // Register watchdog timer native functions
+    sage_register_watchdog_functions(ctx->global_env);
+    
     ctx->initialized = true;
     return ctx;
 }
