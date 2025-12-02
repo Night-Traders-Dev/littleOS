@@ -20,10 +20,10 @@ void kernel_main(void) {
     
     // Initialize watchdog timer (8 second timeout)
     // This allows recovery from hangs/crashes
-    watchdog_init(8000);
+    wdt_init(8000);
     
     // Check if we recovered from a watchdog reset
-    if (watchdog_get_reset_reason() == WATCHDOG_RESET_TIMEOUT) {
+    if (wdt_get_reset_reason() == WATCHDOG_RESET_TIMEOUT) {
         printf("\r\n*** RECOVERED FROM CRASH ***\r\n");
         printf("System was reset by watchdog timer\r\n\r\n");
         sleep_ms(2000);  // Give user time to see message
