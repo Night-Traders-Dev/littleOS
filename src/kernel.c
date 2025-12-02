@@ -19,7 +19,7 @@ void kernel_main(void) {
     printf("\r\nRP2040 littleOS kernel\r\n");
     
     // Initialize watchdog timer (8 second timeout)
-    // This allows recovery from hangs/crashes
+    // Don't enable yet - wait until after boot completes
     wdt_init(8000);
     
     // Check if we recovered from a watchdog reset
@@ -70,9 +70,12 @@ void kernel_main(void) {
     printf("Welcome to littleOS Shell!\r\n");
     printf("Type 'help' for available commands\r\n");
     printf("\r\n");
-    printf("Watchdog: Enabled with 8s timeout (system will auto-recover from hangs)\r\n");
+    
+    // NOW enable watchdog - boot is complete, start monitoring for hangs
+    wdt_enable(8000);  // 8 second timeout
+    printf("Watchdog: Active (8s timeout - system will auto-recover from hangs)\r\n");
     printf("\r\n> ");
 
-    // Start the command shell
+    // Start the command shell (this will feed watchdog periodically)
     shell_run();
 }
