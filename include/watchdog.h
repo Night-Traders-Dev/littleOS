@@ -34,51 +34,51 @@ typedef enum {
  * @param timeout_ms Timeout in milliseconds (1-8388)
  * @return true if successful, false otherwise
  */
-bool watchdog_init(uint32_t timeout_ms);
+bool wdt_init(uint32_t timeout_ms);
 
 /**
  * @brief Feed the watchdog (reset countdown)
  * Call this periodically to prevent reset
  */
-void watchdog_feed(void);
+void wdt_feed(void);
 
 /**
  * @brief Enable watchdog timer
  * @param timeout_ms Timeout in milliseconds
  * @return true if successful
  */
-bool watchdog_enable(uint32_t timeout_ms);
+bool wdt_enable(uint32_t timeout_ms);
 
 /**
  * @brief Disable watchdog timer
  * Note: On RP2040, watchdog cannot be fully disabled once enabled,
  * but we can set a very long timeout
  */
-void watchdog_disable(void);
+void wdt_disable(void);
 
 /**
  * @brief Check if system was reset by watchdog
  * @return Reset reason
  */
-watchdog_reset_reason_t watchdog_get_reset_reason(void);
+watchdog_reset_reason_t wdt_get_reset_reason(void);
 
 /**
  * @brief Get time until watchdog timeout
  * @return Milliseconds remaining (0 if disabled)
  */
-uint32_t watchdog_get_time_remaining_ms(void);
+uint32_t wdt_get_time_remaining_ms(void);
 
 /**
  * @brief Force immediate watchdog reboot
  * @param delay_ms Delay before reboot (0 for immediate)
  */
-void watchdog_reboot(uint32_t delay_ms);
+void wdt_reboot(uint32_t delay_ms);
 
 /**
  * @brief Check if watchdog is enabled
  * @return true if enabled
  */
-bool watchdog_is_enabled(void);
+bool wdt_is_enabled(void);
 
 /**
  * @brief Get watchdog statistics
@@ -86,12 +86,12 @@ bool watchdog_is_enabled(void);
  * @param last_feed_time_ms Pointer to store last feed time
  * @param timeout_ms Pointer to store current timeout
  */
-void watchdog_get_stats(uint32_t* total_feeds, uint32_t* last_feed_time_ms,
-                        uint32_t* timeout_ms);
+void wdt_get_stats(uint32_t* total_feeds, uint32_t* last_feed_time_ms,
+                   uint32_t* timeout_ms);
 
 /**
  * @brief Clear watchdog reset reason
  */
-void watchdog_clear_reset_reason(void);
+void wdt_clear_reset_reason(void);
 
 #endif // WATCHDOG_H
