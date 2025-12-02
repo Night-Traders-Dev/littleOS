@@ -53,3 +53,65 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Build directories
+build/
+build-*/
+out/
+_build/
+_deps/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+CMakeDoxyfile.in
+CMakeDoxygenDefaults.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps
+cmake_install.cmake
+*.cmake.in
+
+# Pico SDK build artifacts
+*.bin
+*.uf2
+*.dis
+*.elf.map
+pico-sdk/
+generated/
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.code-workspace
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Logs
+*.log
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Temporary files
+*.tmp
+*.temp
+
+# OS generated files
+Thumbs.db
+.Spotlight-V100
+.Trashes
+ehthumbs.db
