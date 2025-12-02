@@ -30,6 +30,7 @@ typedef struct {
     config_entry_t entries[CONFIG_MAX_ENTRIES];
     char autoboot_script[CONFIG_AUTOBOOT_SCRIPT_SIZE];
     bool autoboot_enabled;
+    uint8_t padding[3];       // Ensure 4-byte alignment
 } config_storage_t;
 
 // RAM copy of configuration
@@ -110,10 +111,11 @@ bool config_init(void) {
     printf("Config: No valid configuration found, using defaults\r\n");
     init_defaults();
     config_initialized = true;
-    config_dirty = true;
+    config_dirty = false;  // Don't auto-save on first boot
     
-    // Save defaults to flash
-    config_save();
+    // Note: We don't auto-save here to avoid flash wear
+    // Config will be saved when user first modifies it
+    printf("Config: Ready (will save on first change)\r\n");
     
     return true;
 }
@@ -150,15 +152,23 @@ bool config_save(void) {
     
     printf("Config: Saving to flash...\r\n");
     
-    // Disable interrupts during flash write
+    // Ensure data is 256-byte aligned for flash write
+    // Flash must be written in 256-byte pages
+    size_t write_size = (sizeof(config_storage_t) + 255) & ~255;
+    
+    // Create aligned buffer
+    static uint8_t __attribute__((aligned(4))) write_buffer[FLASH_SECTOR_SIZE];
+    memset(write_buffer, 0xFF, FLASH_SECTOR_SIZE);  // Erased flash is 0xFF
+    memcpy(write_buffer, &config_data, sizeof(config_storage_t));
+    
+    // Disable interrupts during flash operation
     uint32_t ints = save_and_disable_interrupts();
     
     // Erase flash sector (4KB)
     flash_range_erase(FLASH_TARGET_OFFSET, FLASH_SECTOR_SIZE);
     
     // Write configuration to flash (must be 256-byte aligned)
-    flash_range_program(FLASH_TARGET_OFFSET, (const uint8_t*)&config_data, 
-                       sizeof(config_storage_t));
+    flash_range_program(FLASH_TARGET_OFFSET, write_buffer, write_size);
     
     // Re-enable interrupts
     restore_interrupts(ints);
