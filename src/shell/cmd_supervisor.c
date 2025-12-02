@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <string.h>
 #include "supervisor.h"
-#include "../shell/shell_internal.h"
 
 void cmd_health(int argc, char** argv) {
     (void)argc;
