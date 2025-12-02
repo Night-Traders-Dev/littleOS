@@ -51,11 +51,20 @@ void shell_run() {
                     printf("Available commands:\r\n");
                     printf("  help     - Show this help message\r\n");
                     printf("  version  - Show OS version\r\n");
+                    printf("  clear    - Clear the screen\r\n");
                     printf("  reboot   - Reboot the system\r\n");
                     printf("  sage     - SageLang interpreter (type 'sage --help')\r\n");
                 } else if (strcmp(argv[0], "version") == 0) {
-                    printf("littleOS v0.1.0 - RP2040\r\n");
+                    printf("littleOS v0.2.0 - RP2040\r\n");
                     printf("With SageLang v0.8.0\r\n");
+                } else if (strcmp(argv[0], "clear") == 0) {
+                    // ANSI escape codes to clear screen and move cursor to top-left
+                    printf("\033[2J");      // Clear entire screen
+                    printf("\033[H");       // Move cursor to home (1,1)
+                    printf(">");            // Show prompt
+                    fflush(stdout);
+                    idx = 0;
+                    continue;  // Skip the normal prompt below
                 } else if (strcmp(argv[0], "reboot") == 0) {
                     printf("Rebooting...\r\n");
                     // Trigger watchdog reset or similar (omitted)
