@@ -2,6 +2,7 @@
 #include <string.h>
 #include "pico/stdlib.h"
 #include "hardware/watchdog.h"
+#include "watchdog.h"
 
 // Forward declarations
 extern int cmd_sage(int argc, char* argv[]);
@@ -98,10 +99,20 @@ void shell_run() {
         STATE_CSI
     } escape_state = STATE_NORMAL;
 
+    // Track time for periodic watchdog feeding
+    uint32_t last_wdt_feed = to_ms_since_boot(get_absolute_time());
+
     // Note: Welcome message is now displayed in kernel.c after boot
     // Don't duplicate it here
 
     while (1) {
+        // Feed watchdog every 1 second while in shell loop
+        uint32_t now = to_ms_since_boot(get_absolute_time());
+        if (now - last_wdt_feed >= 1000) {
+            wdt_feed();
+            last_wdt_feed = now;
+        }
+        
         int c = getchar_timeout_us(0);  // Non-blocking read
         
         if (c == PICO_ERROR_TIMEOUT) {
@@ -177,6 +188,9 @@ void shell_run() {
             int argc = parse_args(buffer_copy, argv, 32);
 
             if (argc > 0) {
+                // Feed watchdog before executing command
+                wdt_feed();
+                
                 if (strcmp(argv[0], "help") == 0) {
                     printf("Available commands:\r\n");
                     printf("  help     - Show this help message\r\n");
@@ -223,6 +237,9 @@ void shell_run() {
                     printf("Unknown command: %s\r\n", argv[0]);
                     printf("Type 'help' for available commands\r\n");
                 }
+                
+                // Feed watchdog after executing command
+                wdt_feed();
             }
 
             idx = 0;
