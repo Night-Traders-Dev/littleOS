@@ -28,7 +28,7 @@ static Value sage_watchdog_enable(int argc, Value* args) {
     
     uint32_t timeout_ms = (uint32_t)args[0].as.number;
     
-    return val_bool(watchdog_enable(timeout_ms));
+    return val_bool(wdt_enable(timeout_ms));
 }
 
 /**
@@ -42,7 +42,7 @@ static Value sage_watchdog_feed(int argc, Value* args) {
     (void)argc;
     (void)args;
     
-    watchdog_feed();
+    wdt_feed();
     return val_nil();
 }
 
@@ -57,7 +57,7 @@ static Value sage_watchdog_disable(int argc, Value* args) {
     (void)argc;
     (void)args;
     
-    watchdog_disable();
+    wdt_disable();
     return val_nil();
 }
 
@@ -75,7 +75,7 @@ static Value sage_watchdog_reboot(int argc, Value* args) {
         delay_ms = (uint32_t)args[0].as.number;
     }
     
-    watchdog_reboot(delay_ms);
+    wdt_reboot(delay_ms);
     
     // Should never reach here
     return val_nil();
@@ -94,7 +94,7 @@ static Value sage_watchdog_is_enabled(int argc, Value* args) {
     (void)argc;
     (void)args;
     
-    return val_bool(watchdog_is_enabled());
+    return val_bool(wdt_is_enabled());
 }
 
 /**
@@ -109,7 +109,7 @@ static Value sage_watchdog_time_remaining(int argc, Value* args) {
     (void)argc;
     (void)args;
     
-    uint32_t remaining = watchdog_get_time_remaining_ms();
+    uint32_t remaining = wdt_get_time_remaining_ms();
     return val_number(remaining);
 }
 
@@ -126,7 +126,7 @@ static Value sage_watchdog_was_reset(int argc, Value* args) {
     (void)argc;
     (void)args;
     
-    watchdog_reset_reason_t reason = watchdog_get_reset_reason();
+    watchdog_reset_reason_t reason = wdt_get_reset_reason();
     return val_bool(reason == WATCHDOG_RESET_TIMEOUT);
 }
 
@@ -142,7 +142,7 @@ static Value sage_watchdog_get_feeds(int argc, Value* args) {
     (void)args;
     
     uint32_t feeds = 0;
-    watchdog_get_stats(&feeds, NULL, NULL);
+    wdt_get_stats(&feeds, NULL, NULL);
     
     return val_number(feeds);
 }
