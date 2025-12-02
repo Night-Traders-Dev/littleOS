@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 /**
  * @file sage_embed.h
@@ -30,7 +31,8 @@ typedef enum {
     SAGE_ERROR_RUNTIME = 2,
     SAGE_ERROR_MEMORY = 3,
     SAGE_ERROR_IO = 4,
-    SAGE_ERROR_NOT_SUPPORTED = 5
+    SAGE_ERROR_NOT_SUPPORTED = 5,
+    SAGE_ERROR_TIMEOUT = 6
 } sage_result_t;
 
 /**
@@ -95,6 +97,40 @@ void sage_set_memory_limit(sage_context_t* ctx, size_t max_bytes);
  * @param num_objects Pointer to store number of objects
  */
 void sage_get_memory_stats(sage_context_t* ctx, size_t* allocated_bytes, size_t* num_objects);
+
+/**
+ * @brief Enable/disable heartbeat mechanism
+ * @param ctx Execution context
+ * @param enabled true to enable, false to disable
+ * 
+ * Warning: Disabling heartbeats can cause watchdog timeouts!
+ * Only disable for debugging purposes.
+ */
+void sage_set_heartbeat_enabled(sage_context_t* ctx, bool enabled);
+
+/**
+ * @brief Get heartbeat statistics
+ * @param count Pointer to store total heartbeat count
+ * @param last_ms Pointer to store last heartbeat timestamp
+ */
+void sage_get_heartbeat_stats(uint32_t* count, uint32_t* last_ms);
+
+/**
+ * @brief Set maximum execution time for eval operations
+ * @param ctx Execution context
+ * @param timeout_ms Timeout in milliseconds (0 = no limit)
+ * 
+ * Default timeout is 5000ms (5 seconds). This prevents infinite loops
+ * from causing watchdog timeouts.
+ */
+void sage_set_execution_timeout(sage_context_t* ctx, uint32_t timeout_ms);
+
+/**
+ * @brief Get current execution timeout
+ * @param ctx Execution context
+ * @return Timeout in milliseconds (0 = no limit)
+ */
+uint32_t sage_get_execution_timeout(sage_context_t* ctx);
 
 // Forward declaration for Env type from SageLang
 typedef struct Env Env;
