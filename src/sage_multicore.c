@@ -1,6 +1,7 @@
 #include "sage_embed.h"
 #include "multicore.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef SAGE_ENABLED
@@ -147,7 +148,7 @@ static Value* sage_core_send(int arg_count, Value** args) {
     multicore_send(data);
     
     Value* ret = (Value*)malloc(sizeof(Value));
-    ret->type = VAL_NULL;
+    ret->type = VAL_NIL;
     return ret;
 }
 
@@ -223,7 +224,7 @@ static Value* sage_core_receive_nb(int arg_count, Value** args) {
         ret->type = VAL_NUMBER;
         ret->as.number = (double)data;
     } else {
-        ret->type = VAL_NULL;
+        ret->type = VAL_NIL;
     }
     return ret;
 }
@@ -279,19 +280,19 @@ void sage_register_multicore_functions(Env* env) {
     if (!env) return;
     
     // Core 1 control
-    env_define_native(env, "core1_launch_script", sage_core1_launch_script);
-    env_define_native(env, "core1_launch_code", sage_core1_launch_code);
-    env_define_native(env, "core1_stop", sage_core1_stop);
-    env_define_native(env, "core1_is_running", sage_core1_is_running);
-    env_define_native(env, "core1_get_state", sage_core1_get_state);
+    env_define_native_fn(env, "core1_launch_script", sage_core1_launch_script);
+    env_define_native_fn(env, "core1_launch_code", sage_core1_launch_code);
+    env_define_native_fn(env, "core1_stop", sage_core1_stop);
+    env_define_native_fn(env, "core1_is_running", sage_core1_is_running);
+    env_define_native_fn(env, "core1_get_state", sage_core1_get_state);
     
     // Inter-core communication
-    env_define_native(env, "core_send", sage_core_send);
-    env_define_native(env, "core_send_nb", sage_core_send_nb);
-    env_define_native(env, "core_receive", sage_core_receive);
-    env_define_native(env, "core_receive_nb", sage_core_receive_nb);
-    env_define_native(env, "core_fifo_available", sage_core_fifo_available);
-    env_define_native(env, "core_num", sage_core_num);
+    env_define_native_fn(env, "core_send", sage_core_send);
+    env_define_native_fn(env, "core_send_nb", sage_core_send_nb);
+    env_define_native_fn(env, "core_receive", sage_core_receive);
+    env_define_native_fn(env, "core_receive_nb", sage_core_receive_nb);
+    env_define_native_fn(env, "core_fifo_available", sage_core_fifo_available);
+    env_define_native_fn(env, "core_num", sage_core_num);
 }
 
 #endif // SAGE_ENABLED
