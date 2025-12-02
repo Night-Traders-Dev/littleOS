@@ -67,6 +67,7 @@ add_library(littleos_core STATIC
     src/kernel.c
     src/shell/shell.c
     src/uart.c
+    src/script_storage.c
 )
 
 target_include_directories(littleos_core PUBLIC
@@ -81,6 +82,7 @@ if(SAGELANG_AVAILABLE)
     target_sources(littleos_core PRIVATE
         src/sage_embed.c
         src/shell/cmd_sage.c
+        src/shell/cmd_script.c
     )
     
     # CRITICAL FIX: Add SageLang include directory to littleos_core
