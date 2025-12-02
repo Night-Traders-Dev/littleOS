@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "pico/stdlib.h"
+#include "hardware/watchdog.h"
 
 // Forward declarations
 extern int cmd_sage(int argc, char* argv[]);
@@ -23,8 +24,8 @@ void shell_run() {
     char buffer[512];  // Increased buffer for script storage commands
     int idx = 0;
 
-    printf("\r\nWelcome to littleOS Shell!\r\n");
-    printf("Type 'help' for available commands\r\n> ");
+    // Note: Welcome message is now displayed in kernel.c after boot
+    // Don't duplicate it here
 
     while (1) {
         int c = getchar_timeout_us(0);  // Non-blocking read
@@ -68,8 +69,14 @@ void shell_run() {
                     idx = 0;
                     continue;  // Skip the normal prompt below
                 } else if (strcmp(argv[0], "reboot") == 0) {
-                    printf("Rebooting...\r\n");
-                    // Trigger watchdog reset or similar (omitted)
+                    printf("Rebooting system...\r\n");
+                    sleep_ms(500);  // Give time for message to transmit
+                    
+                    // Use watchdog to trigger a reset
+                    watchdog_enable(1, 1);  // 1ms timeout, no pause on debug
+                    while(1) {
+                        // Wait for watchdog to trigger reset
+                    }
                 } else if (strcmp(argv[0], "sage") == 0) {
                     // Call SageLang command handler
                     cmd_sage(argc, argv);
