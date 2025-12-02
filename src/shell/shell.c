@@ -3,10 +3,14 @@
 #include "pico/stdlib.h"
 #include "hardware/watchdog.h"
 #include "watchdog.h"
+#include "supervisor.h"
 
 // Forward declarations
 extern int cmd_sage(int argc, char* argv[]);
 extern int cmd_script(int argc, char* argv[]);
+extern void cmd_health(int argc, char** argv);
+extern void cmd_stats(int argc, char** argv);
+extern void cmd_supervisor(int argc, char** argv);
 
 // Command history settings
 #define HISTORY_SIZE 20
@@ -99,18 +103,26 @@ void shell_run() {
         STATE_CSI
     } escape_state = STATE_NORMAL;
 
-    // Track time for periodic watchdog feeding
+    // Track time for periodic watchdog feeding and supervisor heartbeat
     uint32_t last_wdt_feed = to_ms_since_boot(get_absolute_time());
+    uint32_t last_heartbeat = last_wdt_feed;
 
     // Note: Welcome message is now displayed in kernel.c after boot
     // Don't duplicate it here
 
     while (1) {
-        // Feed watchdog every 1 second while in shell loop
         uint32_t now = to_ms_since_boot(get_absolute_time());
+        
+        // Feed watchdog every 1 second while in shell loop
         if (now - last_wdt_feed >= 1000) {
             wdt_feed();
             last_wdt_feed = now;
+        }
+        
+        // Send heartbeat to supervisor every 500ms
+        if (now - last_heartbeat >= 500) {
+            supervisor_heartbeat();
+            last_heartbeat = now;
         }
         
         int c = getchar_timeout_us(0);  // Non-blocking read
@@ -188,22 +200,27 @@ void shell_run() {
             int argc = parse_args(buffer_copy, argv, 32);
 
             if (argc > 0) {
-                // Feed watchdog before executing command
+                // Feed watchdog and send heartbeat before executing command
                 wdt_feed();
+                supervisor_heartbeat();
                 
                 if (strcmp(argv[0], "help") == 0) {
                     printf("Available commands:\r\n");
-                    printf("  help     - Show this help message\r\n");
-                    printf("  version  - Show OS version\r\n");
-                    printf("  clear    - Clear the screen\r\n");
-                    printf("  reboot   - Reboot the system\r\n");
-                    printf("  history  - Show command history\r\n");
-                    printf("  sage     - SageLang interpreter (type 'sage --help')\r\n");
-                    printf("  script   - Script management (type 'script' for help)\r\n");
+                    printf("  help       - Show this help message\r\n");
+                    printf("  version    - Show OS version\r\n");
+                    printf("  clear      - Clear the screen\r\n");
+                    printf("  reboot     - Reboot the system\r\n");
+                    printf("  history    - Show command history\r\n");
+                    printf("  health     - Quick system health check\r\n");
+                    printf("  stats      - Detailed system statistics\r\n");
+                    printf("  supervisor - Supervisor control (start/stop/status/alerts)\r\n");
+                    printf("  sage       - SageLang interpreter (type 'sage --help')\r\n");
+                    printf("  script     - Script management (type 'script' for help)\r\n");
                     printf("\r\nUse UP/DOWN arrows to navigate command history\r\n");
                 } else if (strcmp(argv[0], "version") == 0) {
-                    printf("littleOS v0.2.0 - RP2040\r\n");
+                    printf("littleOS v0.3.0 - RP2040\r\n");
                     printf("With SageLang v0.8.0\r\n");
+                    printf("Supervisor: %s\r\n", supervisor_is_running() ? "Active" : "Inactive");
                 } else if (strcmp(argv[0], "clear") == 0) {
                     // ANSI escape codes to clear screen and move cursor to top-left
                     printf("\033[2J");      // Clear entire screen
@@ -218,6 +235,12 @@ void shell_run() {
                     for (int i = start; i < history_count; i++) {
                         printf("  %d: %s\r\n", i + 1, history[i % HISTORY_SIZE]);
                     }
+                } else if (strcmp(argv[0], "health") == 0) {
+                    cmd_health(argc, argv);
+                } else if (strcmp(argv[0], "stats") == 0) {
+                    cmd_stats(argc, argv);
+                } else if (strcmp(argv[0], "supervisor") == 0) {
+                    cmd_supervisor(argc, argv);
                 } else if (strcmp(argv[0], "reboot") == 0) {
                     printf("Rebooting system...\r\n");
                     sleep_ms(500);  // Give time for message to transmit
@@ -238,8 +261,9 @@ void shell_run() {
                     printf("Type 'help' for available commands\r\n");
                 }
                 
-                // Feed watchdog after executing command
+                // Feed watchdog and send heartbeat after executing command
                 wdt_feed();
+                supervisor_heartbeat();
             }
 
             idx = 0;
