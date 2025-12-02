@@ -1,6 +1,6 @@
 #include "reg.h"
 
-void uart_init() {
+void littleos_uart_init() {
     // 1. Deassert reset for UART0 and IO Bank 0
     REG(RESETS_RESET) &= ~(1 << 22); // UART0
     REG(RESETS_RESET) &= ~(1 << 5);  // IO Bank 0
