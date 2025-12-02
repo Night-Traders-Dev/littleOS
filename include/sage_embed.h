@@ -105,4 +105,10 @@ typedef struct Env Env;
  */
 void sage_register_gpio_functions(Env* env);
 
+/**
+ * @brief Register system information native functions with SageLang environment
+ * @param env SageLang environment to register functions into
+ */
+void sage_register_system_functions(Env* env);
+
 #endif // SAGE_EMBED_H
