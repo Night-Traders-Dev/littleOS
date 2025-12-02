@@ -64,18 +64,18 @@ endif()
 # =============================================================================
 
 add_library(littleos_core STATIC
-    src/kernel.c
+    src/kernel/kernel.c
     src/shell/shell.c
     src/shell/cmd_supervisor.c
     src/shell/cmd_dmesg.c
-    src/uart.c
-    src/script_storage.c
+    src/drivers/uart.c
+    src/storage/script_storage.c
     src/hal/gpio.c
-    src/system_info.c
-    src/config_storage.c
-    src/watchdog.c
-    src/supervisor.c
-    src/dmesg.c
+    src/sys/system_info.c
+    src/storage/config_storage.c
+    src/drivers/watchdog.c
+    src/drivers/supervisor.c
+    src/kernel/dmesg.c
 )
 
 target_include_directories(littleos_core PUBLIC
@@ -96,12 +96,12 @@ target_link_libraries(littleos_core PUBLIC
 # Add SageLang embedding if available
 if(SAGELANG_AVAILABLE)
     target_sources(littleos_core PRIVATE
-        src/sage_embed.c
-        src/sage_gpio.c
-        src/sage_system.c
-        src/sage_time.c
-        src/sage_config.c
-        src/sage_watchdog.c
+        src/sage/sage_embed.c
+        src/sage/sage_gpio.c
+        src/sage/sage_system.c
+        src/sage/sage_time.c
+        src/sage/sage_config.c
+        src/sage/sage_watchdog.c
         src/shell/cmd_sage.c
         src/shell/cmd_script.c
     )
