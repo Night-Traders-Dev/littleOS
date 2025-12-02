@@ -69,6 +69,9 @@ sage_context_t* sage_init(void) {
     // Register time/delay native functions
     sage_register_time_functions(ctx->global_env);
     
+    // Register configuration storage native functions
+    sage_register_config_functions(ctx->global_env);
+    
     ctx->initialized = true;
     return ctx;
 }
