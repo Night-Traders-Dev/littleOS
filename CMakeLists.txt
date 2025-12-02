@@ -70,6 +70,7 @@ add_library(littleos_core STATIC
     src/script_storage.c
     src/hal/gpio.c
     src/system_info.c
+    src/config_storage.c
 )
 
 target_include_directories(littleos_core PUBLIC
@@ -80,6 +81,8 @@ target_include_directories(littleos_core PUBLIC
 target_link_libraries(littleos_core PUBLIC 
     pico_stdlib
     hardware_adc
+    hardware_flash
+    hardware_sync
     pico_unique_id
 )
 
@@ -90,6 +93,7 @@ if(SAGELANG_AVAILABLE)
         src/sage_gpio.c
         src/sage_system.c
         src/sage_time.c
+        src/sage_config.c
         src/shell/cmd_sage.c
         src/shell/cmd_script.c
     )
@@ -102,7 +106,7 @@ if(SAGELANG_AVAILABLE)
     target_link_libraries(littleos_core PUBLIC sagelang)
     target_compile_definitions(littleos_core PUBLIC SAGE_ENABLED=1)
     
-    message(STATUS "SageLang integration enabled with GPIO, System Info, and Time support")
+    message(STATUS "SageLang integration enabled with GPIO, System Info, Time, and Config support")
 else()
     message(STATUS "Building without SageLang support")
 endif()
@@ -124,6 +128,8 @@ target_link_libraries(littleos PRIVATE
     hardware_timer
     hardware_clocks
     hardware_watchdog
+    hardware_flash
+    hardware_sync
     pico_bootrom
 )
 
