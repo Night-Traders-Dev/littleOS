@@ -63,6 +63,9 @@ sage_context_t* sage_init(void) {
     // Register GPIO native functions
     sage_register_gpio_functions(ctx->global_env);
     
+    // Register system information native functions
+    sage_register_system_functions(ctx->global_env);
+    
     ctx->initialized = true;
     return ctx;
 }
