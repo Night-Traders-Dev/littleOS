@@ -24,7 +24,7 @@ static struct {
 /**
  * @brief Initialize watchdog timer
  */
-bool watchdog_init(uint32_t timeout_ms) {
+bool wdt_init(uint32_t timeout_ms) {
     if (timeout_ms < WATCHDOG_TIMEOUT_MIN_MS || 
         timeout_ms > WATCHDOG_TIMEOUT_MAX_MS) {
         printf("Watchdog: Invalid timeout %u ms (range: %u-%u)\r\n",
@@ -53,7 +53,7 @@ bool watchdog_init(uint32_t timeout_ms) {
 /**
  * @brief Enable watchdog timer
  */
-bool watchdog_enable(uint32_t timeout_ms) {
+bool wdt_enable(uint32_t timeout_ms) {
     if (timeout_ms < WATCHDOG_TIMEOUT_MIN_MS || 
         timeout_ms > WATCHDOG_TIMEOUT_MAX_MS) {
         return false;
@@ -77,7 +77,7 @@ bool watchdog_enable(uint32_t timeout_ms) {
 /**
  * @brief Feed the watchdog
  */
-void watchdog_feed(void) {
+void wdt_feed(void) {
     if (!wdt_state.enabled) {
         return;
     }
@@ -94,7 +94,7 @@ void watchdog_feed(void) {
  * Note: RP2040 watchdog cannot be truly disabled once enabled,
  * but we can set a very long timeout
  */
-void watchdog_disable(void) {
+void wdt_disable(void) {
     if (!wdt_state.enabled) {
         return;
     }
@@ -111,14 +111,14 @@ void watchdog_disable(void) {
 /**
  * @brief Get reset reason
  */
-watchdog_reset_reason_t watchdog_get_reset_reason(void) {
+watchdog_reset_reason_t wdt_get_reset_reason(void) {
     return wdt_state.last_reset_reason;
 }
 
 /**
  * @brief Get time remaining until timeout
  */
-uint32_t watchdog_get_time_remaining_ms(void) {
+uint32_t wdt_get_time_remaining_ms(void) {
     if (!wdt_state.enabled) {
         return 0;
     }
@@ -136,7 +136,7 @@ uint32_t watchdog_get_time_remaining_ms(void) {
 /**
  * @brief Force immediate reboot via watchdog
  */
-void watchdog_reboot(uint32_t delay_ms) {
+void wdt_reboot(uint32_t delay_ms) {
     printf("Watchdog: Forcing reboot in %u ms...\r\n", delay_ms);
     
     if (delay_ms == 0) {
@@ -158,15 +158,15 @@ void watchdog_reboot(uint32_t delay_ms) {
 /**
  * @brief Check if watchdog is enabled
  */
-bool watchdog_is_enabled(void) {
+bool wdt_is_enabled(void) {
     return wdt_state.enabled;
 }
 
 /**
  * @brief Get watchdog statistics
  */
-void watchdog_get_stats(uint32_t* total_feeds, uint32_t* last_feed_time_ms,
-                        uint32_t* timeout_ms) {
+void wdt_get_stats(uint32_t* total_feeds, uint32_t* last_feed_time_ms,
+                   uint32_t* timeout_ms) {
     if (total_feeds) {
         *total_feeds = wdt_state.feed_count;
     }
@@ -183,6 +183,6 @@ void watchdog_get_stats(uint32_t* total_feeds, uint32_t* last_feed_time_ms,
 /**
  * @brief Clear reset reason
  */
-void watchdog_clear_reset_reason(void) {
+void wdt_clear_reset_reason(void) {
     wdt_state.last_reset_reason = WATCHDOG_RESET_NONE;
 }
