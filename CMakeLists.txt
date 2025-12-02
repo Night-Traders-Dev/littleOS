@@ -72,6 +72,7 @@ add_library(littleos_core STATIC
     src/system_info.c
     src/config_storage.c
     src/watchdog.c
+    src/multicore.c
 )
 
 target_include_directories(littleos_core PUBLIC
@@ -81,6 +82,7 @@ target_include_directories(littleos_core PUBLIC
 # Link against pico_stdlib so you inherit SDK runtime and headers.
 target_link_libraries(littleos_core PUBLIC 
     pico_stdlib
+    pico_multicore
     hardware_adc
     hardware_flash
     hardware_sync
@@ -97,6 +99,7 @@ if(SAGELANG_AVAILABLE)
         src/sage_time.c
         src/sage_config.c
         src/sage_watchdog.c
+        src/sage_multicore.c
         src/shell/cmd_sage.c
         src/shell/cmd_script.c
     )
@@ -109,7 +112,7 @@ if(SAGELANG_AVAILABLE)
     target_link_libraries(littleos_core PUBLIC sagelang)
     target_compile_definitions(littleos_core PUBLIC SAGE_ENABLED=1)
     
-    message(STATUS "SageLang integration enabled with GPIO, System, Time, Config, and Watchdog support")
+    message(STATUS "SageLang integration enabled with GPIO, System, Time, Config, Watchdog, and Multi-core support")
 else()
     message(STATUS "Building without SageLang support")
 endif()
@@ -133,6 +136,7 @@ target_link_libraries(littleos PRIVATE
     hardware_watchdog
     hardware_flash
     hardware_sync
+    pico_multicore
     pico_bootrom
 )
 
@@ -154,5 +158,6 @@ message(STATUS "=== Build Configuration ===")
 message(STATUS "Board: ${PICO_BOARD}")
 message(STATUS "Platform: ${PICO_PLATFORM}")
 message(STATUS "SageLang: ${SAGELANG_AVAILABLE}")
-message(STATUS "===========================")
+message(STATUS "Multi-core: Enabled")
+message(STATUS "===========================" )
 message(STATUS "")
