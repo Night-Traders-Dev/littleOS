@@ -3,12 +3,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Include SageLang headers
-#include "../third_party/sagelang/include/lexer.h"
-#include "../third_party/sagelang/include/parser.h"
-#include "../third_party/sagelang/include/interpreter.h"
-#include "../third_party/sagelang/include/env.h"
-#include "../third_party/sagelang/include/gc.h"
+// Include SageLang headers (use proper CMake include directories)
+#include "lexer.h"
+#include "parser.h"
+#include "interpreter.h"
+#include "env.h"
+#include "gc.h"
 
 #ifdef PICO_BUILD
 #include "pico/stdlib.h"
