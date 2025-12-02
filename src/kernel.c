@@ -1,5 +1,6 @@
 // kernel.c
 #include <stdio.h>
+#include "pico/stdlib.h"
 #include "sage_embed.h"
 
 // Forward declarations
@@ -12,7 +13,7 @@ sage_context_t* sage_ctx = NULL;
 // Core kernel entry point
 void kernel_main(void) {
     // The Pico SDK's stdio is already initialized in boot.c
-    printf("\r\nRP2040 tiny OS kernel\r\n");
+    printf("\r\nRP2040 littleOS kernel\r\n");
     
     // Initialize SageLang
     sage_ctx = sage_init();
@@ -26,7 +27,18 @@ void kernel_main(void) {
     script_storage_init();
     printf("Script storage initialized\r\n");
     
-    printf("> ");
+    // Display boot log for 3 seconds
+    printf("\r\n");
+    sleep_ms(3000);
+    
+    // Clear screen (ANSI escape code)
+    printf("\033[2J\033[H");
+    
+    // Display welcome message
+    printf("\r\n");
+    printf("Welcome to littleOS Shell!\r\n");
+    printf("Type 'help' for available commands\r\n");
+    printf("\r\n> ");
 
     // Start the command shell
     shell_run();
