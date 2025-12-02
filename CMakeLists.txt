@@ -66,13 +66,14 @@ endif()
 add_library(littleos_core STATIC
     src/kernel.c
     src/shell/shell.c
+    src/shell/cmd_supervisor.c
     src/uart.c
     src/script_storage.c
     src/hal/gpio.c
     src/system_info.c
     src/config_storage.c
     src/watchdog.c
-    src/multicore.c
+    src/supervisor.c
 )
 
 target_include_directories(littleos_core PUBLIC
@@ -99,7 +100,6 @@ if(SAGELANG_AVAILABLE)
         src/sage_time.c
         src/sage_config.c
         src/sage_watchdog.c
-        src/sage_multicore.c
         src/shell/cmd_sage.c
         src/shell/cmd_script.c
     )
@@ -112,7 +112,7 @@ if(SAGELANG_AVAILABLE)
     target_link_libraries(littleos_core PUBLIC sagelang)
     target_compile_definitions(littleos_core PUBLIC SAGE_ENABLED=1)
     
-    message(STATUS "SageLang integration enabled with GPIO, System, Time, Config, Watchdog, and Multi-core support")
+    message(STATUS "SageLang integration enabled with GPIO, System, Time, Config, and Watchdog support")
 else()
     message(STATUS "Building without SageLang support")
 endif()
@@ -158,6 +158,6 @@ message(STATUS "=== Build Configuration ===")
 message(STATUS "Board: ${PICO_BOARD}")
 message(STATUS "Platform: ${PICO_PLATFORM}")
 message(STATUS "SageLang: ${SAGELANG_AVAILABLE}")
-message(STATUS "Multi-core: Enabled")
+message(STATUS "Supervisor: Core 1 health monitoring")
 message(STATUS "===========================" )
 message(STATUS "")
