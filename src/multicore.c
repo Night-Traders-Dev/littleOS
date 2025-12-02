@@ -206,13 +206,6 @@ bool multicore_stop(void) {
 #endif
 }
 
-void multicore_reset_core1(void) {
-#ifdef PICO_BUILD
-    multicore_reset_core1();
-    core1_state = CORE1_STATE_IDLE;
-#endif
-}
-
 core1_state_t multicore_get_state(void) {
     return core1_state;
 }
