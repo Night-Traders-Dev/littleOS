@@ -2,8 +2,9 @@
 #include <string.h>
 #include "pico/stdlib.h"
 
-// Forward declaration for sage command
+// Forward declarations
 extern int cmd_sage(int argc, char* argv[]);
+extern int cmd_script(int argc, char* argv[]);
 
 // Simple argument parsing helper
 static int parse_args(char* buffer, char* argv[], int max_args) {
@@ -19,7 +20,7 @@ static int parse_args(char* buffer, char* argv[], int max_args) {
 }
 
 void shell_run() {
-    char buffer[256];  // Increased buffer size for sage commands
+    char buffer[512];  // Increased buffer for script storage commands
     int idx = 0;
 
     printf("\r\nWelcome to littleOS Shell!\r\n");
@@ -43,8 +44,8 @@ void shell_run() {
             buffer[idx] = '\0';
 
             // Parse command and arguments
-            char* argv[16];
-            int argc = parse_args(buffer, argv, 16);
+            char* argv[32];  // Increased for script commands
+            int argc = parse_args(buffer, argv, 32);
 
             if (argc > 0) {
                 if (strcmp(argv[0], "help") == 0) {
@@ -54,6 +55,7 @@ void shell_run() {
                     printf("  clear    - Clear the screen\r\n");
                     printf("  reboot   - Reboot the system\r\n");
                     printf("  sage     - SageLang interpreter (type 'sage --help')\r\n");
+                    printf("  script   - Script management (type 'script' for help)\r\n");
                 } else if (strcmp(argv[0], "version") == 0) {
                     printf("littleOS v0.2.0 - RP2040\r\n");
                     printf("With SageLang v0.8.0\r\n");
@@ -71,6 +73,9 @@ void shell_run() {
                 } else if (strcmp(argv[0], "sage") == 0) {
                     // Call SageLang command handler
                     cmd_sage(argc, argv);
+                } else if (strcmp(argv[0], "script") == 0) {
+                    // Call script management handler
+                    cmd_script(argc, argv);
                 } else {
                     printf("Unknown command: %s\r\n", argv[0]);
                     printf("Type 'help' for available commands\r\n");
