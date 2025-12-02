@@ -5,7 +5,6 @@
 
 // Include SageLang headers (use proper CMake include directories)
 #include "lexer.h"
-#include "parser.h"
 #include "interpreter.h"
 #include "env.h"
 #include "gc.h"

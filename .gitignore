@@ -57,6 +57,7 @@ dkms.conf
 # Build directories
 build/
 build-*/
+third_party/
 out/
 _build/
 _deps/
