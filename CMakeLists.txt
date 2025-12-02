@@ -67,6 +67,7 @@ add_library(littleos_core STATIC
     src/kernel.c
     src/shell/shell.c
     src/shell/cmd_supervisor.c
+    src/shell/cmd_dmesg.c
     src/uart.c
     src/script_storage.c
     src/hal/gpio.c
@@ -74,6 +75,7 @@ add_library(littleos_core STATIC
     src/config_storage.c
     src/watchdog.c
     src/supervisor.c
+    src/dmesg.c
 )
 
 target_include_directories(littleos_core PUBLIC
@@ -159,5 +161,6 @@ message(STATUS "Board: ${PICO_BOARD}")
 message(STATUS "Platform: ${PICO_PLATFORM}")
 message(STATUS "SageLang: ${SAGELANG_AVAILABLE}")
 message(STATUS "Supervisor: Core 1 health monitoring")
+message(STATUS "Kernel Messages: dmesg ring buffer")
 message(STATUS "===========================" )
 message(STATUS "")
