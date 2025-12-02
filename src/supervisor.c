@@ -157,18 +157,21 @@ static void supervisor_loop(void) {
     
     supervisor_running = true;
     
-    // Initialize metrics
+    // Initialize metrics with current time to avoid false alarms
+    uint32_t now = to_ms_since_boot(get_absolute_time());
     memset((void*)&metrics, 0, sizeof(metrics));
     metrics.core0_responsive = true;
     metrics.health_status = HEALTH_OK;
-    metrics.uptime_ms = 0;
+    metrics.uptime_ms = now;
+    metrics.core0_last_heartbeat = now;  // Initialize to now
+    metrics.last_feed_time_ms = now;     // Initialize to now
     
-    uint32_t last_check_time = to_ms_since_boot(get_absolute_time());
+    uint32_t last_check_time = now;
     
     printf("[Core 1 Supervisor] Monitoring system health...\r\n");
     
     while (supervisor_running) {
-        uint32_t now = to_ms_since_boot(get_absolute_time());
+        now = to_ms_since_boot(get_absolute_time());
         metrics.uptime_ms = now;
         
         // Perform health checks at regular intervals
@@ -195,6 +198,11 @@ void supervisor_init(void) {
         printf("Supervisor already running\r\n");
         return;
     }
+    
+    // Initialize heartbeat timestamp BEFORE launching Core 1
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+    metrics.core0_last_heartbeat = now;
+    metrics.last_feed_time_ms = now;
     
     // Reset Core 1 if it was previously running
     multicore_reset_core1();
