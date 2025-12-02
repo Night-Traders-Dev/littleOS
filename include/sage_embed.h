@@ -96,4 +96,13 @@ void sage_set_memory_limit(sage_context_t* ctx, size_t max_bytes);
  */
 void sage_get_memory_stats(sage_context_t* ctx, size_t* allocated_bytes, size_t* num_objects);
 
+// Forward declaration for Env type from SageLang
+typedef struct Env Env;
+
+/**
+ * @brief Register GPIO native functions with SageLang environment
+ * @param env SageLang environment to register functions into
+ */
+void sage_register_gpio_functions(Env* env);
+
 #endif // SAGE_EMBED_H
