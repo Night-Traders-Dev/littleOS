@@ -2,11 +2,28 @@
 #include <string.h>
 #include "pico/stdlib.h"
 
+// Forward declaration for sage command
+extern int cmd_sage(int argc, char* argv[]);
+
+// Simple argument parsing helper
+static int parse_args(char* buffer, char* argv[], int max_args) {
+    int argc = 0;
+    char* token = strtok(buffer, " ");
+    
+    while (token != NULL && argc < max_args) {
+        argv[argc++] = token;
+        token = strtok(NULL, " ");
+    }
+    
+    return argc;
+}
+
 void shell_run() {
-    char buffer[64];
+    char buffer[256];  // Increased buffer size for sage commands
     int idx = 0;
 
-    printf("\r\nWelcome to littleOS Shell!\r\n> ");
+    printf("\r\nWelcome to littleOS Shell!\r\n");
+    printf("Type 'help' for available commands\r\n> ");
 
     while (1) {
         int c = getchar_timeout_us(0);  // Non-blocking read
@@ -25,15 +42,30 @@ void shell_run() {
             putchar('\n');
             buffer[idx] = '\0';
 
-            if (strcmp(buffer, "help") == 0) {
-                printf("Available commands: help, version, reboot\r\n");
-            } else if (strcmp(buffer, "version") == 0) {
-                printf("littleOS v0.1.0 - RP2040\r\n");
-            } else if (strcmp(buffer, "reboot") == 0) {
-                printf("Rebooting...\r\n");
-                // Trigger watchdog reset or similar (omitted)
-            } else if (idx > 0) {
-                printf("Unknown command.\r\n");
+            // Parse command and arguments
+            char* argv[16];
+            int argc = parse_args(buffer, argv, 16);
+
+            if (argc > 0) {
+                if (strcmp(argv[0], "help") == 0) {
+                    printf("Available commands:\r\n");
+                    printf("  help     - Show this help message\r\n");
+                    printf("  version  - Show OS version\r\n");
+                    printf("  reboot   - Reboot the system\r\n");
+                    printf("  sage     - SageLang interpreter (type 'sage --help')\r\n");
+                } else if (strcmp(argv[0], "version") == 0) {
+                    printf("littleOS v0.1.0 - RP2040\r\n");
+                    printf("With SageLang v0.8.0\r\n");
+                } else if (strcmp(argv[0], "reboot") == 0) {
+                    printf("Rebooting...\r\n");
+                    // Trigger watchdog reset or similar (omitted)
+                } else if (strcmp(argv[0], "sage") == 0) {
+                    // Call SageLang command handler
+                    cmd_sage(argc, argv);
+                } else {
+                    printf("Unknown command: %s\r\n", argv[0]);
+                    printf("Type 'help' for available commands\r\n");
+                }
             }
 
             idx = 0;
@@ -46,7 +78,7 @@ void shell_run() {
                 fflush(stdout);
             }
         } else if (c >= 32 && c < 127) {  // Printable characters only
-            if (idx < 63) {
+            if (idx < sizeof(buffer) - 1) {
                 buffer[idx++] = (char)c;
             }
         }
