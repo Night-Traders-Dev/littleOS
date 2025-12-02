@@ -76,6 +76,9 @@ sage_context_t* sage_init(void) {
     // Register watchdog timer native functions
     sage_register_watchdog_functions(ctx->global_env);
     
+    // Register multi-core native functions
+    sage_register_multicore_functions(ctx->global_env);
+    
     ctx->initialized = true;
     return ctx;
 }
