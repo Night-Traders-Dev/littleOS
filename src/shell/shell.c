@@ -38,8 +38,7 @@ void shell_run() {
             }
 
             idx = 0;
-            uart_puts(">
- ");
+            uart_puts("> ");
         } else if (c == '\b' || c == 0x7F) { // Backspace
             if (idx > 0) idx--;
         } else {
