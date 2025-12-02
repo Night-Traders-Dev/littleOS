@@ -4,6 +4,7 @@
 #include "system_info.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // Include SageLang headers
 #include "value.h"
