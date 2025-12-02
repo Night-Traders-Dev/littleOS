@@ -24,6 +24,7 @@ message(STATUS "Using PICO_SDK_PATH=${PICO_SDK_PATH}")
 add_library(littleos_core STATIC
     src/kernel.c
     src/shell/shell.c
+    src/uart.c
 )
 
 target_include_directories(littleos_core PUBLIC
