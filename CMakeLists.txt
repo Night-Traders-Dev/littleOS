@@ -69,6 +69,7 @@ add_library(littleos_core STATIC
     src/uart.c
     src/script_storage.c
     src/hal/gpio.c
+    src/system_info.c
 )
 
 target_include_directories(littleos_core PUBLIC
@@ -76,13 +77,18 @@ target_include_directories(littleos_core PUBLIC
 )
 
 # Link against pico_stdlib so you inherit SDK runtime and headers.
-target_link_libraries(littleos_core PUBLIC pico_stdlib)
+target_link_libraries(littleos_core PUBLIC 
+    pico_stdlib
+    hardware_adc
+    pico_unique_id
+)
 
 # Add SageLang embedding if available
 if(SAGELANG_AVAILABLE)
     target_sources(littleos_core PRIVATE
         src/sage_embed.c
         src/sage_gpio.c
+        src/sage_system.c
         src/shell/cmd_sage.c
         src/shell/cmd_script.c
     )
@@ -95,7 +101,7 @@ if(SAGELANG_AVAILABLE)
     target_link_libraries(littleos_core PUBLIC sagelang)
     target_compile_definitions(littleos_core PUBLIC SAGE_ENABLED=1)
     
-    message(STATUS "SageLang integration enabled with GPIO support")
+    message(STATUS "SageLang integration enabled with GPIO and System Info support")
 else()
     message(STATUS "Building without SageLang support")
 endif()
@@ -115,6 +121,9 @@ target_link_libraries(littleos PRIVATE
     hardware_uart
     hardware_gpio
     hardware_timer
+    hardware_clocks
+    hardware_watchdog
+    pico_bootrom
 )
 
 # Enable stdio over both UART and USB
