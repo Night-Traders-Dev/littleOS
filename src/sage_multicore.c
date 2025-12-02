@@ -279,20 +279,44 @@ static Value* sage_core_num(int arg_count, Value** args) {
 void sage_register_multicore_functions(Env* env) {
     if (!env) return;
     
+    // Create native function values and register them
+    Value val;
+    val.type = VAL_NATIVE_FUNC;
+    
     // Core 1 control
-    env_define_native_fn(env, "core1_launch_script", sage_core1_launch_script);
-    env_define_native_fn(env, "core1_launch_code", sage_core1_launch_code);
-    env_define_native_fn(env, "core1_stop", sage_core1_stop);
-    env_define_native_fn(env, "core1_is_running", sage_core1_is_running);
-    env_define_native_fn(env, "core1_get_state", sage_core1_get_state);
+    val.as.native_func = sage_core1_launch_script;
+    env_define(env, "core1_launch_script", 21, val);
+    
+    val.as.native_func = sage_core1_launch_code;
+    env_define(env, "core1_launch_code", 18, val);
+    
+    val.as.native_func = sage_core1_stop;
+    env_define(env, "core1_stop", 10, val);
+    
+    val.as.native_func = sage_core1_is_running;
+    env_define(env, "core1_is_running", 16, val);
+    
+    val.as.native_func = sage_core1_get_state;
+    env_define(env, "core1_get_state", 15, val);
     
     // Inter-core communication
-    env_define_native_fn(env, "core_send", sage_core_send);
-    env_define_native_fn(env, "core_send_nb", sage_core_send_nb);
-    env_define_native_fn(env, "core_receive", sage_core_receive);
-    env_define_native_fn(env, "core_receive_nb", sage_core_receive_nb);
-    env_define_native_fn(env, "core_fifo_available", sage_core_fifo_available);
-    env_define_native_fn(env, "core_num", sage_core_num);
+    val.as.native_func = sage_core_send;
+    env_define(env, "core_send", 9, val);
+    
+    val.as.native_func = sage_core_send_nb;
+    env_define(env, "core_send_nb", 12, val);
+    
+    val.as.native_func = sage_core_receive;
+    env_define(env, "core_receive", 12, val);
+    
+    val.as.native_func = sage_core_receive_nb;
+    env_define(env, "core_receive_nb", 15, val);
+    
+    val.as.native_func = sage_core_fifo_available;
+    env_define(env, "core_fifo_available", 19, val);
+    
+    val.as.native_func = sage_core_num;
+    env_define(env, "core_num", 8, val);
 }
 
 #endif // SAGE_ENABLED
