@@ -83,6 +83,11 @@ if(SAGELANG_AVAILABLE)
         src/shell/cmd_sage.c
     )
     
+    # CRITICAL FIX: Add SageLang include directory to littleos_core
+    target_include_directories(littleos_core PRIVATE
+        ${SAGELANG_DIR}/include
+    )
+    
     target_link_libraries(littleos_core PUBLIC sagelang)
     target_compile_definitions(littleos_core PUBLIC SAGE_ENABLED=1)
     
