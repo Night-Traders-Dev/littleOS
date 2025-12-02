@@ -1,5 +1,6 @@
 #include "sage_embed.h"
 #include "watchdog.h"
+#include "supervisor.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -76,8 +77,8 @@ sage_context_t* sage_init(void) {
     // Register watchdog timer native functions
     sage_register_watchdog_functions(ctx->global_env);
     
-    // Register multi-core native functions
-    sage_register_multicore_functions(ctx->global_env);
+    // Note: Multi-core functions removed - Core 1 now dedicated to supervisor
+    // Supervisor runs automatically on Core 1 for system health monitoring
     
     ctx->initialized = true;
     return ctx;
@@ -114,8 +115,8 @@ sage_result_t sage_eval_string(sage_context_t* ctx, const char* source, size_t s
         return SAGE_ERROR_RUNTIME;
     }
     
-    // Feed watchdog before executing user code
-    wdt_feed();
+    // Send heartbeat to supervisor before executing user code
+    supervisor_heartbeat();
     
     // Initialize lexer with source
     init_lexer(source);
@@ -128,8 +129,8 @@ sage_result_t sage_eval_string(sage_context_t* ctx, const char* source, size_t s
             break; // End of input
         }
         
-        // Feed watchdog before interpreting each statement
-        wdt_feed();
+        // Send heartbeat to supervisor before interpreting each statement
+        supervisor_heartbeat();
         
         // Interpret the statement
         // Note: interpret() may not return errors directly
@@ -141,8 +142,8 @@ sage_result_t sage_eval_string(sage_context_t* ctx, const char* source, size_t s
         // which isn't ideal for embedded use
     }
     
-    // Feed watchdog after execution
-    wdt_feed();
+    // Send heartbeat to supervisor after execution
+    supervisor_heartbeat();
     
     return SAGE_OK;
 }
@@ -209,19 +210,19 @@ sage_result_t sage_repl(sage_context_t* ctx) {
     printf("Type 'exit' to quit\n\n");
 #endif
     
-    // Track time for periodic watchdog feeding
-    uint32_t last_wdt_feed = 0;
+    // Track time for periodic heartbeat
+    uint32_t last_heartbeat = 0;
 #ifdef PICO_BUILD
-    last_wdt_feed = to_ms_since_boot(get_absolute_time());
+    last_heartbeat = to_ms_since_boot(get_absolute_time());
 #endif
     
     while (1) {
 #ifdef PICO_BUILD
-        // Feed watchdog every 1 second in REPL loop
+        // Send heartbeat to supervisor every 500ms in REPL loop
         uint32_t now = to_ms_since_boot(get_absolute_time());
-        if (now - last_wdt_feed >= 1000) {
-            wdt_feed();
-            last_wdt_feed = now;
+        if (now - last_heartbeat >= 500) {
+            supervisor_heartbeat();
+            last_heartbeat = now;
         }
 #endif
         
@@ -231,11 +232,11 @@ sage_result_t sage_repl(sage_context_t* ctx) {
         
         int idx = 0;
         while (1) {
-            // Feed watchdog while waiting for input
+            // Send heartbeat while waiting for input
             now = to_ms_since_boot(get_absolute_time());
-            if (now - last_wdt_feed >= 1000) {
-                wdt_feed();
-                last_wdt_feed = now;
+            if (now - last_heartbeat >= 500) {
+                supervisor_heartbeat();
+                last_heartbeat = now;
             }
             
             int c = getchar_timeout_us(0);
@@ -286,8 +287,8 @@ sage_result_t sage_repl(sage_context_t* ctx) {
             continue;
         }
         
-        // Feed watchdog before evaluating
-        wdt_feed();
+        // Send heartbeat to supervisor before evaluating
+        supervisor_heartbeat();
         
         // Evaluate
         sage_result_t result = sage_eval_string(ctx, buffer, strlen(buffer));
@@ -299,8 +300,8 @@ sage_result_t sage_repl(sage_context_t* ctx) {
 #endif
         }
         
-        // Feed watchdog after evaluation
-        wdt_feed();
+        // Send heartbeat to supervisor after evaluation
+        supervisor_heartbeat();
     }
     
     return SAGE_OK;
