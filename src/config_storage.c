@@ -38,6 +38,9 @@ static config_storage_t config_data;
 static bool config_initialized = false;
 static bool config_dirty = false;  // Needs saving
 
+// Buffer for flash writes (must be in RAM, not flash)
+static uint8_t __attribute__((aligned(4))) write_buffer[FLASH_SECTOR_SIZE];
+
 // Calculate simple checksum
 static uint32_t calculate_checksum(const config_storage_t* cfg) {
     uint32_t sum = 0;
@@ -91,6 +94,18 @@ static void init_defaults(void) {
 }
 
 /**
+ * @brief Flash write function that runs from RAM
+ * CRITICAL: This function must NOT be in flash (XIP) because it modifies flash
+ */
+static void __not_in_flash_func(flash_write_config)(uint32_t offset, const uint8_t* data, size_t len) {
+    // Erase flash sector (4KB)
+    flash_range_erase(offset, FLASH_SECTOR_SIZE);
+    
+    // Write data to flash (must be 256-byte aligned)
+    flash_range_program(offset, data, len);
+}
+
+/**
  * @brief Initialize configuration storage
  */
 bool config_init(void) {
@@ -113,8 +128,6 @@ bool config_init(void) {
     config_initialized = true;
     config_dirty = false;  // Don't auto-save on first boot
     
-    // Note: We don't auto-save here to avoid flash wear
-    // Config will be saved when user first modifies it
     printf("Config: Ready (will save on first change)\r\n");
     
     return true;
@@ -152,23 +165,20 @@ bool config_save(void) {
     
     printf("Config: Saving to flash...\r\n");
     
-    // Ensure data is 256-byte aligned for flash write
-    // Flash must be written in 256-byte pages
+    // Prepare write buffer (must be 256-byte aligned)
     size_t write_size = (sizeof(config_storage_t) + 255) & ~255;
     
-    // Create aligned buffer
-    static uint8_t __attribute__((aligned(4))) write_buffer[FLASH_SECTOR_SIZE];
-    memset(write_buffer, 0xFF, FLASH_SECTOR_SIZE);  // Erased flash is 0xFF
+    // Clear buffer with erased flash state (0xFF)
+    memset(write_buffer, 0xFF, FLASH_SECTOR_SIZE);
+    
+    // Copy config data to buffer
     memcpy(write_buffer, &config_data, sizeof(config_storage_t));
     
     // Disable interrupts during flash operation
     uint32_t ints = save_and_disable_interrupts();
     
-    // Erase flash sector (4KB)
-    flash_range_erase(FLASH_TARGET_OFFSET, FLASH_SECTOR_SIZE);
-    
-    // Write configuration to flash (must be 256-byte aligned)
-    flash_range_program(FLASH_TARGET_OFFSET, write_buffer, write_size);
+    // Call RAM-based flash write function
+    flash_write_config(FLASH_TARGET_OFFSET, write_buffer, write_size);
     
     // Re-enable interrupts
     restore_interrupts(ints);
