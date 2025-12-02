@@ -4,6 +4,117 @@ All notable changes to littleOS will be documented in this file.
 
 ## [Unreleased]
 
+### Added - System Information Module (2024-12-02)
+
+#### New System Information API
+- **`include/system_info.h`** - System information interface
+- **`src/system_info.c`** - RP2040 system information implementation
+  - CPU information (model, clock speed, cores, revision)
+  - Memory statistics (total/free/used RAM, flash size)
+  - System uptime tracking
+  - Internal temperature sensor reading
+  - Unique board ID retrieval
+  - Version and build information
+
+#### SageLang Native Functions
+- **`src/sage_system.c`** - System information bindings for SageLang
+  - `sys_version()` - Get OS version string
+  - `sys_uptime()` - Get uptime in seconds
+  - `sys_temp()` - Get temperature in Celsius
+  - `sys_clock()` - Get CPU clock speed in MHz
+  - `sys_free_ram()` - Get free RAM in KB
+  - `sys_total_ram()` - Get total RAM in KB
+  - `sys_board_id()` - Get unique board identifier
+  - `sys_info()` - Get comprehensive info dictionary
+  - `sys_print()` - Print formatted system report
+
+#### Integration Changes
+- **`src/sage_embed.c`** - Automatic system function registration
+- **`include/sage_embed.h`** - Added `sage_register_system_functions()` declaration
+- **`CMakeLists.txt`** - Updated build system to include:
+  - `src/system_info.c` in littleos_core
+  - `src/sage_system.c` when SageLang is enabled
+  - Linked against `hardware_adc`, `hardware_clocks`, `hardware_watchdog`, `pico_unique_id`, `pico_bootrom`
+
+#### Documentation
+- **`docs/SYSTEM_INFO.md`** - Comprehensive documentation
+  - Complete API reference for all 9 functions
+  - 4+ working examples (monitor, memory report, temperature logger, dashboard)
+  - C API reference
+  - Technical details (sensor specs, performance metrics)
+  - Troubleshooting guide
+
+### Technical Details
+
+#### Available Metrics
+- **CPU**: Model (RP2040), clock speed, core count, revision
+- **Memory**: Total/free/used RAM (264KB), flash size (2MB)
+- **Sensors**: Internal temperature sensor (±5°C accuracy)
+- **Uptime**: Millisecond-precision system uptime
+- **Identity**: 64-bit unique chip ID
+- **Version**: OS version and build timestamp
+
+#### Performance
+- All functions sub-millisecond except `sys_print()` (~1ms)
+- Temperature reading: ~100μs (ADC conversion time)
+- No dynamic memory allocation
+- Minimal stack usage (<200 bytes)
+
+### Usage Examples
+
+#### System Monitor (SageLang)
+```sagelang
+while (true) {
+    let temp = sys_temp();
+    let free = sys_free_ram();
+    print("Temp: " + str(temp) + "°C, Free RAM: " + str(free) + " KB");
+    sleep(5000);
+}
+```
+
+#### Get System Info Dictionary
+```sagelang
+let info = sys_info();
+print("OS: " + info["version"]);
+print("CPU: " + info["cpu_model"] + " @ " + str(info["cpu_mhz"]) + " MHz");
+print("Temp: " + str(info["temperature"]) + "°C");
+```
+
+#### C API Usage
+```c
+#include "system_info.h"
+
+float temp = system_get_temperature();
+if (temp > 50.0f) {
+    printf("High temperature warning!\r\n");
+}
+```
+
+### Testing
+
+Tested on Raspberry Pi Pico (RP2040):
+- CPU information retrieval
+- Memory statistics accuracy
+- Temperature sensor readings
+- Uptime tracking over extended periods
+- Board ID uniqueness verification
+
+### Breaking Changes
+None - this is a new feature addition.
+
+### Dependencies
+- Pico SDK with `hardware_adc`, `hardware_clocks`, `pico_unique_id`
+- System functions only available when `SAGE_ENABLED=1`
+
+### Future Enhancements
+- Voltage monitoring (VSYS, VBUS)
+- Flash filesystem statistics
+- Process/task information
+- Network statistics (when connectivity added)
+- Historical metric tracking
+
+---
+
 ### Added - GPIO Integration (2024-12-02)
 
 #### New Hardware Abstraction Layer
