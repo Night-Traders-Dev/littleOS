@@ -11,7 +11,10 @@ project(littleOS C CXX ASM)
 # Let the SDK choose the right boot2 for Pico; no override needed.
 pico_sdk_init()
 
+
 set(CPU_FLAGS "-mcpu=cortex-m0plus -mthumb -ffreestanding -fno-builtin")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-free-nonheap-object")
+
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
