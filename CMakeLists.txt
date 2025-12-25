@@ -160,6 +160,7 @@ if(SAGELANG_AVAILABLE)
         src/sage/sage_time.c
         src/sage/sage_config.c
         src/sage/sage_watchdog.c
+#
         src/shell/cmd_sage.c
         src/shell/cmd_script.c
         src/shell/cmd_tasks.c

@@ -11,6 +11,7 @@
 #include "permissions.h"
 #include "scheduler.h"
 #include "memory.h"
+#include "uart.h"
 
 
 // Forward declarations
@@ -100,6 +101,8 @@ static void print_user_info(void) {
 void kernel_main(void) {
     // Initialize dmesg FIRST - allows all subsequent boot stages to log
     dmesg_init();
+    //uart_init();
+    littleos_uart_init();
     
     // The Pico SDK's stdio is already initialized in boot.c
     printf("\r\n");
