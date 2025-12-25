@@ -100,6 +100,8 @@ uint16_t users_get_count(void);
  * Get user account by index
  */
 const user_account_t *users_get_by_index(uint16_t index);
+const user_account_t *users_get_default_user(void);
+
 
 /**
  * Check if a UID is valid (exists in user database)
@@ -118,5 +120,10 @@ bool users_name_exists(const char *name);
  * @return          Initialized security context
  */
 task_sec_ctx_t users_account_to_context(const user_account_t *account);
+task_sec_ctx_t users_root_context(void);
+
+void users_print_database(void);
+
+
 
 #endif /* LITTLEOS_USERS_CONFIG_H */

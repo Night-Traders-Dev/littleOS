@@ -49,7 +49,9 @@ void kernel_main(void) {
 
 
     // Create root security context
-//    task_sec_ctx_t root_ctx = users_account_to_context();
+    task_sec_ctx_t root_ctx = users_root_context();
+    printf("Created root context\r\n");
+    users_print_database();
 
 
     dmesg_info("Creating UART Device with permissions");
