@@ -21,6 +21,49 @@ set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} ${CPU_FLAGS} -O2 -g")
 message(STATUS "Using PICO_SDK_PATH=${PICO_SDK_PATH}")
 
 # =============================================================================
+# User / Permissions Configuration
+# =============================================================================
+# Build-time configuration for the permissions + user system
+
+# Option: Enable non-root user account
+option(LITTLEOS_ENABLE_USER_ACCOUNT "Enable custom user account" OFF)
+
+# Option: User ID (UID) for custom user
+set(LITTLEOS_USER_UID 1000 CACHE STRING "User ID for custom user")
+
+# Option: Username
+set(LITTLEOS_USER_NAME "user" CACHE STRING "Username for custom user")
+
+# Option: Default umask for user
+set(LITTLEOS_USER_UMASK 0022 CACHE STRING "Default umask for custom user")
+
+# Option: Capabilities for custom user (bitmask)
+set(LITTLEOS_USER_CAPABILITIES 0 CACHE STRING "Capability flags for custom user")
+
+# Option: UID of startup task
+set(LITTLEOS_STARTUP_TASK_UID 0 CACHE STRING "UID to run startup task as (0=root)")
+
+# Option: Enable debug output for user database
+option(LITTLEOS_DEBUG_USERS "Enable user database debug output" OFF)
+
+message(STATUS "")
+message(STATUS "=== littleOS User Configuration ===")
+if(LITTLEOS_ENABLE_USER_ACCOUNT)
+    message(STATUS "  ✓ Custom user account ENABLED")
+    message(STATUS "    - Username: ${LITTLEOS_USER_NAME}")
+    message(STATUS "    - UID: ${LITTLEOS_USER_UID}")
+    message(STATUS "    - Umask: 0${LITTLEOS_USER_UMASK}")
+    message(STATUS "    - Capabilities: ${LITTLEOS_USER_CAPABILITIES}")
+else()
+    message(STATUS "  ✗ Custom user account DISABLED (root only)")
+endif()
+message(STATUS "  - Startup task UID: ${LITTLEOS_STARTUP_TASK_UID}")
+if(LITTLEOS_DEBUG_USERS)
+    message(STATUS "  ✓ User database debug output ENABLED")
+endif()
+message(STATUS "")
+
+# =============================================================================
 # SageLang Integration
 # =============================================================================
 
@@ -76,6 +119,10 @@ add_library(littleos_core STATIC
     src/drivers/watchdog.c
     src/drivers/supervisor.c
     src/kernel/dmesg.c
+
+    # NEW: permissions + user configuration
+    src/sys/permissions.c
+    src/usr/users_config.c
 )
 
 target_include_directories(littleos_core PUBLIC
@@ -117,6 +164,20 @@ if(SAGELANG_AVAILABLE)
     message(STATUS "SageLang integration enabled with GPIO, System, Time, Config, and Watchdog support")
 else()
     message(STATUS "Building without SageLang support")
+endif()
+
+# Propagate user/permissions config to core (so all OS code sees it)
+target_compile_definitions(littleos_core PUBLIC
+    LITTLEOS_ENABLE_USER_ACCOUNT=${LITTLEOS_ENABLE_USER_ACCOUNT}
+    LITTLEOS_USER_UID=${LITTLEOS_USER_UID}
+    LITTLEOS_USER_UMASK=${LITTLEOS_USER_UMASK}
+    LITTLEOS_USER_CAPABILITIES=${LITTLEOS_USER_CAPABILITIES}
+    LITTLEOS_STARTUP_TASK_UID=${LITTLEOS_STARTUP_TASK_UID}
+    LITTLEOS_USER_NAME="${LITTLEOS_USER_NAME}"
+)
+
+if(LITTLEOS_DEBUG_USERS)
+    target_compile_definitions(littleos_core PUBLIC LITTLEOS_DEBUG_USERS=1)
 endif()
 
 # =============================================================================

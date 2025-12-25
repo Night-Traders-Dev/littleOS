@@ -1,4 +1,4 @@
-#include "reg.h"
+#include "regs.h"
 
 void littleos_uart_init() {
     // 1. Deassert reset for UART0 and IO Bank 0

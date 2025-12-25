@@ -4,7 +4,7 @@
 void uart_init();
 void shell_run();
 
-void main() {
+int main() {
     // 1. Hardware Initialization
     uart_init();
 
