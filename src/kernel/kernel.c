@@ -7,6 +7,8 @@
 #include "watchdog.h"
 #include "supervisor.h"
 #include "dmesg.h"
+#include "users_config.h"
+#include "permissions.h"
 
 // Forward declarations
 void shell_run(void);
@@ -40,6 +42,25 @@ void kernel_main(void) {
     // Initialize configuration storage
     config_init();
     dmesg_info("Configuration storage initialized");
+
+        // Initialize user database
+    users_init();
+        dmesg_info("User database initialized");
+
+
+    // Create root security context
+//    task_sec_ctx_t root_ctx = users_account_to_context();
+
+
+    dmesg_info("Creating UART Device with permissions");
+
+    // Create UART device with permissions
+    resource_perm_t uart0_perms = perm_resource_create(
+        UID_ROOT,           // Owner: root
+        GID_DRIVERS,        // Group: drivers
+        PERM_0660,          // rw-rw----
+        RESOURCE_DEVICE
+    );
     
     // Initialize SageLang
     sage_ctx = sage_init();

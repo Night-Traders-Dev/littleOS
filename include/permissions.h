@@ -69,6 +69,7 @@ typedef uint16_t perm_bits_t;
 /* Common permission presets */
 #define PERM_0644  PERM_MAKE(PERM_READ|PERM_WRITE, PERM_READ, PERM_READ)  /* rw-r--r-- */
 #define PERM_0640  PERM_MAKE(PERM_READ|PERM_WRITE, PERM_READ, 0)          /* rw-r----- */
+#define PERM_0660  PERM_MAKE(PERM_READ|PERM_WRITE, PERM_READ|PERM_WRITE, 0)
 #define PERM_0600  PERM_MAKE(PERM_READ|PERM_WRITE, 0, 0)                  /* rw------- */
 #define PERM_0755  PERM_MAKE(7, 5, 5)                                      /* rwxr-xr-x */
 #define PERM_0700  PERM_MAKE(7, 0, 0)                                      /* rwx------ */
