@@ -9,6 +9,8 @@
 #include "dmesg.h"
 #include "users_config.h"
 #include "permissions.h"
+#include "scheduler.h"
+#include "memory.h"
 
 
 // Forward declarations
@@ -121,7 +123,18 @@ void kernel_main(void) {
         dmesg_crit("System recovered from watchdog reset");
         sleep_ms(2000);  // Give user time to see message
     }
-    
+
+    // Initialize task scheduler
+ //   printf("\r\nInitializing task scheduler...\r\n");
+ //   scheduler_init();
+ //   dmesg_info("Task scheduler initialized");
+
+    // Initialize memory management (if not already done)
+    printf("\r\nInitializing memory management...\r\n");
+    memory_init();
+    dmesg_info("Memory management initialized");
+
+
     // Initialize configuration storage
     config_init();
     dmesg_info("Configuration storage initialized");

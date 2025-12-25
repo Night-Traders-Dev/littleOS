@@ -111,22 +111,28 @@ endif()
 
 add_library(littleos_core STATIC
     src/kernel/kernel.c
+    src/kernel/dmesg.c
+#
     src/shell/shell.c
     src/shell/cmd_supervisor.c
     src/shell/cmd_dmesg.c
     src/shell/cmd_perms.c
     src/shell/cmd_users.c
+ 
     src/drivers/uart.c
-    src/storage/script_storage.c
-    src/hal/gpio.c
-    src/sys/system_info.c
-    src/storage/config_storage.c
     src/drivers/watchdog.c
     src/drivers/supervisor.c
-    src/kernel/dmesg.c
-
-    # NEW: permissions + user configuration
+    src/drivers/memory.c
+    src/drivers/scheduler.c
+#
+    src/storage/script_storage.c
+    src/storage/config_storage.c
+#
+    src/hal/gpio.c
+#
+    src/sys/system_info.c
     src/sys/permissions.c
+#
     src/usr/users_config.c
 )
 
@@ -156,6 +162,8 @@ if(SAGELANG_AVAILABLE)
         src/sage/sage_watchdog.c
         src/shell/cmd_sage.c
         src/shell/cmd_script.c
+        src/shell/cmd_tasks.c
+        src/shell/cmd_memory.c
     )
     
     # CRITICAL FIX: Add SageLang include directory to littleos_core
