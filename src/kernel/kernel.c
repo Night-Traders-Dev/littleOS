@@ -125,9 +125,9 @@ void kernel_main(void) {
     }
 
     // Initialize task scheduler
- //   printf("\r\nInitializing task scheduler...\r\n");
- //   scheduler_init();
- //   dmesg_info("Task scheduler initialized");
+    printf("\r\nInitializing task scheduler...\r\n");
+    scheduler_init();
+    dmesg_info("Task scheduler initialized");
 
     // Initialize memory management (if not already done)
     printf("\r\nInitializing memory management...\r\n");

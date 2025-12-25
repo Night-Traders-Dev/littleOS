@@ -168,4 +168,6 @@ bool task_resume(uint16_t task_id);
  */
 int task_get_stats(uint16_t task_id, char *buffer, size_t size);
 
+void scheduler_init(void);
+
 #endif /* LITTLEOS_SCHEDULER_H */
