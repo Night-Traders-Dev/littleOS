@@ -73,6 +73,8 @@ typedef uint16_t perm_bits_t;
 #define PERM_0600  PERM_MAKE(PERM_READ|PERM_WRITE, 0, 0)                  /* rw------- */
 #define PERM_0755  PERM_MAKE(7, 5, 5)                                      /* rwxr-xr-x */
 #define PERM_0700  PERM_MAKE(7, 0, 0)                                      /* rwx------ */
+#define PERM_0770  PERM_MAKE(7, 7, 0)                                      /* rwxrwx--- */
+
 
 /* ============================================================================
  * Task Permissions & Security Context
