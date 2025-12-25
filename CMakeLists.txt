@@ -114,6 +114,8 @@ add_library(littleos_core STATIC
     src/shell/shell.c
     src/shell/cmd_supervisor.c
     src/shell/cmd_dmesg.c
+    src/shell/cmd_perms.c
+    src/shell/cmd_users.c
     src/drivers/uart.c
     src/storage/script_storage.c
     src/hal/gpio.c

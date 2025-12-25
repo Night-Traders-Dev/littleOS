@@ -13,6 +13,9 @@ extern void cmd_health(int argc, char** argv);
 extern void cmd_stats(int argc, char** argv);
 extern void cmd_supervisor(int argc, char** argv);
 extern void cmd_dmesg(int argc, char** argv);
+extern int cmd_users(int argc, char *argv[]);
+extern int cmd_perms(int argc, char *argv[]);
+
 
 // Command history settings
 #define HISTORY_SIZE 20
@@ -219,6 +222,8 @@ void shell_run() {
                     printf("  dmesg      - View kernel message buffer (type 'dmesg --help')\r\n");
                     printf("  sage       - SageLang interpreter (type 'sage --help')\r\n");
                     printf("  script     - Script management (type 'script' for help)\r\n");
+                    printf("  users      - User account management\r\n");
+                    printf("  perms      - Permission and access control\r\n");
                     printf("\r\nUse UP/DOWN arrows to navigate command history\r\n");
                 } else if (strcmp(argv[0], "version") == 0) {
                     printf("littleOS v0.3.0 - RP2040\r\n");
@@ -246,6 +251,10 @@ void shell_run() {
                     cmd_supervisor(argc, argv);
                 } else if (strcmp(argv[0], "dmesg") == 0) {
                     cmd_dmesg(argc, argv);
+                } else if (strcmp(argv[0], "users") == 0) {
+                    cmd_users(argc, argv);
+                } else if (strcmp(argv[0], "perms") == 0) {
+                    cmd_perms(argc, argv);
                 } else if (strcmp(argv[0], "reboot") == 0) {
                     printf("Rebooting system...\r\n");
                     dmesg_info("System reboot requested by user");
