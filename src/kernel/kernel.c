@@ -10,7 +10,7 @@
 #include "users_config.h"
 #include "permissions.h"
 #include "scheduler.h"
-#include "memory.h"
+#include "memory_segmented.h"
 #include "uart.h"
 
 

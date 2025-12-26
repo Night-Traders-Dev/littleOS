@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "permissions.h"
-#include "memory.h"
+#include "memory_segmented.h"
 
 /*
  * littleOS Multi-Core Scheduler

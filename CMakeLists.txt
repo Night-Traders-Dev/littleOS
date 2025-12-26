@@ -112,6 +112,7 @@ endif()
 add_library(littleos_core STATIC
     src/kernel/kernel.c
     src/kernel/dmesg.c
+    src/kernel/memory_segmented.c
 #
     src/shell/shell.c
     src/shell/cmd_supervisor.c
@@ -122,8 +123,8 @@ add_library(littleos_core STATIC
     src/drivers/uart.c
     src/drivers/watchdog.c
     src/drivers/supervisor.c
-    src/drivers/memory.c
     src/drivers/scheduler.c
+    src/drivers/sensor_validation.c
 #
     src/storage/script_storage.c
     src/storage/config_storage.c
