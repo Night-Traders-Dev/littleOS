@@ -5,6 +5,7 @@
 #include "watchdog.h"
 #include "supervisor.h"
 #include "dmesg.h"
+#include "littlefetch.h"
 
 
 // Forward declarations
@@ -263,6 +264,9 @@ void shell_run() {
                     cmd_tasks(argc, argv);
                 } else if (strcmp(argv[0], "memory") == 0) {
                     cmd_memory(argc, argv);
+                } else if (strcmp(argv[0], "fetch") == 0) {
+                    littlefetch();
+                    return;
                 } else if (strcmp(argv[0], "reboot") == 0) {
                     printf("Rebooting system...\r\n");
                     dmesg_info("System reboot requested by user");

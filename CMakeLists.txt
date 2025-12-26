@@ -132,6 +132,7 @@ add_library(littleos_core STATIC
 #
     src/sys/system_info.c
     src/sys/permissions.c
+    src/sys/littlefetch.c
 #
     src/usr/users_config.c
 )
