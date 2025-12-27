@@ -51,7 +51,7 @@ void dmesg_log(uint8_t level, const char *fmt, ...) {
     dmesg_write_index = (dmesg_write_index + 1) % DMESG_BUFFER_SIZE;
     dmesg_total_messages++;
     
-    printf("[%5lums] <%s> %s\n", entry->timestamp_ms, level_names[level], entry->message);
+//    printf("[%5lums] <%s> %s\n", entry->timestamp_ms, level_names[level], entry->message);
 }
 
 /* Get number of messages in buffer */

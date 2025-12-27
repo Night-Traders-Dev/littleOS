@@ -1,5 +1,5 @@
 /**
- * littleOS Segmented Memory Manager - Production Version
+ * littleOS Segmented Memory Manager - Production Version (FIXED)
  * 
  * Separates kernel and interpreter heap spaces to prevent allocation conflicts
  * RP2040: 256 KB SRAM divided into:
@@ -8,6 +8,7 @@
  *   - Stack: 128 KB (0x20020000-0x2003FFFF, grows down)
  * 
  * No external linker symbols required - uses hardcoded RP2040 addresses
+ * Fixed: Changed %zu to %u for ARM compatibility
  */
 
 #include <stdint.h>
@@ -29,7 +30,7 @@
 #define INTERPRETER_HEAP_END    (INTERPRETER_HEAP_BASE + INTERPRETER_HEAP_SIZE)
 
 #define STACK_BASE              (INTERPRETER_HEAP_END)
-#define STACK_SIZE              (128 * 1024)   /* 128 KB */
+#define STACK_SIZE              (192 * 1024)   /* 192 KB */
 #define STACK_TOP               (STACK_BASE + STACK_SIZE)
 
 /* ============================================================================
@@ -325,6 +326,7 @@ MemoryStats memory_get_stats(void)
 /**
  * Print formatted memory statistics to UART
  * Requires printf() to be defined
+ * FIXED: Changed %zu to %u for ARM Cortex-M0+ compatibility
  */
 void memory_print_stats(void)
 {
@@ -335,24 +337,24 @@ void memory_print_stats(void)
     printf("╠════════════════════════════════════════════════════╣\n");
     
     printf("║ KERNEL HEAP:                                       ║\n");
-    printf("║   Used: %6zu bytes (%5.1f%%)                    ║\n", 
-                stats.kernel_used, stats.kernel_usage_pct);
-    printf("║   Free: %6zu bytes                              ║\n", 
-                stats.kernel_free);
-    printf("║   Peak: %6zu bytes                              ║\n", 
-                stats.kernel_peak);
+    printf("║   Used: %6u bytes (%5.1f%%)                    ║\n", 
+                (unsigned int)stats.kernel_used, stats.kernel_usage_pct);
+    printf("║   Free: %6u bytes                              ║\n", 
+                (unsigned int)stats.kernel_free);
+    printf("║   Peak: %6u bytes                              ║\n", 
+                (unsigned int)stats.kernel_peak);
     printf("║   Allocations: %u                                ║\n", 
                 stats.kernel_alloc_count);
     
     printf("╟────────────────────────────────────────────────────╢\n");
     
     printf("║ INTERPRETER HEAP:                                  ║\n");
-    printf("║   Used: %6zu bytes (%5.1f%%)                    ║\n", 
-                stats.interpreter_used, stats.interpreter_usage_pct);
-    printf("║   Free: %6zu bytes                              ║\n", 
-                stats.interpreter_free);
-    printf("║   Peak: %6zu bytes                              ║\n", 
-                stats.interpreter_peak);
+    printf("║   Used: %6u bytes (%5.1f%%)                    ║\n", 
+                (unsigned int)stats.interpreter_used, stats.interpreter_usage_pct);
+    printf("║   Free: %6u bytes                              ║\n", 
+                (unsigned int)stats.interpreter_free);
+    printf("║   Peak: %6u bytes                              ║\n", 
+                (unsigned int)stats.interpreter_peak);
     printf("║   Allocations: %u                                ║\n", 
                 stats.interpreter_alloc_count);
     

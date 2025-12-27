@@ -216,7 +216,7 @@ void kernel_main(void) {
     // Initialize watchdog timer (8 second timeout)
     // Don't enable yet - wait until after boot completes
     wdt_init(8000);
-    dmesg_info("Watchdog timer initialized (8s timeout)");
+    dmesg_info("Watchdog timer initialized (16s timeout)");
 
     // Check if we recovered from a watchdog reset
     if (wdt_get_reset_reason() == WATCHDOG_RESET_TIMEOUT) {

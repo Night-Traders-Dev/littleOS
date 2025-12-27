@@ -1,5 +1,6 @@
 #include "supervisor.h"
 #include "watchdog.h"
+#include "dmesg.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -262,12 +263,23 @@ system_health_t supervisor_get_health(void) {
 
 void supervisor_heartbeat(void) {
 #ifdef PICO_BUILD
+    static uint32_t last_feed_ms = 0;
     uint32_t now = to_ms_since_boot(get_absolute_time());
-    metrics.core0_last_heartbeat = now;
-    metrics.last_feed_time_ms = now;  // Also update watchdog feed time
-    metrics.watchdog_feeds++;
+    
+    /* Feed watchdog every 2000ms (2 seconds) - well under 8s timeout */
+    if (now - last_feed_ms >= 2000) {
+        last_feed_ms = now;
+        
+        metrics.core0_last_heartbeat = now;
+        metrics.last_feed_time_ms = now;
+        metrics.watchdog_feeds++;
+        dmesg_info("supervisor heartbeat");
+        
+        wdt_feed();  // ← Changed from watchdog_update()
+    }
 #endif
 }
+
 
 void supervisor_report_memory(int allocated) {
     if (allocated > 0) {
