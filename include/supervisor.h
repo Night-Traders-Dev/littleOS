@@ -1,14 +1,14 @@
 #ifndef SUPERVISOR_H
 #define SUPERVISOR_H
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stddef.h>
 
 /**
  * @file supervisor.h
  * @brief Core 1 Supervisor - OS Health Monitoring & Security
- * 
+ *
  * The supervisor runs on Core 1 and monitors:
  * - Watchdog feeding (ensures Core 0 doesn't hang)
  * - Memory usage and leaks
@@ -27,10 +27,10 @@
 
 // System health status
 typedef enum {
-    HEALTH_OK = 0,           // All systems nominal
-    HEALTH_WARNING = 1,      // Warning conditions detected
-    HEALTH_CRITICAL = 2,     // Critical conditions detected
-    HEALTH_EMERGENCY = 3     // Emergency - system may crash
+    HEALTH_OK        = 0,  // All systems nominal
+    HEALTH_WARNING   = 1,  // Warning conditions detected
+    HEALTH_CRITICAL  = 2,  // Critical conditions detected
+    HEALTH_EMERGENCY = 3   // Emergency - system may crash
 } system_health_t;
 
 // Health check flags (bitfield)
@@ -51,40 +51,40 @@ typedef struct {
     // Watchdog
     uint32_t watchdog_feeds;        // Total watchdog feeds
     uint32_t last_feed_time_ms;     // Last time watchdog was fed
-    bool watchdog_healthy;          // Is watchdog being fed regularly?
-    
+    bool     watchdog_healthy;      // Is watchdog being fed regularly?
+
     // Memory
     uint32_t heap_used_bytes;       // Current heap usage
     uint32_t heap_free_bytes;       // Free heap
     uint32_t heap_peak_bytes;       // Peak heap usage
     uint32_t heap_allocations;      // Total allocations
     uint32_t heap_frees;            // Total frees
-    float memory_usage_percent;     // Memory usage percentage
-    
+    float    memory_usage_percent;  // Memory usage percentage
+
     // Temperature
-    float temp_celsius;             // Current die temperature
-    float temp_peak_celsius;        // Peak temperature
-    
+    float    temp_celsius;          // Current die temperature
+    float    temp_peak_celsius;     // Peak temperature
+
     // Performance
     uint32_t core0_cycles;          // Core 0 CPU cycles
     uint32_t core1_cycles;          // Core 1 CPU cycles
     uint32_t uptime_ms;             // System uptime
-    
+
     // Health
     system_health_t health_status;  // Overall health status
     uint32_t health_flags;          // Active health flags
     uint32_t warning_count;         // Total warnings issued
     uint32_t critical_count;        // Total critical events
     uint32_t recovery_count;        // Times system recovered from hang
-    
+
     // Core 0 monitoring
     uint32_t core0_last_heartbeat;  // Last heartbeat from Core 0
-    bool core0_responsive;          // Is Core 0 responding?
+    bool     core0_responsive;      // Is Core 0 responding?
 } system_metrics_t;
 
 /**
  * @brief Initialize supervisor system on Core 1
- * 
+ *
  * This launches Core 1 with the supervisor loop.
  * The supervisor will continuously monitor system health.
  */
@@ -116,7 +116,7 @@ system_health_t supervisor_get_health(void);
 
 /**
  * @brief Send heartbeat from Core 0 (call periodically from main loop)
- * 
+ *
  * Core 0 should call this regularly to indicate it's still responsive.
  * If heartbeats stop, supervisor may trigger recovery actions.
  */
@@ -136,15 +136,15 @@ void supervisor_report_memory(int allocated);
 const char* supervisor_health_string(system_health_t status);
 
 /**
- * @brief Enable/disable supervisor alerts
- * @param enable true to enable console alerts, false to disable
+ * @brief Enable/disable supervisor console alerts
+ * @param enable true to enable alerts, false to disable
  */
 void supervisor_set_alerts(bool enable);
 
 /**
  * @brief Get supervisor statistics as formatted string
  * @param buffer Buffer to write to
- * @param size Buffer size
+ * @param size   Buffer size
  * @return Number of bytes written
  */
 int supervisor_get_stats_string(char* buffer, size_t size);

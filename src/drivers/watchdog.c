@@ -1,7 +1,9 @@
 // src/watchdog.c
 // Watchdog Timer Implementation
+
 #include "watchdog.h"
 #include <stdio.h>
+#include <stdbool.h>
 #include "pico/stdlib.h"
 #include "hardware/watchdog.h"
 #include "hardware/structs/watchdog.h"
@@ -25,13 +27,13 @@ static struct {
  * @brief Initialize watchdog timer
  */
 bool wdt_init(uint32_t timeout_ms) {
-    if (timeout_ms < WATCHDOG_TIMEOUT_MIN_MS || 
+    if (timeout_ms < WATCHDOG_TIMEOUT_MIN_MS ||
         timeout_ms > WATCHDOG_TIMEOUT_MAX_MS) {
         printf("Watchdog: Invalid timeout %u ms (range: %u-%u)\r\n",
-               timeout_ms, WATCHDOG_TIMEOUT_MIN_MS, WATCHDOG_TIMEOUT_MAX_MS);
+            timeout_ms, WATCHDOG_TIMEOUT_MIN_MS, WATCHDOG_TIMEOUT_MAX_MS);
         return false;
     }
-    
+
     // Check if we were reset by watchdog
     if (watchdog_caused_reboot()) {
         wdt_state.last_reset_reason = WATCHDOG_RESET_TIMEOUT;
@@ -39,14 +41,12 @@ bool wdt_init(uint32_t timeout_ms) {
     } else {
         wdt_state.last_reset_reason = WATCHDOG_RESET_NONE;
     }
-    
+
     wdt_state.timeout_ms = timeout_ms;
     wdt_state.enabled = false;
     wdt_state.feed_count = 0;
     wdt_state.last_feed_time_ms = to_ms_since_boot(get_absolute_time());
-    
     printf("Watchdog: Initialized (timeout: %u ms)\r\n", timeout_ms);
-    
     return true;
 }
 
@@ -54,23 +54,17 @@ bool wdt_init(uint32_t timeout_ms) {
  * @brief Enable watchdog timer
  */
 bool wdt_enable(uint32_t timeout_ms) {
-    if (timeout_ms < WATCHDOG_TIMEOUT_MIN_MS || 
+    if (timeout_ms < WATCHDOG_TIMEOUT_MIN_MS ||
         timeout_ms > WATCHDOG_TIMEOUT_MAX_MS) {
         return false;
     }
-    
+
     wdt_state.timeout_ms = timeout_ms;
-    
-    // Enable watchdog with specified timeout using Pico SDK function
-    // Note: Pico SDK watchdog_enable takes (delay_ms, pause_on_debug)
-    watchdog_enable(timeout_ms, 1);  // Pause on debug
-    
+    watchdog_enable(timeout_ms, 1); // Pause on debug
     wdt_state.enabled = true;
     wdt_state.feed_count = 0;
     wdt_state.last_feed_time_ms = to_ms_since_boot(get_absolute_time());
-    
     printf("Watchdog: Enabled (timeout: %u ms)\r\n", timeout_ms);
-    
     return true;
 }
 
@@ -81,31 +75,24 @@ void wdt_feed(void) {
     if (!wdt_state.enabled) {
         return;
     }
-    
-    // Update the watchdog timer using Pico SDK function
+
     watchdog_update();
-    
     wdt_state.feed_count++;
     wdt_state.last_feed_time_ms = to_ms_since_boot(get_absolute_time());
 }
 
 /**
  * @brief Disable watchdog timer
- * Note: RP2040 watchdog cannot be truly disabled once enabled,
- * but we can set a very long timeout
+ * Note: RP2040 watchdog cannot be truly disabled once enabled
  */
 void wdt_disable(void) {
     if (!wdt_state.enabled) {
         return;
     }
-    
-    // Set maximum timeout (essentially disabled)
-    // Note: SDK's watchdog_enable takes (delay_ms, pause_on_debug)
-    watchdog_enable(WATCHDOG_TIMEOUT_MAX_MS, 1);
-    
+
+    // Cannot truly disable RP2040 watchdog once enabled
     wdt_state.enabled = false;
-    
-    printf("Watchdog: Disabled (set to max timeout)\r\n");
+    printf("Watchdog: Marked disabled (hardware cannot be disabled once enabled)\r\n");
 }
 
 /**
@@ -122,14 +109,13 @@ uint32_t wdt_get_time_remaining_ms(void) {
     if (!wdt_state.enabled) {
         return 0;
     }
-    
+
     uint32_t current_time = to_ms_since_boot(get_absolute_time());
     uint32_t elapsed = current_time - wdt_state.last_feed_time_ms;
-    
     if (elapsed >= wdt_state.timeout_ms) {
         return 0;
     }
-    
+
     return wdt_state.timeout_ms - elapsed;
 }
 
@@ -138,18 +124,12 @@ uint32_t wdt_get_time_remaining_ms(void) {
  */
 void wdt_reboot(uint32_t delay_ms) {
     printf("Watchdog: Forcing reboot in %u ms...\r\n", delay_ms);
-    
     if (delay_ms == 0) {
-        delay_ms = 1;  // Minimum 1ms
+        delay_ms = 1;
     }
-    
+
     wdt_state.last_reset_reason = WATCHDOG_RESET_FORCED;
-    
-    // Enable watchdog with short timeout to force reboot
-    // SDK's watchdog_enable takes (delay_ms, pause_on_debug)
-    watchdog_enable(delay_ms, 0);  // Don't pause on debug for reboot
-    
-    // Don't feed it - let it timeout and reboot
+    watchdog_enable(delay_ms, 0);
     while (1) {
         tight_loop_contents();
     }
@@ -170,11 +150,11 @@ void wdt_get_stats(uint32_t* total_feeds, uint32_t* last_feed_time_ms,
     if (total_feeds) {
         *total_feeds = wdt_state.feed_count;
     }
-    
+
     if (last_feed_time_ms) {
         *last_feed_time_ms = wdt_state.last_feed_time_ms;
     }
-    
+
     if (timeout_ms) {
         *timeout_ms = wdt_state.timeout_ms;
     }
