@@ -6,6 +6,7 @@ MEMORY
     BOOT2 (rx)  : ORIGIN = 0x10000000, LENGTH = 0x100     /* 256 B second-stage */
     FLASH (rx)  : ORIGIN = 0x10000100, LENGTH = 2048K-0x100
     RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 256K
+    NOINIT (rwx) : ORIGIN = 0x2003F000, LENGTH = 4k 
 }
 
 SECTIONS
@@ -47,6 +48,10 @@ SECTIONS
         *(COMMON)
         _ebss = .;
     } > RAM
+
+    .noinit (NOLOAD) : {
+        KEEP(*(.noinit))
+    } > NOINIT    
 
     _sidata = LOADADDR(.data);
     _estack = ORIGIN(RAM) + LENGTH(RAM);
