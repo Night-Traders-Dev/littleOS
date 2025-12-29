@@ -130,7 +130,11 @@ add_library(littleos_core STATIC
     src/drivers/supervisor.c
     src/drivers/scheduler.c
     src/drivers/sensor_validation.c
-    src/drivers/fs.c
+    src/drivers/fs/fs_core.c
+    src/drivers/fs/fs_dir.c
+    src/drivers/fs/fs_file.c
+    src/drivers/fs/fs_inode.c
+
 #
     src/storage/script_storage.c
     src/storage/config_storage.c

@@ -1,4 +1,4 @@
-/* fs.c - littleOS F2FS-inspired filesystem (Phase 1 foundation) */
+/* fs_core.c - core metadata, allocator, lifecycle */
 #include "fs.h"
 
 #include <string.h>
@@ -21,7 +21,6 @@ static uint32_t fs_crc32(const uint8_t *data, size_t len) {
 }
 
 static uint32_t fs_time_now_seconds(void) {
-    /* On embedded targets, replace with your RTC/timebase. */
     return (uint32_t)time(NULL);
 }
 
@@ -55,10 +54,10 @@ static int fs_write_block_i(struct fs *fs, uint32_t block, const uint8_t *buf) {
  * ========================= */
 static int fs_write_nat(struct fs *fs) {
     if (!fs || !fs->nat) return FS_ERR_INVALID_ARG;
-    if (!fs->write_block) return FS_OK; /* allow RAM-only use */
+    if (!fs->write_block) return FS_OK;
 
     const uint32_t entries_per_block =
-        FS_BLOCK_SIZE / (uint32_t)sizeof(struct fs_nat_entry); /* 64 */
+        FS_BLOCK_SIZE / (uint32_t)sizeof(struct fs_nat_entry);
     uint8_t blk[FS_BLOCK_SIZE];
 
     uint32_t idx = 0;
@@ -91,7 +90,7 @@ static int fs_read_nat(struct fs *fs) {
     if (!fs->read_block) return FS_OK;
 
     const uint32_t entries_per_block =
-        FS_BLOCK_SIZE / (uint32_t)sizeof(struct fs_nat_entry); /* 64 */
+        FS_BLOCK_SIZE / (uint32_t)sizeof(struct fs_nat_entry);
     uint8_t blk[FS_BLOCK_SIZE];
 
     uint32_t idx = 0;
@@ -114,7 +113,7 @@ static int fs_write_sit(struct fs *fs) {
     if (!fs->write_block) return FS_OK;
 
     const uint32_t entries_per_block =
-        FS_BLOCK_SIZE / (uint32_t)sizeof(struct fs_sit_entry); /* 128 */
+        FS_BLOCK_SIZE / (uint32_t)sizeof(struct fs_sit_entry);
     uint8_t blk[FS_BLOCK_SIZE];
 
     uint32_t idx = 0;
@@ -146,7 +145,7 @@ static int fs_read_sit(struct fs *fs) {
     if (!fs->read_block) return FS_OK;
 
     const uint32_t entries_per_block =
-        FS_BLOCK_SIZE / (uint32_t)sizeof(struct fs_sit_entry); /* 128 */
+        FS_BLOCK_SIZE / (uint32_t)sizeof(struct fs_sit_entry);
     uint8_t blk[FS_BLOCK_SIZE];
 
     uint32_t idx = 0;
@@ -165,7 +164,7 @@ static int fs_read_sit(struct fs *fs) {
 }
 
 /* =========================
- * Simple allocator helpers (Phase 1)
+ * Simple allocator helpers
  * ========================= */
 static int fs_mark_block_valid(struct fs *fs, uint32_t block_addr) {
     if (!fs) return FS_ERR_INVALID_ARG;
@@ -197,6 +196,7 @@ static uint32_t fs_find_first_free_data_block(struct fs *fs) {
             }
         }
     }
+
     return FS_INVALID_BLOCK;
 }
 
@@ -220,6 +220,7 @@ static int fs_write_superblock(struct fs *fs) {
     uint8_t blk[FS_BLOCK_SIZE];
     fs_finalize_superblock_crc(&fs->sb);
     memcpy(blk, &fs->sb, sizeof(fs->sb));
+
     int r = fs_write_block_i(fs, FS_SB_BLOCK, blk);
     if (r == FS_OK) fs->sb_dirty = false;
     return r;
@@ -234,7 +235,6 @@ static int fs_read_superblock(struct fs *fs) {
     if (r != FS_OK) return r;
 
     memcpy(&fs->sb, blk, sizeof(fs->sb));
-
     if (fs->sb.magic != FS_MAGIC) return FS_ERR_CORRUPTED;
     if (fs->sb.version != FS_VERSION) return FS_ERR_CORRUPTED;
     if (fs->sb.block_size != FS_BLOCK_SIZE) return FS_ERR_CORRUPTED;
@@ -249,7 +249,7 @@ static int fs_read_superblock(struct fs *fs) {
     return FS_OK;
 }
 
-static int fs_write_checkpoint_block(struct fs *fs, uint32_t which /*0 or 1*/) {
+static int fs_write_checkpoint_block(struct fs *fs, uint32_t which) {
     if (!fs) return FS_ERR_INVALID_ARG;
     if (!fs->write_block) return FS_OK;
 
@@ -272,11 +272,11 @@ static int fs_read_checkpoint_block(struct fs *fs, uint32_t which, struct fs_che
 
     uint8_t blk[FS_BLOCK_SIZE];
     uint32_t addr = (which == 0) ? FS_CP0_BLOCK : FS_CP1_BLOCK;
+
     int r = fs_read_block_i(fs, addr, blk);
     if (r != FS_OK) return r;
 
     memcpy(out, blk, sizeof(*out));
-
     uint32_t crc = out->cp_crc32;
     struct fs_checkpoint tmp = *out;
     tmp.cp_crc32 = 0;
@@ -287,7 +287,7 @@ static int fs_read_checkpoint_block(struct fs *fs, uint32_t which, struct fs_che
 }
 
 /* =========================
- * Public API - Phase 1
+ * Public API - lifecycle
  * ========================= */
 int fs_format(struct fs *fs, uint32_t total_blocks) {
     if (!fs) return FS_ERR_INVALID_ARG;
@@ -295,49 +295,45 @@ int fs_format(struct fs *fs, uint32_t total_blocks) {
 
     /* preserve backend */
     void *ctx = fs->storage_ctx;
-    fs_read_block_fn rfn = fs->read_block;
+    fs_read_block_fn  rfn = fs->read_block;
     fs_write_block_fn wfn = fs->write_block;
     fs_erase_sector_fn efn = fs->erase_sector;
 
     memset(fs, 0, sizeof(*fs));
-
     fs->storage_ctx = ctx;
-    fs->read_block = rfn;
+    fs->read_block  = rfn;
     fs->write_block = wfn;
     fs->erase_sector = efn;
 
     /* build SB */
-    fs->sb.magic = FS_MAGIC;
-    fs->sb.version = FS_VERSION;
-    fs->sb.block_size = FS_BLOCK_SIZE;
-    fs->sb.segment_size = (uint16_t)FS_SEGMENT_SIZE;
-
-    fs->sb.total_blocks = total_blocks;
+    fs->sb.magic         = FS_MAGIC;
+    fs->sb.version       = FS_VERSION;
+    fs->sb.block_size    = FS_BLOCK_SIZE;
+    fs->sb.segment_size  = (uint16_t)FS_SEGMENT_SIZE;
+    fs->sb.total_blocks  = total_blocks;
     fs->sb.total_segments = fs_div_ceil_u32(total_blocks, FS_BLOCKS_PER_SEGMENT);
-
-    fs->sb.total_inodes = FS_DEFAULT_MAX_INODES;
-    fs->sb.root_inode = FS_ROOT_INODE;
+    fs->sb.total_inodes  = FS_DEFAULT_MAX_INODES;
+    fs->sb.root_inode    = FS_ROOT_INODE;
 
     fs->sb.nat_start_block = FS_FIXED_METADATA_BLOCKS;
-    fs->sb.nat_blocks = fs_nat_blocks_for_inodes(fs->sb.total_inodes);
-
+    fs->sb.nat_blocks      = fs_nat_blocks_for_inodes(fs->sb.total_inodes);
     fs->sb.sit_start_block = fs->sb.nat_start_block + fs->sb.nat_blocks;
-    fs->sb.sit_blocks = fs_sit_blocks_for_segments(fs->sb.total_segments);
-
+    fs->sb.sit_blocks      = fs_sit_blocks_for_segments(fs->sb.total_segments);
     fs->sb.main_start_block = fs->sb.sit_start_block + fs->sb.sit_blocks;
-
     if (fs->sb.main_start_block >= fs->sb.total_blocks) {
         return FS_ERR_NO_SPACE;
     }
 
-    fs->sb.creation_time = fs_time_now_seconds();
+    fs->sb.creation_time  = fs_time_now_seconds();
     fs->sb.last_sync_time = fs->sb.creation_time;
-    fs->sb.mount_count = 0;
-    fs->sb.flags = 0;
+    fs->sb.mount_count    = 0;
+    fs->sb.flags          = 0;
 
     /* allocate NAT/SIT in RAM */
-    fs->nat = (struct fs_nat_entry *)calloc(fs->sb.total_inodes, sizeof(struct fs_nat_entry));
-    fs->sit = (struct fs_sit_entry *)calloc(fs->sb.total_segments, sizeof(struct fs_sit_entry));
+    fs->nat = (struct fs_nat_entry *)
+        calloc(fs->sb.total_inodes, sizeof(struct fs_nat_entry));
+    fs->sit = (struct fs_sit_entry *)
+        calloc(fs->sb.total_segments, sizeof(struct fs_sit_entry));
     if (!fs->nat || !fs->sit) {
         free(fs->nat); fs->nat = NULL;
         free(fs->sit); fs->sit = NULL;
@@ -351,7 +347,6 @@ int fs_format(struct fs *fs, uint32_t total_blocks) {
         fs->nat[i]._pad = 0;
     }
 
-    /* initial checkpoints */
     memset(&fs->cp0, 0, sizeof(fs->cp0));
     memset(&fs->cp1, 0, sizeof(fs->cp1));
     fs->cp0.checkpoint_num = 1;
@@ -365,33 +360,33 @@ int fs_format(struct fs *fs, uint32_t total_blocks) {
     }
 
     fs->free_blocks_count = fs->sb.total_blocks - fs->sb.main_start_block;
-    fs->cp0.free_blocks = fs->free_blocks_count;
-    fs->cp0.next_node_id = FS_ROOT_INODE + 1u;
+    fs->cp0.free_blocks   = fs->free_blocks_count;
+    fs->cp0.next_node_id  = FS_ROOT_INODE + 1u;
 
-    /* Create root inode */
+    /* Create root inode (empty dir for now) */
     uint32_t root_blk = fs_find_first_free_data_block(fs);
     if (root_blk == FS_INVALID_BLOCK) return FS_ERR_NO_SPACE;
 
     struct fs_inode root;
     memset(&root, 0, sizeof(root));
-    root.magic = 0xFA;
+    root.magic         = 0xFA;
     root.inode_version = 1;
-    root.mode = FS_MODE_DIR;
-    root.size = 0;
-    root.atime = fs->sb.creation_time;
-    root.mtime = fs->sb.creation_time;
-    root.ctime = fs->sb.creation_time;
-    root.link_count = 2;
-    root.inode_num = FS_ROOT_INODE;
-    root.parent_inode = FS_ROOT_INODE;
-    root.generation = 1;
-    root.inode_crc32 = 0;
-    root.inode_crc32 = fs_crc32((const uint8_t *)&root, sizeof(root));
+    root.mode          = FS_MODE_DIR;
+    root.size          = 0;
+    root.atime         = fs->sb.creation_time;
+    root.mtime         = fs->sb.creation_time;
+    root.ctime         = fs->sb.creation_time;
+    root.link_count    = 2; /* '.' and '..' */
+    root.inode_num     = FS_ROOT_INODE;
+    root.parent_inode  = FS_ROOT_INODE;
+    root.generation    = 1;
+    root.inode_crc32   = 0;
+    root.inode_crc32   = fs_crc32((const uint8_t *)&root, sizeof(root));
 
     fs_mark_block_valid(fs, root_blk);
     fs->nat[FS_ROOT_INODE].block_addr = root_blk;
-    fs->nat[FS_ROOT_INODE].version = 1;
-    fs->nat[FS_ROOT_INODE].type = 1; /* inode */
+    fs->nat[FS_ROOT_INODE].version    = 1;
+    fs->nat[FS_ROOT_INODE].type       = 1; /* inode */
     fs->nat_dirty = true;
 
     if (fs->write_block) {
@@ -399,13 +394,11 @@ int fs_format(struct fs *fs, uint32_t total_blocks) {
         if (r != FS_OK) return r;
     }
 
-    /* consume one block for root inode */
     fs->free_blocks_count--;
     fs->cp0.free_blocks = fs->free_blocks_count;
 
-    /* Persist metadata */
-    fs->sb_dirty = true;
-    fs->cp_dirty = true;
+    fs->sb_dirty  = true;
+    fs->cp_dirty  = true;
     fs->sit_dirty = true;
 
     int r;
@@ -415,7 +408,6 @@ int fs_format(struct fs *fs, uint32_t total_blocks) {
 
     fs_finalize_checkpoint_crc(&fs->cp0);
     r = fs_write_checkpoint_block(fs, 0); if (r != FS_OK) return r;
-
     fs_finalize_checkpoint_crc(&fs->cp1);
     r = fs_write_checkpoint_block(fs, 1); if (r != FS_OK) return r;
 
@@ -434,8 +426,10 @@ int fs_mount(struct fs *fs) {
     free(fs->nat); fs->nat = NULL;
     free(fs->sit); fs->sit = NULL;
 
-    fs->nat = (struct fs_nat_entry *)calloc(fs->sb.total_inodes, sizeof(struct fs_nat_entry));
-    fs->sit = (struct fs_sit_entry *)calloc(fs->sb.total_segments, sizeof(struct fs_sit_entry));
+    fs->nat = (struct fs_nat_entry *)
+        calloc(fs->sb.total_inodes, sizeof(struct fs_nat_entry));
+    fs->sit = (struct fs_sit_entry *)
+        calloc(fs->sb.total_segments, sizeof(struct fs_sit_entry));
     if (!fs->nat || !fs->sit) {
         free(fs->nat); fs->nat = NULL;
         free(fs->sit); fs->sit = NULL;
@@ -445,7 +439,6 @@ int fs_mount(struct fs *fs) {
     struct fs_checkpoint a, b;
     int ra = fs_read_checkpoint_block(fs, 0, &a);
     int rb = fs_read_checkpoint_block(fs, 1, &b);
-
     if (ra != FS_OK && rb != FS_OK) return FS_ERR_CORRUPTED;
 
     if (ra == FS_OK && rb == FS_OK) {
@@ -468,13 +461,11 @@ int fs_mount(struct fs *fs) {
 
     fs->free_blocks_count =
         (fs->active_cp == 0 ? fs->cp0.free_blocks : fs->cp1.free_blocks);
-
     return FS_OK;
 }
 
 int fs_sync(struct fs *fs) {
     if (!fs) return FS_ERR_INVALID_ARG;
-
     int r;
 
     if (fs->nat_dirty) { r = fs_write_nat(fs); if (r != FS_OK) return r; }
@@ -485,8 +476,8 @@ int fs_sync(struct fs *fs) {
     if (fs->active_cp == 0) {
         fs->cp1 = fs->cp0;
         fs->cp1.checkpoint_num = fs->cp0.checkpoint_num + 1u;
-        fs->cp1.timestamp = now;
-        fs->cp1.free_blocks = fs->free_blocks_count;
+        fs->cp1.timestamp      = now;
+        fs->cp1.free_blocks    = fs->free_blocks_count;
         fs_finalize_checkpoint_crc(&fs->cp1);
         r = fs_write_checkpoint_block(fs, 1);
         if (r != FS_OK) return r;
@@ -494,8 +485,8 @@ int fs_sync(struct fs *fs) {
     } else {
         fs->cp0 = fs->cp1;
         fs->cp0.checkpoint_num = fs->cp1.checkpoint_num + 1u;
-        fs->cp0.timestamp = now;
-        fs->cp0.free_blocks = fs->free_blocks_count;
+        fs->cp0.timestamp      = now;
+        fs->cp0.free_blocks    = fs->free_blocks_count;
         fs_finalize_checkpoint_crc(&fs->cp0);
         r = fs_write_checkpoint_block(fs, 0);
         if (r != FS_OK) return r;
@@ -504,8 +495,10 @@ int fs_sync(struct fs *fs) {
 
     fs->sb.last_sync_time = now;
     fs->sb_dirty = true;
-
-    if (fs->sb_dirty) { r = fs_write_superblock(fs); if (r != FS_OK) return r; }
+    if (fs->sb_dirty) {
+        r = fs_write_superblock(fs);
+        if (r != FS_OK) return r;
+    }
 
     fs->cp_dirty = fs->sb_dirty = false;
     return FS_OK;
@@ -513,13 +506,11 @@ int fs_sync(struct fs *fs) {
 
 int fs_unmount(struct fs *fs) {
     if (!fs) return FS_ERR_INVALID_ARG;
-
     int r = fs_sync(fs);
     if (r != FS_OK) return r;
 
     free(fs->nat); fs->nat = NULL;
     free(fs->sit); fs->sit = NULL;
-
     return FS_OK;
 }
 
@@ -530,7 +521,6 @@ int fs_fsck(struct fs *fs) {
     if (fs->sb.version != FS_VERSION) return FS_ERR_CORRUPTED;
     if (fs->sb.block_size != FS_BLOCK_SIZE) return FS_ERR_CORRUPTED;
     if (fs->sb.segment_size != FS_SEGMENT_SIZE) return FS_ERR_CORRUPTED;
-
     if (fs->sb.nat_start_block != FS_FIXED_METADATA_BLOCKS) return FS_ERR_CORRUPTED;
     if (fs->sb.main_start_block >= fs->sb.total_blocks) return FS_ERR_CORRUPTED;
 
@@ -538,61 +528,14 @@ int fs_fsck(struct fs *fs) {
     uint32_t sit_end = fs->sb.sit_start_block + fs->sb.sit_blocks;
     if (nat_end != fs->sb.sit_start_block) return FS_ERR_CORRUPTED;
     if (sit_end != fs->sb.main_start_block) return FS_ERR_CORRUPTED;
-    if (sit_end > fs->sb.total_blocks) return FS_ERR_CORRUPTED;
+    if (sit_end > fs->sb.total_blocks)      return FS_ERR_CORRUPTED;
 
     if (fs->nat) {
         if (FS_ROOT_INODE >= fs->sb.total_inodes) return FS_ERR_CORRUPTED;
         if (fs->nat[FS_ROOT_INODE].block_addr == FS_INVALID_BLOCK) return FS_ERR_CORRUPTED;
-        if (fs->nat[FS_ROOT_INODE].block_addr < fs->sb.main_start_block) return FS_ERR_CORRUPTED;
+        if (fs->nat[FS_ROOT_INODE].block_addr < fs->sb.main_start_block)
+            return FS_ERR_CORRUPTED;
     }
 
     return FS_OK;
-}
-
-/* =========================
- * Phase 2+ stubs
- * ========================= */
-int fs_open(struct fs *fs, const char *path, uint16_t flags, struct fs_file *fd) {
-    (void)fs; (void)path; (void)flags; (void)fd;
-    return FS_ERR_UNSUPPORTED;
-}
-
-int fs_close(struct fs *fs, struct fs_file *fd) {
-    (void)fs; (void)fd;
-    return FS_ERR_UNSUPPORTED;
-}
-
-int fs_read(struct fs *fs, struct fs_file *fd, uint8_t *buf, uint32_t count) {
-    (void)fs; (void)fd; (void)buf; (void)count;
-    return FS_ERR_UNSUPPORTED;
-}
-
-int fs_write(struct fs *fs, struct fs_file *fd, const uint8_t *buf, uint32_t count) {
-    (void)fs; (void)fd; (void)buf; (void)count;
-    return FS_ERR_UNSUPPORTED;
-}
-
-int fs_seek(struct fs *fs, struct fs_file *fd, int32_t offset, int whence) {
-    (void)fs; (void)fd; (void)offset; (void)whence;
-    return FS_ERR_UNSUPPORTED;
-}
-
-int fs_mkdir(struct fs *fs, const char *path) {
-    (void)fs; (void)path;
-    return FS_ERR_UNSUPPORTED;
-}
-
-int fs_opendir(struct fs *fs, const char *path, struct fs_file *fd) {
-    (void)fs; (void)path; (void)fd;
-    return FS_ERR_UNSUPPORTED;
-}
-
-int fs_readdir(struct fs *fs, struct fs_file *fd, struct fs_dirent *entry) {
-    (void)fs; (void)fd; (void)entry;
-    return FS_ERR_UNSUPPORTED;
-}
-
-int fs_unlink(struct fs *fs, const char *path) {
-    (void)fs; (void)path;
-    return FS_ERR_UNSUPPORTED;
 }
