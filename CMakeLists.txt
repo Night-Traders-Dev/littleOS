@@ -119,6 +119,11 @@ add_library(littleos_core STATIC
     src/shell/cmd_dmesg.c
     src/shell/cmd_perms.c
     src/shell/cmd_users.c
+    src/shell/cmd_fs.c
+    src/shell/cmd_memory.c
+    src/shell/cmd_sage.c
+    src/shell/cmd_script.c
+    src/shell/cmd_tasks.c
  
     src/drivers/uart.c
     src/drivers/watchdog.c
