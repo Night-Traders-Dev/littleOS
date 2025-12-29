@@ -262,9 +262,6 @@ void kernel_main(void) {
     dmesg_info("Root security context created");
 
 
-    // Initialize all device and subsystem permissions
-    init_device_permissions();
-
 
     // Initialize SageLang
     printf("\r\nInitializing SageLang interpreter...\r\n");
@@ -299,6 +296,11 @@ void kernel_main(void) {
             }
         }
     }
+
+
+    // Initialize all device and subsystem permissions
+    init_device_permissions();
+
 
     // Display boot log for 2 seconds
     printf("\r\n");
