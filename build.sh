@@ -13,6 +13,11 @@ DEFAULT_USERNAME="littleOS"
 DEFAULT_UID="1000"
 DEFAULT_CAPS="0"
 
+make clean
+git pull origin main
+git submodule update --init --recursive --remote
+
+
 read -rp "Enable non-root user account? [Y/n] " enable_user
 enable_user=${enable_user:-$DEFAULT_ENABLE_USER}
 
