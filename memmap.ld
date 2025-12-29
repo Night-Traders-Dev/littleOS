@@ -30,5 +30,11 @@ SECTIONS
         __bss_end__ = .;
     } > RAM
 
+    .noinit (NOLOAD) : {
+        *(*.noinit)
+        PROVIDE (_noinit_start = .);
+        PROVIDE (_noinit_end = .);
+    } > RAM
+
     __stack_top = ORIGIN(RAM) + LENGTH(RAM);
 }

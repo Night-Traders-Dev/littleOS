@@ -236,6 +236,7 @@ pico_enable_stdio_usb(littleos 1)
 target_link_options(littleos PRIVATE
     -Wl,--gc-sections
     -Wl,-Map=${CMAKE_BINARY_DIR}/littleos.map
+    SHELL:-Wl,--section-start=.noinit=0x20010000
 )
 
 # Generate .elf, .bin, .uf2, etc.

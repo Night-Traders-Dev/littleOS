@@ -6,13 +6,23 @@
 #include <stdbool.h>
 
 #include "fs.h"
+#include "dmesg.h"
 
-/* Simple RAM "block device" backend */
+#define NOINIT __attribute__((section(".noinit")))
+
+#define FS_BACKEND_SIZE (128 * 512)  // 65KB
+
+// Place in .noinit section - survives reboot!
+NOINIT static uint8_t fs_backend_noinit[FS_BACKEND_SIZE];
+NOINIT static uint32_t fs_backend_size_noinit;
+
 struct ram_backend {
     uint8_t *data;
-    uint32_t blocks; /* number of 512-byte blocks */
-    uint32_t last_known_blocks; /* persist size across reboots */
+    uint32_t blocks;
+    uint32_t last_known_blocks;
 };
+
+
 
 static struct ram_backend g_rb = {0};
 static struct fs          g_fs = {0};
@@ -86,28 +96,30 @@ static void cmd_fs_usage(void)
     printf("  fs ls <path>         - list directory (default /)\n");
 }
 
-/* Initialize RAM backend + format filesystem */
 static int cmd_fs_init(uint32_t blocks)
 {
-    if (g_rb.data) {
-        free(g_rb.data);
-        g_rb.data = NULL;
-        g_rb.blocks = 0;
-        g_rb.last_known_blocks = 0;
+    // Sanity checks
+    if (blocks == 0 || blocks > 256) {
+        printf("fs: invalid block count (max 256)\n");
+        return FS_ERR_INVALID_ARG;
     }
 
-    g_rb.blocks = blocks;
-    g_rb.last_known_blocks = blocks;
-    g_rb.data = (uint8_t *)malloc((size_t)blocks * FS_BLOCK_SIZE);
-    if (!g_rb.data) {
-        printf("fs: RAM backend allocation failed\n");
-        g_rb.blocks = 0;
+    // Use persistent .noinit section
+    if (blocks * 512 > FS_BACKEND_SIZE) {
+        printf("fs: too large for .noinit (%u blocks needed, %u available)\n",
+               blocks, FS_BACKEND_SIZE / 512);
         return FS_ERR_NO_SPACE;
     }
 
-    memset(g_rb.data, 0, (size_t)blocks * FS_BLOCK_SIZE);
-    memset(&g_fs, 0, sizeof(g_fs));
+    g_rb.data = fs_backend_noinit;
+    g_rb.blocks = blocks;
+    g_rb.last_known_blocks = blocks;
+    fs_backend_size_noinit = blocks;  // Mark as initialized
 
+    // Zero only used portion
+    memset(g_rb.data, 0, (size_t)blocks * FS_BLOCK_SIZE);
+
+    memset(&g_fs, 0, sizeof(g_fs));
     fs_set_storage_backend(&g_fs, &g_rb,
                            ram_read_block,
                            ram_write_block,
@@ -116,42 +128,43 @@ static int cmd_fs_init(uint32_t blocks)
     int r = fs_format(&g_fs, blocks);
     if (r != FS_OK) {
         printf("fs: fs_format failed: %d\n", r);
-        free(g_rb.data);
-        g_rb.data = NULL;
-        g_rb.blocks = 0;
         return r;
     }
 
     r = fs_sync(&g_fs);
     if (r != FS_OK) {
         printf("fs: fs_sync after format failed: %d\n", r);
-        free(g_rb.data);
-        g_rb.data = NULL;
-        g_rb.blocks = 0;
         return r;
     }
 
     g_fs_initialized = true;
     g_fs_mounted = false;
-    printf("fs: formatted RAM FS (%u blocks, %u bytes)\n",
+    printf("fs: formatted RAM FS (%u blocks, %u bytes, .noinit persistent)\n",
            blocks, blocks * FS_BLOCK_SIZE);
     return FS_OK;
 }
 
-/* Mount using a fresh fs struct (with auto-recovery!) */
+
 static int cmd_fs_mount(void)
 {
-    /* SIMPLIFIED: Use last_known_blocks or default to 128 */
-    if (!g_rb.data || g_rb.blocks == 0) {
-        uint32_t blocks = (g_rb.last_known_blocks > 0) ? g_rb.last_known_blocks : 128;
-        printf("fs: auto-init RAM backend (%u blocks)...\n", blocks);
+    // Check if FS data persists in .noinit section
+    if (fs_backend_size_noinit > 0 && 
+        fs_backend_size_noinit <= 256) {  // Sanity check
         
-        int r = cmd_fs_init(blocks);
-        if (r != FS_OK) {
-            printf("fs: auto-init failed: %d\n", r);
-            return r;
-        }
-        g_fs_mounted = false;  // Freshly formatted, needs mount
+        // Use persistent .noinit data
+        g_rb.data = fs_backend_noinit;
+        g_rb.blocks = fs_backend_size_noinit;
+        g_rb.last_known_blocks = fs_backend_size_noinit;
+        
+        printf("fs: recovered %u blocks from .noinit\n", g_rb.blocks);
+        
+    } else if (g_rb.data && g_rb.blocks > 0) {
+        // Fallback: use in-memory backend if already allocated
+        printf("fs: using in-memory backend (%u blocks)\n", g_rb.blocks);
+        
+    } else {
+        printf("fs: no persistent FS found, run 'fs init <blocks>' first\n");
+        return FS_ERR_INVALID_ARG;
     }
 
     memset(&g_fs, 0, sizeof(g_fs));
@@ -168,10 +181,11 @@ static int cmd_fs_mount(void)
     }
 
     g_fs_initialized = true;
-    g_fs_mounted     = true;
+    g_fs_mounted = true;
     printf("fs: mounted (mount_count=%u)\n", g_fs.sb.mount_count);
     return FS_OK;
 }
+
 
 static int cmd_fs_fsck(void)
 {
@@ -187,6 +201,7 @@ static int cmd_fs_fsck(void)
     }
 
     printf("fs: fsck OK\n");
+    dmesg_info("fsck: status = ok");
     return FS_OK;
 }
 
@@ -204,6 +219,7 @@ static int cmd_fs_sync(void)
     }
 
     printf("fs: sync OK (checkpoints written)\n");
+    dmesg_info("FS sync complete");
     return FS_OK;
 }
 
@@ -239,6 +255,7 @@ static int cmd_fs_touch(const char *path)
     }
     fs_close(&g_fs, &fd);
     printf("fs: created '%s'\n", path);
+    dmesg_info("FS touch success");
     return FS_OK;
 }
 
@@ -269,6 +286,7 @@ static int cmd_fs_cat(const char *path)
     }
     printf("\n");
     fs_close(&g_fs, &fd);
+    dmesg_info("FS cat complete");
     return FS_OK;
 }
 
@@ -297,6 +315,7 @@ static int cmd_fs_write_str(const char *path, const char *str)
     }
     fs_close(&g_fs, &fd);
     printf("fs: wrote %u bytes to '%s'\n", len, path);
+    dmesg_info("FS write complete");
     return FS_OK;
 }
 
@@ -313,6 +332,7 @@ static int cmd_fs_mkdir_cmd(const char *path)
         return r;
     }
     printf("fs: created directory '%s'\n", path);
+    dmesg_info("FS mkdir complete");
     return FS_OK;
 }
 
