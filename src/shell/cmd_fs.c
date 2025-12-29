@@ -7,11 +7,11 @@
 
 #include "fs.h"
 
-/* Simple RAM “block device” backend */
-
+/* Simple RAM "block device" backend */
 struct ram_backend {
     uint8_t *data;
     uint32_t blocks; /* number of 512-byte blocks */
+    uint32_t last_known_blocks; /* persist size across reboots */
 };
 
 static struct ram_backend g_rb = {0};
@@ -20,7 +20,6 @@ static bool               g_fs_initialized = false;
 static bool               g_fs_mounted     = false;
 
 /* Backend functions */
-
 static int ram_read_block(void *ctx, uint32_t block_addr, uint8_t *buf)
 {
     struct ram_backend *rb = (struct ram_backend *)ctx;
@@ -72,12 +71,11 @@ static void dump_superblock(const struct fs_superblock *sb)
 }
 
 /* Helpers */
-
 static void cmd_fs_usage(void)
 {
     printf("Usage:\n");
     printf("  fs init <blocks>     - allocate RAM and format filesystem\n");
-    printf("  fs mount             - mount from RAM backend\n");
+    printf("  fs mount             - mount from RAM backend (auto-recovery)\n");
     printf("  fs fsck              - run fs_fsck()\n");
     printf("  fs sync              - fs_sync()\n");
     printf("  fs info              - print superblock info\n");
@@ -95,9 +93,11 @@ static int cmd_fs_init(uint32_t blocks)
         free(g_rb.data);
         g_rb.data = NULL;
         g_rb.blocks = 0;
+        g_rb.last_known_blocks = 0;
     }
 
     g_rb.blocks = blocks;
+    g_rb.last_known_blocks = blocks;
     g_rb.data = (uint8_t *)malloc((size_t)blocks * FS_BLOCK_SIZE);
     if (!g_rb.data) {
         printf("fs: RAM backend allocation failed\n");
@@ -138,12 +138,20 @@ static int cmd_fs_init(uint32_t blocks)
     return FS_OK;
 }
 
-/* Mount using a fresh fs struct (simulating reboot) */
+/* Mount using a fresh fs struct (with auto-recovery!) */
 static int cmd_fs_mount(void)
 {
+    /* SIMPLIFIED: Use last_known_blocks or default to 128 */
     if (!g_rb.data || g_rb.blocks == 0) {
-        printf("fs: backend not initialized, run 'fs init <blocks>' first\n");
-        return FS_ERR_INVALID_ARG;
+        uint32_t blocks = (g_rb.last_known_blocks > 0) ? g_rb.last_known_blocks : 128;
+        printf("fs: auto-init RAM backend (%u blocks)...\n", blocks);
+        
+        int r = cmd_fs_init(blocks);
+        if (r != FS_OK) {
+            printf("fs: auto-init failed: %d\n", r);
+            return r;
+        }
+        g_fs_mounted = false;  // Freshly formatted, needs mount
     }
 
     memset(&g_fs, 0, sizeof(g_fs));
@@ -161,7 +169,7 @@ static int cmd_fs_mount(void)
 
     g_fs_initialized = true;
     g_fs_mounted     = true;
-    printf("fs: mounted\n");
+    printf("fs: mounted (mount_count=%u)\n", g_fs.sb.mount_count);
     return FS_OK;
 }
 
@@ -184,8 +192,8 @@ static int cmd_fs_fsck(void)
 
 static int cmd_fs_sync(void)
 {
-    if (!g_fs_initialized) {
-        printf("fs: not initialized/mounted\n");
+    if (!g_fs_initialized || !g_fs_mounted) {
+        printf("fs: not mounted\n");
         return FS_ERR_INVALID_ARG;
     }
 
@@ -195,7 +203,7 @@ static int cmd_fs_sync(void)
         return r;
     }
 
-    printf("fs: sync OK\n");
+    printf("fs: sync OK (checkpoints written)\n");
     return FS_OK;
 }
 
@@ -211,15 +219,15 @@ static int cmd_fs_info(void)
     printf("  free_blocks = %u\n", g_fs.free_blocks_count);
     printf("  active_cp   = %u\n", (unsigned)g_fs.active_cp);
     printf("  mounted     = %s\n", g_fs_mounted ? "yes" : "no");
+    printf("  backend     = %u blocks\n", g_rb.blocks);
     return FS_OK;
 }
 
-/* ===== High-level tests on top of new FS API ===== */
-
+/* ===== High-level tests ===== */
 static int cmd_fs_touch(const char *path)
 {
-    if (!g_fs_initialized) {
-        printf("fs: filesystem not initialized/mounted\n");
+    if (!g_fs_initialized || !g_fs_mounted) {
+        printf("fs: filesystem not mounted\n");
         return FS_ERR_INVALID_ARG;
     }
 
@@ -236,8 +244,8 @@ static int cmd_fs_touch(const char *path)
 
 static int cmd_fs_cat(const char *path)
 {
-    if (!g_fs_initialized) {
-        printf("fs: filesystem not initialized/mounted\n");
+    if (!g_fs_initialized || !g_fs_mounted) {
+        printf("fs: filesystem not mounted\n");
         return FS_ERR_INVALID_ARG;
     }
 
@@ -266,8 +274,8 @@ static int cmd_fs_cat(const char *path)
 
 static int cmd_fs_write_str(const char *path, const char *str)
 {
-    if (!g_fs_initialized) {
-        printf("fs: filesystem not initialized/mounted\n");
+    if (!g_fs_initialized || !g_fs_mounted) {
+        printf("fs: filesystem not mounted\n");
         return FS_ERR_INVALID_ARG;
     }
 
@@ -294,8 +302,8 @@ static int cmd_fs_write_str(const char *path, const char *str)
 
 static int cmd_fs_mkdir_cmd(const char *path)
 {
-    if (!g_fs_initialized) {
-        printf("fs: filesystem not initialized/mounted\n");
+    if (!g_fs_initialized || !g_fs_mounted) {
+        printf("fs: filesystem not mounted\n");
         return FS_ERR_INVALID_ARG;
     }
 
@@ -310,8 +318,8 @@ static int cmd_fs_mkdir_cmd(const char *path)
 
 static int cmd_fs_ls(const char *path)
 {
-    if (!g_fs_initialized) {
-        printf("fs: filesystem not initialized/mounted\n");
+    if (!g_fs_initialized || !g_fs_mounted) {
+        printf("fs: filesystem not mounted\n");
         return FS_ERR_INVALID_ARG;
     }
 
@@ -339,10 +347,7 @@ static int cmd_fs_ls(const char *path)
     return FS_OK;
 }
 
-/* Shell entry point:
- *   argv[0] = "fs"
- *   argv[1] = subcommand
- */
+/* Shell entry point */
 int cmd_fs(int argc, char **argv)
 {
     if (argc < 2) {
