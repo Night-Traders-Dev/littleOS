@@ -48,7 +48,7 @@ static const char *logo[] = {
     " | | | | | |         ",
     " |_|_|_|_|_|         ",
     "                     ",
-    " littleOS v0.3       "
+    " littleOS v0.4.0       "
 };
 
 #define LOGO_LINES (sizeof(logo) / sizeof(logo[0]))
@@ -130,7 +130,7 @@ void littlefetch(void) {
     print_info(line++, "Host", buf, COLOR_CYAN);
 
     // Kernel version
-    snprintf(buf, sizeof(buf), "littleOS v0.3 (%s)", __DATE__);
+    snprintf(buf, sizeof(buf), "littleOS v0.4.0 (%s)", __DATE__);
     print_info(line++, "Kernel", buf, COLOR_CYAN);
 
     // Uptime

@@ -11,7 +11,7 @@
 #include <string.h>
 
 // Version information
-#define LITTLEOS_VERSION "0.2.0"
+#define LITTLEOS_VERSION "0.4.0"
 #define LITTLEOS_BUILD_DATE __DATE__ " " __TIME__
 
 // RP2040 specifications
