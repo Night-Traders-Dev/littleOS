@@ -66,6 +66,38 @@ if(LITTLEOS_DEBUG_USERS)
 endif()
 message(STATUS "")
 
+# ============================================================================
+# CRITICAL: Pass user/permissions configuration to C compiler via -D flags
+# ============================================================================
+# IMPORTANT: Convert CMake ON/OFF to C 1/0 for preprocessor
+# CMake passes -DLITTLEOS_ENABLE_USER_ACCOUNT=ON as a string literal "ON"
+# We need to convert it to the integer 1 for the C preprocessor
+
+if(LITTLEOS_ENABLE_USER_ACCOUNT)
+    # Enable custom user account - pass ALL config values to compiler
+    # Convert ON to 1 explicitly for C preprocessor
+    add_compile_definitions(
+        LITTLEOS_ENABLE_USER_ACCOUNT=1
+        LITTLEOS_USER_UID=${LITTLEOS_USER_UID}
+        LITTLEOS_USER_NAME="${LITTLEOS_USER_NAME}"
+        LITTLEOS_USER_UMASK=${LITTLEOS_USER_UMASK}
+        LITTLEOS_USER_CAPABILITIES=${LITTLEOS_USER_CAPABILITIES}
+    )
+else()
+    # Root-only configuration - explicitly set to 0
+    add_compile_definitions(LITTLEOS_ENABLE_USER_ACCOUNT=0)
+endif()
+
+# Always define startup task UID
+add_compile_definitions(LITTLEOS_STARTUP_TASK_UID=${LITTLEOS_STARTUP_TASK_UID})
+
+# Define debug flag if enabled
+if(LITTLEOS_DEBUG_USERS)
+    add_compile_definitions(LITTLEOS_DEBUG_USERS=1)
+else()
+    add_compile_definitions(LITTLEOS_DEBUG_USERS=0)
+endif()
+
 # =============================================================================
 # SageLang Integration
 # =============================================================================
@@ -192,20 +224,6 @@ else()
     message(STATUS "Building without SageLang support")
 endif()
 
-# Propagate user/permissions config to core (so all OS code sees it)
-target_compile_definitions(littleos_core PUBLIC
-    LITTLEOS_ENABLE_USER_ACCOUNT=${LITTLEOS_ENABLE_USER_ACCOUNT}
-    LITTLEOS_USER_UID=${LITTLEOS_USER_UID}
-    LITTLEOS_USER_UMASK=${LITTLEOS_USER_UMASK}
-    LITTLEOS_USER_CAPABILITIES=${LITTLEOS_USER_CAPABILITIES}
-    LITTLEOS_STARTUP_TASK_UID=${LITTLEOS_STARTUP_TASK_UID}
-    LITTLEOS_USER_NAME="${LITTLEOS_USER_NAME}"
-)
-
-if(LITTLEOS_DEBUG_USERS)
-    target_compile_definitions(littleos_core PUBLIC LITTLEOS_DEBUG_USERS=1)
-endif()
-
 # =============================================================================
 # littleOS Executable
 # =============================================================================
@@ -250,5 +268,5 @@ message(STATUS "Platform: ${PICO_PLATFORM}")
 message(STATUS "SageLang: ${SAGELANG_AVAILABLE}")
 message(STATUS "Supervisor: Core 1 health monitoring")
 message(STATUS "Kernel Messages: dmesg ring buffer")
-message(STATUS "===========================" )
+message(STATUS "===========================")
 message(STATUS "")

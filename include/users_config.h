@@ -3,58 +3,74 @@
 
 /*
  * littleOS User Configuration System
- * 
+ *
  * Compile-time configuration for user accounts and privilege levels.
  * Configure users at build time via CMake or preprocessor defines.
- * 
+ *
  * Default: Root only (UID 0)
  * With config: Root + custom user account (UID 1000+)
+ *
+ * ==== CRITICAL: CMake-generated configuration ====
+ * These MUST be defined by CMakeLists.txt via add_compile_definitions()
+ * OR passed via -D flags to ensure they propagate to all compilation units.
+ *
+ * ==== INCLUDE ORDER (IMPORTANT!) ====
+ * permissions.h MUST be included FIRST to define our types.
+ * Then we include standard headers.
+ * Do NOT include <sys/types.h> directly - permissions.h does that with proper guards.
  */
 
-#include <stdint.h>
 #include "permissions.h"
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
 
 /* ============================================================================
- * Build-Time Configuration
+ * Build-Time Configuration (CMake-provided)
  * ============================================================================
- * 
- * Define these before including this header, or set via CMake:
- * 
- * LITTLEOS_ENABLE_USER_ACCOUNT    - Enable non-root user account (default: 0)
- * LITTLEOS_USER_UID               - UID of custom user (default: 1000)
- * LITTLEOS_USER_NAME              - Username string (default: "user")
- * LITTLEOS_USER_UMASK             - Default umask for user (default: 0022)
- * LITTLEOS_USER_CAPABILITIES      - Capability flags (default: 0)
- * LITTLEOS_STARTUP_TASK_UID       - UID to run startup app as (default: 0)
+ *
+ * CMakeLists.txt MUST set these via add_compile_definitions():
+ *
+ * if(LITTLEOS_ENABLE_USER_ACCOUNT)
+ *   add_compile_definitions(
+ *     LITTLEOS_ENABLE_USER_ACCOUNT=1
+ *     LITTLEOS_USER_UID=${LITTLEOS_USER_UID}
+ *     LITTLEOS_USER_NAME="${LITTLEOS_USER_NAME}"
+ *     LITTLEOS_USER_UMASK=${LITTLEOS_USER_UMASK}
+ *     LITTLEOS_USER_CAPABILITIES=${LITTLEOS_USER_CAPABILITIES}
+ *   )
+ * else()
+ *   add_compile_definitions(LITTLEOS_ENABLE_USER_ACCOUNT=0)
+ * endif()
  */
 
 /* ============================================================================
- * Default Configuration Values
+ * Fallback Defaults (only if NOT set by CMake)
  * ============================================================================
  */
 
 #ifndef LITTLEOS_ENABLE_USER_ACCOUNT
-#define LITTLEOS_ENABLE_USER_ACCOUNT  0
+#define LITTLEOS_ENABLE_USER_ACCOUNT 0
 #endif
 
 #ifndef LITTLEOS_USER_UID
-#define LITTLEOS_USER_UID             1000
+#define LITTLEOS_USER_UID 1000
 #endif
 
 #ifndef LITTLEOS_USER_NAME
-#define LITTLEOS_USER_NAME            "user"
+#define LITTLEOS_USER_NAME "user"
 #endif
 
 #ifndef LITTLEOS_USER_UMASK
-#define LITTLEOS_USER_UMASK           0022
+#define LITTLEOS_USER_UMASK 0022
 #endif
 
 #ifndef LITTLEOS_USER_CAPABILITIES
-#define LITTLEOS_USER_CAPABILITIES    0
+#define LITTLEOS_USER_CAPABILITIES 0
 #endif
 
 #ifndef LITTLEOS_STARTUP_TASK_UID
-#define LITTLEOS_STARTUP_TASK_UID     0  /* Root */
+#define LITTLEOS_STARTUP_TASK_UID 0 /* Root */
 #endif
 
 /* ============================================================================
@@ -72,17 +88,17 @@ typedef struct {
 
 /**
  * Get user account by UID
- * 
- * @param uid   User ID to look up
- * @return      Pointer to user account, or NULL if not found
+ *
+ * @param uid User ID to look up
+ * @return Pointer to user account, or NULL if not found
  */
 const user_account_t *users_get_by_uid(uid_t uid);
 
 /**
  * Get user account by username
- * 
- * @param name  Username to look up
- * @return      Pointer to user account, or NULL if not found
+ *
+ * @param name Username to look up
+ * @return Pointer to user account, or NULL if not found
  */
 const user_account_t *users_get_by_name(const char *name);
 
@@ -100,8 +116,12 @@ uint16_t users_get_count(void);
  * Get user account by index
  */
 const user_account_t *users_get_by_index(uint16_t index);
-const user_account_t *users_get_default_user(void);
 
+/**
+ * Get default non-root user account (if configured)
+ * Returns NULL if only root is configured
+ */
+const user_account_t *users_get_default_user(void);
 
 /**
  * Check if a UID is valid (exists in user database)
@@ -115,15 +135,31 @@ bool users_name_exists(const char *name);
 
 /**
  * Create a security context from a user account
- * 
- * @param account   User account
- * @return          Initialized security context
+ *
+ * @param account User account
+ * @return Initialized security context
  */
 task_sec_ctx_t users_account_to_context(const user_account_t *account);
+
+/**
+ * Create root security context
+ */
 task_sec_ctx_t users_root_context(void);
 
+/**
+ * Get root user account
+ */
+const user_account_t *users_get_root(void);
+
+/**
+ * Print user account database (for debugging)
+ * Only available if LITTLEOS_DEBUG_USERS is defined
+ */
 void users_print_database(void);
 
-
+/**
+ * Print configured build-time settings (debugging)
+ */
+void users_print_build_config(void);
 
 #endif /* LITTLEOS_USERS_CONFIG_H */
