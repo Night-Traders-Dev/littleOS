@@ -3,11 +3,7 @@
 
 #include <string.h>
 
-/* internal block I/O from fs_core.c */
-static int fs_read_block_i(struct fs *fs, uint32_t block, uint8_t *buf);
-static int fs_write_block_i(struct fs *fs, uint32_t block, const uint8_t *buf);
-static uint32_t fs_find_first_free_data_block(struct fs *fs);
-static int fs_mark_block_valid(struct fs *fs, uint32_t block_addr);
+
 
 /* load inode by ino via NAT */
 int fs_load_inode(struct fs *fs, uint32_t ino, struct fs_inode *out) {

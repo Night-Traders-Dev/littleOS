@@ -318,6 +318,16 @@ int fs_dir_add(struct fs *fs,
                const char *name,
                uint32_t child_ino,
                uint8_t type);
+/* ===== internal shared helpers (used across fs_*.c) ===== */
+
+/* low-level block I/O (implemented in fs_core.c) */
+int fs_read_block_i(struct fs *fs, uint32_t block, uint8_t *buf);
+int fs_write_block_i(struct fs *fs, uint32_t block, const uint8_t *buf);
+
+/* simple allocator helpers (fs_core.c) */
+uint32_t fs_find_first_free_data_block(struct fs *fs);
+int      fs_mark_block_valid(struct fs *fs, uint32_t block_addr);
+
 
 #ifdef __cplusplus
 }

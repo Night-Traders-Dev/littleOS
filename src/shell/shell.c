@@ -124,7 +124,6 @@ void shell_run() {
     uint32_t last_heartbeat = last_wdt_feed;
 
     // Note: Welcome message is now displayed in kernel.c after boot
-    // Don't duplicate it here
     printf(">");
     fflush(stdout);
 
@@ -145,7 +144,6 @@ void shell_run() {
 
         int c = getchar_timeout_us(0); // Non-blocking read
         if (c == PICO_ERROR_TIMEOUT) {
-            // No character available, continue
             sleep_ms(10);
             continue;
         }
@@ -192,9 +190,9 @@ void shell_run() {
                     fflush(stdout);
                 }
                 continue;
-            } else if (c == 'C') { // Right arrow - ignore
+            } else if (c == 'C') { // Right arrow
                 continue;
-            } else if (c == 'D') { // Left arrow - ignore
+            } else if (c == 'D') { // Left arrow
                 continue;
             }
             break;
@@ -248,18 +246,18 @@ void shell_run() {
                     printf("Supervisor: %s\r\n",
                            supervisor_is_running() ? "Active" : "Inactive");
                 } else if (strcmp(argv[0], "clear") == 0) {
-                    // ANSI escape codes to clear screen and move cursor to top-left
-                    printf("\033[2J"); // Clear entire screen
-                    printf("\033[H");  // Move cursor to home (1,1)
-                    printf(">");       // Show prompt
+                    printf("\033[2J");
+                    printf("\033[H");
+                    printf(">");
                     fflush(stdout);
                     idx = 0;
-                    continue; // Skip the normal prompt below
+                    continue;
                 } else if (strcmp(argv[0], "history") == 0) {
                     printf("Command history:\r\n");
-                    int start = (history_count > HISTORY_SIZE)
-                                    ? history_count - HISTORY_SIZE
-                                    : 0;
+                    int start =
+                        (history_count > HISTORY_SIZE)
+                        ? history_count - HISTORY_SIZE
+                        : 0;
                     for (int i = start; i < history_count; i++) {
                         printf(" %d: %s\r\n",
                                i + 1,
@@ -289,24 +287,19 @@ void shell_run() {
                 } else if (strcmp(argv[0], "reboot") == 0) {
                     printf("Rebooting system...\r\n");
                     dmesg_info("System reboot requested by user");
-                    sleep_ms(500); // Give time for message to transmit
-                    // Use watchdog to trigger a reset
-                    watchdog_enable(1, 1); // 1ms timeout, no pause on debug
+                    sleep_ms(500);
+                    watchdog_enable(1, 1);
                     while (1) {
-                        // Wait for watchdog to trigger reset
                     }
                 } else if (strcmp(argv[0], "sage") == 0) {
-                    // Call SageLang command handler
                     cmd_sage(argc, argv);
                 } else if (strcmp(argv[0], "script") == 0) {
-                    // Call script management handler
                     cmd_script(argc, argv);
                 } else {
                     printf("Unknown command: %s\r\n", argv[0]);
                     printf("Type 'help' for available commands\r\n");
                 }
 
-                // Feed watchdog and send heartbeat after executing command
                 wdt_feed();
                 supervisor_heartbeat();
             }
@@ -317,10 +310,10 @@ void shell_run() {
         } else if (c == '\b' || c == 0x7F) { // Backspace
             if (idx > 0) {
                 idx--;
-                printf("\b \b"); // Erase character on screen
+                printf("\b \b");
                 fflush(stdout);
             }
-        } else if (c >= 32 && c < 127) { // Printable characters only
+        } else if (c >= 32 && c < 127) {
             if (idx < (int)sizeof(buffer) - 1) {
                 buffer[idx++] = (char)c;
                 putchar(c);

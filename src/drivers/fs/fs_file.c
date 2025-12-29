@@ -3,27 +3,6 @@
 
 #include <string.h>
 
-/* from other modules */
-int fs_load_inode(struct fs *fs, uint32_t ino, struct fs_inode *out);
-int fs_store_inode(struct fs *fs, const struct fs_inode *in);
-int fs_bmap(struct fs *fs,
-            struct fs_inode *ino,
-            uint32_t logical_block,
-            bool create,
-            uint32_t *phys_block);
-int fs_dir_lookup(struct fs *fs,
-                  struct fs_inode *dir_ino,
-                  const char *name,
-                  uint32_t *child_ino);
-int fs_dir_add(struct fs *fs,
-               struct fs_inode *dir_ino,
-               const char *name,
-               uint32_t child_ino,
-               uint8_t type);
-
-/* shared low-level block I/O */
-static int fs_read_block_i(struct fs *fs, uint32_t block, uint8_t *buf);
-static int fs_write_block_i(struct fs *fs, uint32_t block, const uint8_t *buf);
 
 /* simple path tokenizer: in-place on a local copy in caller */
 static const char *next_component(const char *p, char *out, size_t out_sz) {
