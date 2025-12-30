@@ -15,6 +15,7 @@
 #include "memory_segmented.h"
 #include "scheduler.h"
 #include "littlefetch.h"
+#include "system_info.h"
 
 // ANSI color codes (can be disabled by defining LITTLEFETCH_NO_COLOR)
 #ifndef LITTLEFETCH_NO_COLOR
@@ -38,6 +39,8 @@
 #define COLOR_CYAN    ""
 #define COLOR_WHITE   ""
 #endif
+
+
 
 // ASCII art for littleOS (RP2040 themed)
 static const char *logo[] = {
@@ -130,7 +133,8 @@ void littlefetch(void) {
     print_info(line++, "Host", buf, COLOR_CYAN);
 
     // Kernel version
-    snprintf(buf, sizeof(buf), "littleOS v0.4.0 (%s)", __DATE__);
+    snprintf(buf, sizeof(buf), "littleOS %s", system_get_version(), __DATE__);
+//    snprintf(buf, sizeof(buf), "littleOS v0.4.0 (%s)", __DATE__);
     print_info(line++, "Kernel", buf, COLOR_CYAN);
 
     // Uptime

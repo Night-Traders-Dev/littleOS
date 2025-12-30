@@ -202,32 +202,15 @@ void kernel_main(void) {
     // Initialize dmesg FIRST - allows all subsequent boot stages to log
     dmesg_init();
 
-    // Initialize UART with permissions
-    littleos_uart_init();
+    // NOW enable watchdog - boot is complete, start monitoring for hangs
+    wdt_enable(8000);  // 8 second timeout
+    printf("✓ Watchdog: Active (8s timeout - auto-recovery enabled)\r\n");
+    dmesg_info("Watchdog enabled - monitoring for system hangs");
 
-    // The Pico SDK's stdio is already initialized in boot.c
-    printf("\r\n");
-    printf("========================================\r\n");
-    printf("  RP2040 littleOS Kernel\r\n");
-    printf("  Built: %s %s\r\n", __DATE__, __TIME__);
-    printf("========================================\r\n");
-    dmesg_info("RP2040 littleOS kernel starting");
-
-    // Initialize watchdog timer (8 second timeout)
-    // Don't enable yet - wait until after boot completes
-    wdt_init(8000);
-    dmesg_info("Watchdog timer initialized (16s timeout)");
-
-    // Check if we recovered from a watchdog reset
-    if (wdt_get_reset_reason() == WATCHDOG_RESET_TIMEOUT) {
-        printf("\r\n");
-        printf("*** RECOVERED FROM CRASH ***\r\n");
-        printf("System was reset by watchdog timer\r\n");
-        printf("\r\n");
-        dmesg_crit("System recovered from watchdog reset");
-        sleep_ms(2000);  // Give user time to see message
-    }
-
+    // Start supervisor on Core 1 for system health monitoring
+    supervisor_init();
+    printf("✓ Supervisor: Core 1 monitoring system health\r\n");
+    dmesg_info("Supervisor launched on Core 1");
 
     // Initialize task scheduler
     printf("\r\nInitializing task scheduler...\r\n");
@@ -255,12 +238,6 @@ void kernel_main(void) {
     // Display user account information
     print_user_info();
 
-    // Create root security context
-    task_sec_ctx_t root_ctx = users_root_context();
-    printf("\r\nCreated root security context (UID=%d, GID=%d)\r\n", 
-           root_ctx.uid, root_ctx.gid);
-    dmesg_info("Root security context created");
-
 
 
     // Initialize SageLang
@@ -285,7 +262,7 @@ void kernel_main(void) {
         if (config_get_autoboot(autoboot_script, sizeof(autoboot_script))) {
             printf("\r\nRunning autoboot script...\r\n");
             dmesg_info("Executing autoboot script");
-            sage_result_t result = sage_eval_string(sage_ctx, autoboot_script, 
+            sage_result_t result = sage_eval_string(sage_ctx, autoboot_script,
                                                      strlen(autoboot_script));
             if (result != SAGE_OK) {
                 printf("  Warning: Autoboot script error\r\n");
@@ -296,6 +273,47 @@ void kernel_main(void) {
             }
         }
     }
+
+
+    // NOW enable watchdog - boot is complete, start monitoring for hangs
+    wdt_enable(8000);  // 8 second timeout
+    printf("✓ Watchdog: Active (8s timeout - auto-recovery enabled)\r\n");
+    dmesg_info("Watchdog enabled - monitoring for system hangs");
+
+    // Start supervisor on Core 1 for system health monitoring
+    supervisor_init();
+    printf("✓ Supervisor: Core 1 monitoring system health\r\n");
+    dmesg_info("Supervisor launched on Core 1");
+
+
+    // Initialize UART with permissions
+    littleos_uart_init();
+
+    // The Pico SDK's stdio is already initialized in boot.c
+    printf("\r\n");
+    printf("========================================\r\n");
+    printf("  RP2040 littleOS Kernel\r\n");
+    printf("  Built: %s %s\r\n", __DATE__, __TIME__);
+    printf("========================================\r\n");
+    dmesg_info("RP2040 littleOS kernel starting");
+
+    // Check if we recovered from a watchdog reset
+    if (wdt_get_reset_reason() == WATCHDOG_RESET_TIMEOUT) {
+        printf("\r\n");
+        printf("*** RECOVERED FROM CRASH ***\r\n");
+        printf("System was reset by watchdog timer\r\n");
+        printf("\r\n");
+        dmesg_crit("System recovered from watchdog reset");
+        sleep_ms(2000);  // Give user time to see message
+    }
+
+
+    // Create root security context
+    task_sec_ctx_t root_ctx = users_root_context();
+    printf("\r\nCreated root security context (UID=%d, GID=%d)\r\n", 
+           root_ctx.uid, root_ctx.gid);
+    dmesg_info("Root security context created");
+
 
 
     // Initialize all device and subsystem permissions
@@ -318,22 +336,12 @@ void kernel_main(void) {
     printf("Type 'help' for available commands\r\n");
     printf("\r\n");
 
-    // NOW enable watchdog - boot is complete, start monitoring for hangs
-    wdt_enable(8000);  // 8 second timeout
-    printf("✓ Watchdog: Active (8s timeout - auto-recovery enabled)\r\n");
-    dmesg_info("Watchdog enabled - monitoring for system hangs");
-
-    // Start supervisor on Core 1 for system health monitoring
-    supervisor_init();
-    printf("✓ Supervisor: Core 1 monitoring system health\r\n");
-    dmesg_info("Supervisor launched on Core 1");
-
     // Show current user context
     printf("✓ Running as: %s (UID=%d, GID=%d)\r\n", 
            "root", root_ctx.uid, root_ctx.gid);
 
     dmesg_info("Boot sequence complete - entering shell");
-    printf("\r\n> ");
+    printf("\r\n ");
 
 
     // Start the command shell (this will send heartbeats to supervisor)
