@@ -25,6 +25,13 @@ extern int  cmd_ipc(int argc, char *argv[]);
 extern int  cmd_hw(int argc, char *argv[]);
 extern int  cmd_net(int argc, char *argv[]);
 extern int  cmd_ota(int argc, char *argv[]);
+extern int  cmd_usb(int argc, char *argv[]);
+extern int  cmd_pio(int argc, char *argv[]);
+extern int  cmd_dma(int argc, char *argv[]);
+extern int  cmd_remote(int argc, char *argv[]);
+extern int  cmd_sensor(int argc, char *argv[]);
+extern int  cmd_power(int argc, char *argv[]);
+extern int  cmd_profile(int argc, char *argv[]);
 
 // Command history settings
 #define HISTORY_SIZE 20
@@ -247,6 +254,13 @@ void shell_run() {
                     printf("  hw          - Hardware peripherals (I2C/SPI/PWM/ADC)\r\n");
                     printf("  net         - Networking (WiFi/TCP/UDP)\r\n");
                     printf("  ota         - Over-the-air firmware updates\r\n");
+                    printf("  usb         - USB device mode (CDC/HID/MSC)\r\n");
+                    printf("  pio         - PIO programmable I/O\r\n");
+                    printf("  dma         - DMA engine control\r\n");
+                    printf("  remote      - Remote shell over TCP\r\n");
+                    printf("  sensor      - Sensor framework and logging\r\n");
+                    printf("  power       - Power management and sleep\r\n");
+                    printf("  profile     - Runtime profiling\r\n");
                     printf("\r\nUse UP/DOWN arrows to navigate command history\r\n");
                 } else if (strcmp(argv[0], "version") == 0) {
                     printf("littleOS v0.4.0 - RP2040\r\n");
@@ -306,6 +320,20 @@ void shell_run() {
                     cmd_net(argc, argv);
                 } else if (strcmp(argv[0], "ota") == 0) {
                     cmd_ota(argc, argv);
+                } else if (strcmp(argv[0], "usb") == 0) {
+                    cmd_usb(argc, argv);
+                } else if (strcmp(argv[0], "pio") == 0) {
+                    cmd_pio(argc, argv);
+                } else if (strcmp(argv[0], "dma") == 0) {
+                    cmd_dma(argc, argv);
+                } else if (strcmp(argv[0], "remote") == 0) {
+                    cmd_remote(argc, argv);
+                } else if (strcmp(argv[0], "sensor") == 0) {
+                    cmd_sensor(argc, argv);
+                } else if (strcmp(argv[0], "power") == 0) {
+                    cmd_power(argc, argv);
+                } else if (strcmp(argv[0], "profile") == 0) {
+                    cmd_profile(argc, argv);
                 } else if (strcmp(argv[0], "sage") == 0) {
                     cmd_sage(argc, argv);
                 } else if (strcmp(argv[0], "script") == 0) {

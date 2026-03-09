@@ -14,6 +14,10 @@
 #include "uart.h"
 #include "ipc.h"
 #include "ota.h"
+#include "hal/dma.h"
+#include "hal/power.h"
+#include "sensor.h"
+#include "profiler.h"
 
 
 
@@ -299,6 +303,22 @@ void kernel_main(void) {
     printf("Initializing OTA subsystem...\r\n");
     ota_init();
     dmesg_info("OTA subsystem initialized");
+
+    // Initialize DMA engine
+    dma_hal_init();
+    dmesg_info("DMA engine initialized");
+
+    // Initialize power management
+    power_init();
+    dmesg_info("Power management initialized");
+
+    // Initialize sensor framework
+    sensor_init();
+    dmesg_info("Sensor framework initialized");
+
+    // Initialize profiler
+    profiler_init();
+    dmesg_info("Runtime profiler initialized");
 
     // Enable watchdog AFTER all init is done - start monitoring for hangs
     wdt_enable(8000);  // 8 second timeout

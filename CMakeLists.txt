@@ -168,6 +168,8 @@ add_library(littleos_core STATIC
     src/drivers/fs/fs_inode.c
     src/drivers/net.c
     src/drivers/ota.c
+    src/drivers/remote_shell.c
+    src/drivers/sensor.c
 #
     src/storage/script_storage.c
     src/storage/config_storage.c
@@ -180,15 +182,27 @@ add_library(littleos_core STATIC
     src/hal/spi.c
     src/hal/pwm.c
     src/hal/adc.c
+    src/hal/pio.c
+    src/hal/dma.c
+    src/hal/usb_device.c
+    src/hal/power.c
 #
     src/shell/cmd_ipc.c
     src/shell/cmd_hw.c
     src/shell/cmd_net.c
     src/shell/cmd_ota.c
+    src/shell/cmd_usb.c
+    src/shell/cmd_pio.c
+    src/shell/cmd_dma.c
+    src/shell/cmd_remote.c
+    src/shell/cmd_sensor.c
+    src/shell/cmd_power.c
+    src/shell/cmd_profile.c
 #
     src/sys/system_info.c
     src/sys/permissions.c
     src/sys/littlefetch.c
+    src/sys/profiler.c
 #
     src/usr/users_config.c
 )
@@ -209,6 +223,10 @@ target_link_libraries(littleos_core PUBLIC
     hardware_spi
     hardware_pwm
     hardware_clocks
+    hardware_pio
+    hardware_dma
+    hardware_resets
+    hardware_timer
     pico_unique_id
 )
 
@@ -266,6 +284,9 @@ target_link_libraries(littleos PRIVATE
     hardware_adc
     pico_multicore
     pico_bootrom
+    hardware_pio
+    hardware_dma
+    hardware_resets
 )
 
 # Enable stdio over both UART and USB
