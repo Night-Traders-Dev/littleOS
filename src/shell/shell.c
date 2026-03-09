@@ -21,6 +21,10 @@ extern int  cmd_perms(int argc, char *argv[]);
 extern int  cmd_tasks(int argc, char *argv[]);
 extern int  cmd_memory(int argc, char *argv[]);
 extern int  cmd_fs(int argc, char *argv[]);
+extern int  cmd_ipc(int argc, char *argv[]);
+extern int  cmd_hw(int argc, char *argv[]);
+extern int  cmd_net(int argc, char *argv[]);
+extern int  cmd_ota(int argc, char *argv[]);
 
 // Command history settings
 #define HISTORY_SIZE 20
@@ -238,10 +242,14 @@ void shell_run() {
                     printf("  perms       - Permission and access control\r\n");
                     printf("  tasks       - Task management (scheduler)\r\n");
                     printf("  memory      - Memory diagnostics and tests\r\n");
-                    printf("  fs          - RAM filesystem tools (type 'fs' for usage)\r\n");
+                    printf("  fs          - Filesystem tools (type 'fs' for usage)\r\n");
+                    printf("  ipc         - Inter-process communication\r\n");
+                    printf("  hw          - Hardware peripherals (I2C/SPI/PWM/ADC)\r\n");
+                    printf("  net         - Networking (WiFi/TCP/UDP)\r\n");
+                    printf("  ota         - Over-the-air firmware updates\r\n");
                     printf("\r\nUse UP/DOWN arrows to navigate command history\r\n");
                 } else if (strcmp(argv[0], "version") == 0) {
-                    printf("littleOS v0.3.0 - RP2040\r\n");
+                    printf("littleOS v0.4.0 - RP2040\r\n");
                     printf("With SageLang v0.8.0\r\n");
                     printf("Supervisor: %s\r\n",
                            supervisor_is_running() ? "Active" : "Inactive");
@@ -283,7 +291,6 @@ void shell_run() {
                     cmd_fs(argc, argv);
                 } else if (strcmp(argv[0], "fetch") == 0) {
                     littlefetch();
-                    return;
                 } else if (strcmp(argv[0], "reboot") == 0) {
                     printf("Rebooting system...\r\n");
                     dmesg_info("System reboot requested by user");
@@ -291,6 +298,14 @@ void shell_run() {
                     watchdog_enable(1, 1);
                     while (1) {
                     }
+                } else if (strcmp(argv[0], "ipc") == 0) {
+                    cmd_ipc(argc, argv);
+                } else if (strcmp(argv[0], "hw") == 0) {
+                    cmd_hw(argc, argv);
+                } else if (strcmp(argv[0], "net") == 0) {
+                    cmd_net(argc, argv);
+                } else if (strcmp(argv[0], "ota") == 0) {
+                    cmd_ota(argc, argv);
                 } else if (strcmp(argv[0], "sage") == 0) {
                     cmd_sage(argc, argv);
                 } else if (strcmp(argv[0], "script") == 0) {

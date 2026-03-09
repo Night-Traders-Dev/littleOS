@@ -11,12 +11,14 @@
 // Watchdog state
 static struct {
     bool enabled;
+    bool hw_active;     // true once hardware watchdog has been enabled (irreversible)
     uint32_t timeout_ms;
     uint32_t feed_count;
     uint32_t last_feed_time_ms;
     watchdog_reset_reason_t last_reset_reason;
 } wdt_state = {
     .enabled = false,
+    .hw_active = false,
     .timeout_ms = 0,
     .feed_count = 0,
     .last_feed_time_ms = 0,
@@ -62,6 +64,7 @@ bool wdt_enable(uint32_t timeout_ms) {
     wdt_state.timeout_ms = timeout_ms;
     watchdog_enable(timeout_ms, 1); // Pause on debug
     wdt_state.enabled = true;
+    wdt_state.hw_active = true;
     wdt_state.feed_count = 0;
     wdt_state.last_feed_time_ms = to_ms_since_boot(get_absolute_time());
     printf("Watchdog: Enabled (timeout: %u ms)\r\n", timeout_ms);
@@ -70,29 +73,37 @@ bool wdt_enable(uint32_t timeout_ms) {
 
 /**
  * @brief Feed the watchdog
+ * Always feeds hardware if it was ever enabled (RP2040 cannot disable HW watchdog)
  */
 void wdt_feed(void) {
+    // Always feed hardware watchdog if it was ever activated, regardless of
+    // the logical 'enabled' flag. RP2040 hardware watchdog cannot be disabled
+    // once started — failing to feed it will cause an unintended reset.
+    if (wdt_state.hw_active) {
+        watchdog_update();
+    }
+
     if (!wdt_state.enabled) {
         return;
     }
 
-    watchdog_update();
     wdt_state.feed_count++;
     wdt_state.last_feed_time_ms = to_ms_since_boot(get_absolute_time());
 }
 
 /**
- * @brief Disable watchdog timer
- * Note: RP2040 watchdog cannot be truly disabled once enabled
+ * @brief Disable watchdog timer (logical only)
+ * Note: RP2040 watchdog cannot be truly disabled once enabled.
+ * The hardware will continue to be fed automatically to prevent
+ * unintended resets. Only the logical tracking/stats are disabled.
  */
 void wdt_disable(void) {
     if (!wdt_state.enabled) {
         return;
     }
 
-    // Cannot truly disable RP2040 watchdog once enabled
     wdt_state.enabled = false;
-    printf("Watchdog: Marked disabled (hardware cannot be disabled once enabled)\r\n");
+    printf("Watchdog: Logically disabled (hardware still fed to prevent reset)\r\n");
 }
 
 /**

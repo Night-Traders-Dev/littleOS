@@ -9,12 +9,27 @@
 
 #ifdef PICO_BUILD
 #include "pico/stdlib.h"
+#include "hardware/structs/systick.h"
+#include "hardware/structs/scb.h"
 #endif
 
 static task_descriptor_t task_table[LITTLEOS_MAX_TASKS];
 static uint16_t task_count         = 0;
 static uint16_t current_task_id    = 0;
 static bool     scheduler_initialized = false;
+
+/* Preemptive scheduling state */
+static volatile uint32_t system_ticks       = 0;
+static volatile bool     preemption_enabled = false;
+static volatile uint16_t running_task_core0 = 0;
+
+/* Default time slices per priority level (ms) */
+static const uint32_t default_timeslice[] = {
+    [TASK_PRIORITY_LOW]      = 50,
+    [TASK_PRIORITY_NORMAL]   = 20,
+    [TASK_PRIORITY_HIGH]     = 10,
+    [TASK_PRIORITY_CRITICAL] = 5,
+};
 
 typedef struct {
     uint16_t tasks[LITTLEOS_MAX_TASKS];
@@ -176,6 +191,33 @@ uint16_t task_create(const char *name, task_entry_t entry, void *arg,
     task->context_switches   = 0;
     task->memory_allocated   = 0;
     task->memory_peak        = 0;
+
+    /* Initialize preemptive scheduling fields */
+    uint32_t timeslice = default_timeslice[priority];
+    task->time_slice_ms     = timeslice;
+    task->time_remaining_ms = timeslice;
+    task->needs_switch      = false;
+
+    /* Set up initial stack frame for context switching.
+     * ARM Cortex-M0+ exception entry automatically pushes:
+     *   xPSR, PC, LR, R12, R3, R2, R1, R0  (8 words, high-to-low)
+     * We also reserve space for manually-saved R4-R11 (8 words).
+     * Stack grows downward; stack_ptr points to top of saved context. */
+    uint32_t *stack_top = (uint32_t *)(task->stack_base + task->stack_size);
+    /* Hardware-saved exception frame (pushed automatically on exception entry) */
+    *(--stack_top) = 0x01000000;              /* xPSR: Thumb bit set           */
+    *(--stack_top) = (uint32_t)entry;         /* PC: task entry point          */
+    *(--stack_top) = 0xFFFFFFFD;              /* LR: EXC_RETURN thread/PSP     */
+    *(--stack_top) = 0;                       /* R12                           */
+    *(--stack_top) = 0;                       /* R3                            */
+    *(--stack_top) = 0;                       /* R2                            */
+    *(--stack_top) = 0;                       /* R1                            */
+    *(--stack_top) = (uint32_t)arg;           /* R0: argument to entry func    */
+    /* Manually-saved registers (R4-R11) */
+    for (int r = 0; r < 8; r++) {
+        *(--stack_top) = 0;                   /* R4 through R11                */
+    }
+    task->stack_ptr = stack_top;
 
     task_count++;
 
@@ -466,3 +508,138 @@ uint16_t scheduler_count_ready_tasks(void) {
     }
     return count;
 }
+
+/* ============================================================================
+ * Preemptive Scheduling
+ * ========================================================================== */
+
+/* Trigger PendSV exception to perform context switch at lowest priority */
+static inline void trigger_pendsv(void) {
+#ifdef PICO_BUILD
+    /* Set PENDSVSET bit in ICSR (Interrupt Control and State Register) */
+    *(volatile uint32_t *)0xE000ED04 = (1 << 28);
+#endif
+}
+
+void scheduler_tick(void) {
+    system_ticks++;
+
+    if (!preemption_enabled) {
+        return;
+    }
+
+    task_descriptor_t *task = find_task(running_task_core0);
+    if (!task || task->state != TASK_STATE_RUNNING) {
+        return;
+    }
+
+    /* Track runtime */
+    task->total_runtime_ms++;
+
+    /* Decrement time remaining; trigger switch when expired */
+    if (task->time_slice_ms > 0 && task->time_remaining_ms > 0) {
+        task->time_remaining_ms--;
+        if (task->time_remaining_ms == 0) {
+            task->needs_switch = true;
+            trigger_pendsv();
+        }
+    }
+}
+
+void scheduler_context_switch(void) {
+    if (!preemption_enabled) {
+        return;
+    }
+
+    task_descriptor_t *current = find_task(running_task_core0);
+
+    /* Move current task back to READY if it was RUNNING */
+    if (current && current->state == TASK_STATE_RUNNING) {
+        current->state = TASK_STATE_READY;
+        current->needs_switch = false;
+        current->context_switches++;
+    }
+
+    /* Select next task using existing priority-based scheduler */
+    uint16_t next_id = scheduler_next_task_core0();
+    if (next_id == 0) {
+        /* No ready tasks; keep running current if available */
+        if (current) {
+            current->state = TASK_STATE_RUNNING;
+        }
+        return;
+    }
+
+    task_descriptor_t *next = find_task(next_id);
+    if (!next) {
+        return;
+    }
+
+    running_task_core0 = next_id;
+    next->state = TASK_STATE_RUNNING;
+    next->time_remaining_ms = next->time_slice_ms;
+}
+
+void scheduler_start(void) {
+    if (!scheduler_initialized) {
+        return;
+    }
+
+#ifdef PICO_BUILD
+    /* Configure PendSV to lowest priority (0xC0 for Cortex-M0+, 2-bit priority) */
+    *(volatile uint32_t *)0xE000ED20 |= (0x3 << 22);
+
+    /* Configure SysTick for 1ms ticks at 125 MHz system clock */
+    systick_hw->rvr = (125000000 / 1000) - 1;  /* Reload value for 1ms */
+    systick_hw->cvr = 0;                        /* Clear current value  */
+    systick_hw->csr = 0x7;                      /* Enable, interrupt, processor clock */
+#endif
+
+    /* Start the first task */
+    uint16_t first = scheduler_next_task_core0();
+    if (first) {
+        task_descriptor_t *task = find_task(first);
+        if (task) {
+            task->state = TASK_STATE_RUNNING;
+            running_task_core0 = first;
+        }
+    }
+
+    preemption_enabled = true;
+    printf("Preemptive scheduler started (SysTick 1ms)\r\n");
+}
+
+void scheduler_yield(void) {
+    task_descriptor_t *task = find_task(running_task_core0);
+    if (task) {
+        task->time_remaining_ms = 0;
+        task->needs_switch = true;
+    }
+    trigger_pendsv();
+}
+
+void scheduler_set_timeslice(uint16_t task_id, uint32_t ms) {
+    task_descriptor_t *task = find_task(task_id);
+    if (task) {
+        task->time_slice_ms     = ms;
+        task->time_remaining_ms = ms;
+    }
+}
+
+uint32_t scheduler_get_tick(void) {
+    return system_ticks;
+}
+
+/* ============================================================================
+ * Interrupt Handlers (Pico SDK naming convention)
+ * ========================================================================== */
+
+#ifdef PICO_BUILD
+void isr_systick(void) {
+    scheduler_tick();
+}
+
+void isr_pendsv(void) {
+    scheduler_context_switch();
+}
+#endif

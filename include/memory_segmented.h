@@ -20,6 +20,12 @@
  */
 void memory_init(void);
 
+/**
+ * Initialize task-aware memory accounting
+ * Call after scheduler_init()
+ */
+void memory_accounting_init(void);
+
 /* ============================================================================
  * Kernel Heap Allocation
  * 

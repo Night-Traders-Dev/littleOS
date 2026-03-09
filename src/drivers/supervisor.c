@@ -19,6 +19,11 @@ static volatile bool alerts_enabled = true;
 static uint32_t last_heap_used = 0;
 static uint32_t memory_stable_count = 0;
 
+// Spinlock for safe cross-core metrics access
+#ifdef PICO_BUILD
+static spin_lock_t *metrics_lock = NULL;
+#endif
+
 #define TEMP_SENSOR_ADC_CHANNEL 4
 // FIXED: Proper parentheses for operator precedence
 #define TEMP_CONVERSION_FACTOR (3.3f / (1 << 12))
@@ -129,15 +134,22 @@ static void check_system_health(void) {
         }
     }
 
-    metrics.health_flags = flags;
-    metrics.health_status = health;
-
-    if (health >= HEALTH_WARNING) {
-        metrics.warning_count++;
-    }
-
-    if (health >= HEALTH_CRITICAL) {
-        metrics.critical_count++;
+    // Update health flags atomically with spinlock
+#ifdef PICO_BUILD
+    if (metrics_lock) {
+        uint32_t save = spin_lock_blocking(metrics_lock);
+        metrics.health_flags = flags;
+        metrics.health_status = health;
+        if (health >= HEALTH_WARNING) metrics.warning_count++;
+        if (health >= HEALTH_CRITICAL) metrics.critical_count++;
+        spin_unlock(metrics_lock, save);
+    } else
+#endif
+    {
+        metrics.health_flags = flags;
+        metrics.health_status = health;
+        if (health >= HEALTH_WARNING) metrics.warning_count++;
+        if (health >= HEALTH_CRITICAL) metrics.critical_count++;
     }
 }
 
@@ -189,6 +201,12 @@ void supervisor_init(void) {
         return;
     }
 
+    // Claim a hardware spinlock for cross-core metrics access
+    if (!metrics_lock) {
+        int lock_num = spin_lock_claim_unused(true);
+        metrics_lock = spin_lock_init(lock_num);
+    }
+
     multicore_reset_core1();
     multicore_launch_core1(supervisor_loop);
 
@@ -221,7 +239,18 @@ bool supervisor_get_metrics(system_metrics_t* out_metrics) {
         return false;
     }
 
+#ifdef PICO_BUILD
+    // Use spinlock for atomic cross-core copy to prevent torn reads
+    if (metrics_lock) {
+        uint32_t save = spin_lock_blocking(metrics_lock);
+        memcpy(out_metrics, (void*)&metrics, sizeof(system_metrics_t));
+        spin_unlock(metrics_lock, save);
+    } else {
+        memcpy(out_metrics, (void*)&metrics, sizeof(system_metrics_t));
+    }
+#else
     memcpy(out_metrics, (void*)&metrics, sizeof(system_metrics_t));
+#endif
     return true;
 }
 
@@ -247,18 +276,28 @@ void supervisor_heartbeat(void) {
 
 void supervisor_report_memory(int allocated) {
     if (allocated > 0) {
-        metrics.heap_used_bytes += allocated;
+        metrics.heap_used_bytes += (uint32_t)allocated;
         metrics.heap_allocations++;
         if (metrics.heap_used_bytes > metrics.heap_peak_bytes) {
             metrics.heap_peak_bytes = metrics.heap_used_bytes;
         }
-    } else {
-        metrics.heap_used_bytes -= (-allocated);
+    } else if (allocated < 0) {
+        uint32_t freed = (uint32_t)(-allocated);
+        // Guard against unsigned underflow
+        if (metrics.heap_used_bytes >= freed) {
+            metrics.heap_used_bytes -= freed;
+        } else {
+            metrics.heap_used_bytes = 0;
+        }
         metrics.heap_frees++;
     }
 
-    // FIXED: Safe integer math instead of magic constant
-    metrics.heap_free_bytes = HEAP_SIZE_BYTES - metrics.heap_used_bytes;
+    // Safe calculation of free bytes
+    if (metrics.heap_used_bytes <= HEAP_SIZE_BYTES) {
+        metrics.heap_free_bytes = HEAP_SIZE_BYTES - metrics.heap_used_bytes;
+    } else {
+        metrics.heap_free_bytes = 0;
+    }
     metrics.memory_usage_percent = (float)(metrics.heap_used_bytes * 100) / HEAP_SIZE_BYTES;
 }
 

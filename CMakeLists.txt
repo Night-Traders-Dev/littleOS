@@ -125,7 +125,7 @@ if(EXISTS ${SAGELANG_DIR})
     )
     
     # Define PICO_BUILD for platform detection
-    target_compile_definitions(sagelang PUBLIC PICO_BUILD=1)
+    target_compile_definitions(sagelang PUBLIC PICO_BUILD=1 SAGE_NO_FFI=1)
     
     # Link against pico_stdlib for embedded functions
     target_link_libraries(sagelang PUBLIC pico_stdlib)
@@ -166,12 +166,25 @@ add_library(littleos_core STATIC
     src/drivers/fs/fs_dir.c
     src/drivers/fs/fs_file.c
     src/drivers/fs/fs_inode.c
-
+    src/drivers/net.c
+    src/drivers/ota.c
 #
     src/storage/script_storage.c
     src/storage/config_storage.c
 #
+    src/kernel/ipc.c
+#
     src/hal/gpio.c
+    src/hal/flash.c
+    src/hal/i2c.c
+    src/hal/spi.c
+    src/hal/pwm.c
+    src/hal/adc.c
+#
+    src/shell/cmd_ipc.c
+    src/shell/cmd_hw.c
+    src/shell/cmd_net.c
+    src/shell/cmd_ota.c
 #
     src/sys/system_info.c
     src/sys/permissions.c
@@ -185,13 +198,17 @@ target_include_directories(littleos_core PUBLIC
 )
 
 # Link against pico_stdlib so you inherit SDK runtime and headers.
-target_link_libraries(littleos_core PUBLIC 
+target_link_libraries(littleos_core PUBLIC
     pico_stdlib
     pico_multicore
     hardware_adc
     hardware_flash
     hardware_sync
     hardware_watchdog
+    hardware_i2c
+    hardware_spi
+    hardware_pwm
+    hardware_clocks
     pico_unique_id
 )
 
@@ -243,18 +260,22 @@ target_link_libraries(littleos PRIVATE
     hardware_watchdog
     hardware_flash
     hardware_sync
+    hardware_i2c
+    hardware_spi
+    hardware_pwm
+    hardware_adc
     pico_multicore
     pico_bootrom
 )
 
 # Enable stdio over both UART and USB
 pico_enable_stdio_uart(littleos 1)
-pico_enable_stdio_usb(littleos 1)
+pico_enable_stdio_usb(littleos 0)
 
 target_link_options(littleos PRIVATE
     -Wl,--gc-sections
     -Wl,-Map=${CMAKE_BINARY_DIR}/littleos.map
-    SHELL:-Wl,--section-start=.noinit=0x20010000
+    SHELL:-Wl,--section-start=.noinit=0x20020000
 )
 
 # Generate .elf, .bin, .uf2, etc.

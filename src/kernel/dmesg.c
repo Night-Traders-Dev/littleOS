@@ -9,7 +9,7 @@
 static dmesg_entry_t dmesg_buffer[DMESG_BUFFER_SIZE];
 static uint32_t dmesg_write_index = 0;
 static uint32_t dmesg_total_messages = 0;
-static uint32_t dmesg_boot_time_us = 0;
+static uint64_t dmesg_boot_time_us = 0;
 static int dmesg_initialized = 0;
 
 /* Level name strings */
@@ -20,7 +20,7 @@ static const char *level_names[] = {
 /* Initialize dmesg system - call this early in boot */
 void dmesg_init(void) {
     if (dmesg_initialized) return;
-    dmesg_boot_time_us = time_us_32();
+    dmesg_boot_time_us = time_us_64();
     dmesg_write_index = 0;
     dmesg_total_messages = 0;
     dmesg_initialized = 1;
@@ -28,10 +28,10 @@ void dmesg_init(void) {
     dmesg_info("Boot sequence started");
 }
 
-/* Get current uptime in milliseconds */
+/* Get current uptime in milliseconds (uses 64-bit timer, no wrap) */
 uint32_t dmesg_get_uptime(void) {
     if (!dmesg_initialized) return 0;
-    return (time_us_32() - dmesg_boot_time_us) / 1000;
+    return (uint32_t)((time_us_64() - dmesg_boot_time_us) / 1000);
 }
 
 /* Log a message with variable arguments */

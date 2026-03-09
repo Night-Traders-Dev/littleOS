@@ -68,7 +68,12 @@ typedef struct {
     uint32_t        total_runtime_ms;     /* Total execution time     */
     uint32_t        context_switches;     /* Number of context switches */
 
-    uint8_t         reserved[64];         /* Reserved for future use  */
+    uint32_t        *stack_ptr;           /* Saved stack pointer for context switch */
+    uint32_t        time_slice_ms;        /* Time slice in ms (0 = no preemption) */
+    uint32_t        time_remaining_ms;    /* Remaining time in current slice */
+    bool            needs_switch;         /* Context switch pending */
+
+    uint8_t         reserved[44];         /* Reserved for future use  */
 } task_descriptor_t;
 
 /* ============================================================================
@@ -201,5 +206,44 @@ void scheduler_update_runtime(uint16_t task_id, uint32_t elapsed_ms);
  * Count tasks that are READY or RUNNING
  */
 uint16_t scheduler_count_ready_tasks(void);
+
+/* ============================================================================
+ * Preemptive Scheduling
+ * ========================================================================== */
+
+/**
+ * Start preemptive scheduler (enables SysTick)
+ */
+void scheduler_start(void);
+
+/**
+ * Voluntarily yield current time slice
+ */
+void scheduler_yield(void);
+
+/**
+ * Set time slice for a task
+ *
+ * @param task_id Task ID
+ * @param ms      Time slice in milliseconds
+ */
+void scheduler_set_timeslice(uint16_t task_id, uint32_t ms);
+
+/**
+ * Get system tick count
+ *
+ * @return Current system tick (ms since scheduler_start)
+ */
+uint32_t scheduler_get_tick(void);
+
+/**
+ * Called from SysTick handler (1ms interval)
+ */
+void scheduler_tick(void);
+
+/**
+ * Called from PendSV handler to perform context switch
+ */
+void scheduler_context_switch(void);
 
 #endif /* LITTLEOS_SCHEDULER_H */
