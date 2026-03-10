@@ -188,9 +188,11 @@ int mqtt_connect(const char *broker_ip, uint16_t port, const char *client_id) {
     if (mqtt_client.state != MQTT_DISCONNECTED) return -1;
 
     strncpy(mqtt_client.broker_ip, broker_ip, sizeof(mqtt_client.broker_ip) - 1);
+    mqtt_client.broker_ip[sizeof(mqtt_client.broker_ip) - 1] = '\0';
     mqtt_client.port = port ? port : 1883;
     strncpy(mqtt_client.client_id, client_id ? client_id : "littleos",
             sizeof(mqtt_client.client_id) - 1);
+    mqtt_client.client_id[sizeof(mqtt_client.client_id) - 1] = '\0';
 
     mqtt_pcb = tcp_new();
     if (!mqtt_pcb) return -1;
@@ -254,6 +256,7 @@ int mqtt_subscribe(const char *topic, uint8_t qos,
     if (slot < 0) return -1;
 
     strncpy(mqtt_client.subs[slot].topic, topic, MQTT_TOPIC_MAX_LEN - 1);
+    mqtt_client.subs[slot].topic[MQTT_TOPIC_MAX_LEN - 1] = '\0';
     mqtt_client.subs[slot].callback = cb;
     mqtt_client.subs[slot].user_data = user_data;
     mqtt_client.subs[slot].qos = qos;

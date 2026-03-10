@@ -298,7 +298,9 @@ int net_get_info(net_info_t *info) {
 
     info->status = net_get_status();
     strncpy(info->ssid, connected_ssid, NET_SSID_MAX - 1);
+    info->ssid[NET_SSID_MAX - 1] = '\0';
     strncpy(info->hostname, current_hostname, NET_HOSTNAME_MAX - 1);
+    info->hostname[NET_HOSTNAME_MAX - 1] = '\0';
     info->tx_bytes = tx_total;
     info->rx_bytes = rx_total;
 

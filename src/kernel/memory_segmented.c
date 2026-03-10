@@ -129,7 +129,7 @@ void memory_init(void)
  */
 void *kernel_malloc(size_t size)
 {
-    if (size == 0) {
+    if (size == 0 || size > SIZE_MAX - 7) {
         return NULL;
     }
 
@@ -213,7 +213,7 @@ void *kernel_malloc_debug(size_t size, const char *file, int line)
  */
 void *interpreter_malloc(size_t size)
 {
-    if (size == 0) {
+    if (size == 0 || size > SIZE_MAX - 7) {
         return NULL;
     }
 

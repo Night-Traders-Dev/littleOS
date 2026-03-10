@@ -11,6 +11,7 @@ int tmux_init(void) {
     memset(windows, 0, sizeof(windows));
     /* Create default window 0: shell */
     strncpy(windows[0].name, "shell", TMUX_NAME_LEN - 1);
+    windows[0].name[TMUX_NAME_LEN - 1] = '\0';
     windows[0].active = true;
     window_count = 1;
     active_window = 0;
@@ -24,6 +25,7 @@ int tmux_create_window(const char *name) {
         if (!windows[i].active) {
             memset(&windows[i], 0, sizeof(tmux_window_t));
             strncpy(windows[i].name, name ? name : "window", TMUX_NAME_LEN - 1);
+            windows[i].name[TMUX_NAME_LEN - 1] = '\0';
             windows[i].active = true;
             window_count++;
             return i;

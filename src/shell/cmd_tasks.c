@@ -37,7 +37,9 @@ static void registry_add(uint16_t task_id, const char *module, const char *task_
     task_registry_entry_t *entry = &task_registry[registry_count++];
     entry->task_id = task_id;
     strncpy(entry->module_name, module ? module : "system", 31);
+    entry->module_name[31] = '\0';
     strncpy(entry->task_name, task_name ? task_name : "unnamed", LITTLEOS_MAX_TASK_NAME - 1);
+    entry->task_name[LITTLEOS_MAX_TASK_NAME - 1] = '\0';
 }
 
 // Find all tasks for a module

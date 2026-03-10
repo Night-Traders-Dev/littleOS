@@ -70,12 +70,12 @@ typedef struct {
 #endif
 
 typedef struct {
-    volatile int32_t count;
-    int32_t          max_count;
-    char             name[IPC_CHANNEL_NAME_LEN];
-    bool             initialized;
-    uint16_t         waiting_tasks[LITTLEOS_MAX_TASKS];
-    uint16_t         waiting_count;
+    volatile int32_t  count;
+    volatile int32_t  max_count;
+    char              name[IPC_CHANNEL_NAME_LEN];
+    volatile bool     initialized;
+    uint16_t          waiting_tasks[LITTLEOS_MAX_TASKS];
+    volatile uint16_t waiting_count;
 } ipc_semaphore_t;
 
 /* ============================================================================

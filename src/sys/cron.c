@@ -62,7 +62,9 @@ int cron_add(const char *name, const char *command, uint32_t interval_ms)
 
     memset(job, 0, sizeof(*job));
     strncpy(job->name, name, CRON_MAX_NAME - 1);
+    job->name[CRON_MAX_NAME - 1] = '\0';
     strncpy(job->command, command, CRON_MAX_COMMAND - 1);
+    job->command[CRON_MAX_COMMAND - 1] = '\0';
     job->interval_ms = interval_ms;
     job->mode        = CRON_MODE_INTERVAL;
     job->enabled     = true;
@@ -90,7 +92,9 @@ int cron_add_oneshot(const char *name, const char *command, uint32_t delay_ms)
 
     memset(job, 0, sizeof(*job));
     strncpy(job->name, name, CRON_MAX_NAME - 1);
+    job->name[CRON_MAX_NAME - 1] = '\0';
     strncpy(job->command, command, CRON_MAX_COMMAND - 1);
+    job->command[CRON_MAX_COMMAND - 1] = '\0';
     job->interval_ms = delay_ms;
     job->mode        = CRON_MODE_ONESHOT;
     job->enabled     = true;

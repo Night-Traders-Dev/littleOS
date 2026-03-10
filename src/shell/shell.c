@@ -333,6 +333,7 @@ static bool expand_history(char *buffer, int *idx) {
         }
         if (buffer[bang_end]) {
             strncpy(suffix, &buffer[bang_end], MAX_CMD_LEN - 1);
+            suffix[MAX_CMD_LEN - 1] = '\0';
         }
 
         int rlen = (int)strlen(replacement);
@@ -389,6 +390,7 @@ static io_redirect_t parse_redirects(char *cmdline) {
         p += 2;
         while (*p == ' ') p++;
         strncpy(redir.out_file, p, sizeof(redir.out_file) - 1);
+        redir.out_file[sizeof(redir.out_file) - 1] = '\0';
         // Trim trailing spaces
         int len = (int)strlen(redir.out_file);
         while (len > 0 && redir.out_file[len - 1] == ' ') redir.out_file[--len] = '\0';
@@ -403,6 +405,7 @@ static io_redirect_t parse_redirects(char *cmdline) {
         p++;
         while (*p == ' ') p++;
         strncpy(redir.out_file, p, sizeof(redir.out_file) - 1);
+        redir.out_file[sizeof(redir.out_file) - 1] = '\0';
         int len = (int)strlen(redir.out_file);
         while (len > 0 && redir.out_file[len - 1] == ' ') redir.out_file[--len] = '\0';
     }

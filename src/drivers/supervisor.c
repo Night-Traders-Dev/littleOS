@@ -69,8 +69,9 @@ static void check_system_health(void) {
 
     uint32_t time_since_heartbeat = now - metrics.core0_last_heartbeat;
 
-    if (time_since_heartbeat > 1000000000) {
-        printf("[SUPERVISOR] Heartbeat timing overflow detected, resynchronizing\r\n");
+    /* Detect uint32_t wraparound: if elapsed time seems impossibly large
+     * (> 10 minutes), it's likely a timer wrap, not an actual hang */
+    if (time_since_heartbeat > 600000) {
         metrics.core0_last_heartbeat = now;
         time_since_heartbeat = 0;
     }

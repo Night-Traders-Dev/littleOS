@@ -109,6 +109,7 @@ int fs_bmap(struct fs *fs,
             bool create,
             uint32_t *phys_block) {
     if (!fs || !ino || !phys_block) return FS_ERR_INVALID_ARG;
+    if (logical_block >= DOUBLE_INDIRECT_MAX) return FS_ERR_INVALID_ARG;
 
     /* -------------------------------------------------------------- */
     /*  Direct blocks: 0 .. FS_DIRECT_BLOCKS-1                        */
