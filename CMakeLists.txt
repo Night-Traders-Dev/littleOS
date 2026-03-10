@@ -170,6 +170,7 @@ add_library(littleos_core STATIC
     src/drivers/ota.c
     src/drivers/remote_shell.c
     src/drivers/sensor.c
+    src/drivers/mqtt.c
 #
     src/storage/script_storage.c
     src/storage/config_storage.c
@@ -198,11 +199,28 @@ add_library(littleos_core STATIC
     src/shell/cmd_sensor.c
     src/shell/cmd_power.c
     src/shell/cmd_profile.c
+    src/shell/cmd_env.c
+    src/shell/cmd_text.c
+    src/shell/cmd_top.c
+    src/shell/cmd_pinout.c
+    src/shell/cmd_proc.c
+    src/shell/cmd_dev.c
+    src/shell/cmd_cron.c
+    src/shell/cmd_mqtt.c
+    src/shell/cmd_pkg.c
+    src/shell/cmd_tmux.c
+    src/shell/cmd_man.c
 #
     src/sys/system_info.c
     src/sys/permissions.c
     src/sys/littlefetch.c
     src/sys/profiler.c
+    src/sys/shell_env.c
+    src/sys/procfs.c
+    src/sys/devfs.c
+    src/sys/cron.c
+    src/sys/pkg.c
+    src/sys/tmux.c
 #
     src/usr/users_config.c
 )

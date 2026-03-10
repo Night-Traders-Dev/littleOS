@@ -37,6 +37,7 @@ struct ram_backend {
 
 static struct ram_backend g_rb = {0};
 static struct fs g_fs = {0};
+struct fs *g_fs_ptr = NULL;  /* Global pointer for text utilities etc. */
 static bool g_fs_initialized = false;
 static bool g_fs_mounted = false;
 
@@ -166,6 +167,7 @@ static int cmd_fs_init(uint32_t blocks) {
 
     g_fs_initialized = true;
     g_fs_mounted = false;
+    g_fs_ptr = &g_fs;
     printf("fs: formatted RAM FS (%u blocks, %u bytes, persistent .noinit)\n",
         blocks, blocks * FS_BLOCK_SIZE);
     printf("fs: size marker written to .noinit (%u)\n", fs_backend_size_noinit);
@@ -208,6 +210,7 @@ static int cmd_fs_mount(void) {
 
     g_fs_initialized = true;
     g_fs_mounted = true;
+    g_fs_ptr = &g_fs;
     printf("fs: mounted (mount_count=%u)\n", g_fs.sb.mount_count);
     return FS_OK;
 }

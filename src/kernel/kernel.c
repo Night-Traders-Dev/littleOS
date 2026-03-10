@@ -18,6 +18,13 @@
 #include "hal/power.h"
 #include "sensor.h"
 #include "profiler.h"
+#include "shell_env.h"
+#include "procfs.h"
+#include "devfs.h"
+#include "cron.h"
+#include "mqtt.h"
+#include "pkg.h"
+#include "tmux.h"
 
 
 
@@ -319,6 +326,32 @@ void kernel_main(void) {
     // Initialize profiler
     profiler_init();
     dmesg_info("Runtime profiler initialized");
+
+    // Initialize shell environment (env vars, aliases, prompt)
+    shell_env_init();
+    dmesg_info("Shell environment initialized");
+
+    // Initialize virtual filesystems
+    procfs_init();
+    dmesg_info("procfs initialized");
+    devfs_init();
+    dmesg_info("devfs initialized");
+
+    // Initialize cron scheduler
+    cron_init();
+    dmesg_info("Cron scheduler initialized");
+
+    // Initialize MQTT client
+    mqtt_init();
+    dmesg_info("MQTT client initialized");
+
+    // Initialize package manager
+    pkg_init();
+    dmesg_info("Package manager initialized");
+
+    // Initialize terminal multiplexer
+    tmux_init();
+    dmesg_info("Terminal multiplexer initialized");
 
     // Enable watchdog AFTER all init is done - start monitoring for hangs
     wdt_enable(8000);  // 8 second timeout
