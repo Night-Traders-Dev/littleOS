@@ -25,6 +25,10 @@
 #include "mqtt.h"
 #include "pkg.h"
 #include "tmux.h"
+#include "logcat.h"
+#include "trace.h"
+#include "coredump.h"
+#include "syslog.h"
 
 
 
@@ -352,6 +356,13 @@ void kernel_main(void) {
     // Initialize terminal multiplexer
     tmux_init();
     dmesg_info("Terminal multiplexer initialized");
+
+    // Initialize v0.6.0 subsystems
+    logcat_init();
+    trace_init();
+    coredump_init();
+    syslog_init();
+    dmesg_info("Debug subsystems initialized (logcat, trace, coredump, syslog)");
 
     // Enable watchdog AFTER all init is done - start monitoring for hangs
     wdt_enable(8000);  // 8 second timeout

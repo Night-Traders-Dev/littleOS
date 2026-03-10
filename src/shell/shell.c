@@ -12,6 +12,9 @@
 #include "littlefetch.h"
 #include "shell_env.h"
 #include "cron.h"
+#include "logcat.h"
+#include "syslog.h"
+#include "coredump.h"
 #include "fs.h"
 
 // Forward declarations - existing commands
@@ -60,6 +63,22 @@ extern int  cmd_mqtt(int argc, char *argv[]);
 extern int  cmd_pkg(int argc, char *argv[]);
 extern int  cmd_screen(int argc, char *argv[]);
 extern int  cmd_man(int argc, char *argv[]);
+
+// Forward declarations - new features (v0.6.0)
+extern int  cmd_logcat(int argc, char *argv[]);
+extern int  cmd_trace(int argc, char *argv[]);
+extern int  cmd_watchpoint(int argc, char *argv[]);
+extern int  cmd_benchmark(int argc, char *argv[]);
+extern int  cmd_selftest(int argc, char *argv[]);
+extern int  cmd_coredump(int argc, char *argv[]);
+extern int  cmd_syslog(int argc, char *argv[]);
+extern int  cmd_i2cscan(int argc, char *argv[]);
+extern int  cmd_wire(int argc, char *argv[]);
+extern int  cmd_pwmtune(int argc, char *argv[]);
+extern int  cmd_adcstream(int argc, char *argv[]);
+extern int  cmd_gpiowatch(int argc, char *argv[]);
+extern int  cmd_neopixel(int argc, char *argv[]);
+extern int  cmd_display(int argc, char *argv[]);
 
 // ===========================================================================
 // Command table
@@ -132,6 +151,22 @@ static const shell_cmd_t cmd_table[] = {
     { "export",     cmd_export,      "Set environment variable" },
     { "screen",     cmd_screen,      "Terminal multiplexer" },
     { "man",        cmd_man,         "Manual pages" },
+    // Debug & diagnostics (v0.6.0)
+    { "logcat",     cmd_logcat,      "Structured logging with filters" },
+    { "trace",      cmd_trace,       "Execution trace buffer" },
+    { "watchpoint", cmd_watchpoint,  "Memory watchpoints" },
+    { "benchmark",  cmd_benchmark,   "Performance benchmarks" },
+    { "selftest",   cmd_selftest,    "Hardware self-test suite" },
+    { "coredump",   cmd_coredump,    "Crash dump viewer" },
+    { "syslog",     cmd_syslog,      "Persistent system log" },
+    // Hardware tools (v0.6.0)
+    { "i2cscan",    cmd_i2cscan,     "I2C bus scanner" },
+    { "wire",       cmd_wire,        "Interactive I2C/SPI REPL" },
+    { "pwmtune",    cmd_pwmtune,     "PWM frequency/duty tuner" },
+    { "adc",        cmd_adcstream,   "ADC read/stream/stats" },
+    { "gpiowatch",  cmd_gpiowatch,   "GPIO state monitor" },
+    { "neopixel",   cmd_neopixel,    "WS2812 NeoPixel control" },
+    { "display",    cmd_display,     "SSD1306 OLED display" },
     { NULL, NULL, NULL }
 };
 
@@ -446,13 +481,17 @@ static int execute_single(int argc, char *argv[]) {
         printf("\r\n  \033[1mVirtual Filesystems:\033[0m\r\n");
         printf("    proc dev\r\n");
         printf("\r\n  \033[1mHardware:\033[0m\r\n");
-        printf("    hw pio dma usb pinout\r\n");
+        printf("    hw pio dma usb pinout i2cscan wire\r\n");
+        printf("    pwmtune adc gpiowatch neopixel display\r\n");
         printf("\r\n  \033[1mNetworking:\033[0m\r\n");
         printf("    net mqtt remote ota\r\n");
         printf("\r\n  \033[1mScripting & Packages:\033[0m\r\n");
         printf("    sage script pkg\r\n");
         printf("\r\n  \033[1mServices:\033[0m\r\n");
         printf("    sensor power cron ipc\r\n");
+        printf("\r\n  \033[1mDebug & Diagnostics:\033[0m\r\n");
+        printf("    logcat trace watchpoint benchmark selftest\r\n");
+        printf("    coredump syslog\r\n");
         printf("\r\n  \033[1mShell:\033[0m\r\n");
         printf("    env alias export screen man\r\n");
         printf("\r\n  Use 'man <cmd>' for detailed help. Tab to autocomplete.\r\n");
@@ -461,7 +500,7 @@ static int execute_single(int argc, char *argv[]) {
     }
 
     if (strcmp(argv[0], "version") == 0) {
-        printf("littleOS v0.5.0 - RP2040\r\n");
+        printf("littleOS v0.6.0 - RP2040\r\n");
         printf("With SageLang v0.8.0\r\n");
         printf("Supervisor: %s\r\n",
                supervisor_is_running() ? "Active" : "Inactive");

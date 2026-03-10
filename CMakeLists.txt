@@ -210,6 +210,20 @@ add_library(littleos_core STATIC
     src/shell/cmd_pkg.c
     src/shell/cmd_tmux.c
     src/shell/cmd_man.c
+    src/shell/cmd_logcat.c
+    src/shell/cmd_trace.c
+    src/shell/cmd_watchpoint.c
+    src/shell/cmd_benchmark.c
+    src/shell/cmd_selftest.c
+    src/shell/cmd_coredump.c
+    src/shell/cmd_syslog.c
+    src/shell/cmd_i2cscan.c
+    src/shell/cmd_wire.c
+    src/shell/cmd_pwmtune.c
+    src/shell/cmd_adcstream.c
+    src/shell/cmd_gpiowatch.c
+    src/shell/cmd_neopixel.c
+    src/shell/cmd_display.c
 #
     src/sys/system_info.c
     src/sys/permissions.c
@@ -221,6 +235,14 @@ add_library(littleos_core STATIC
     src/sys/cron.c
     src/sys/pkg.c
     src/sys/tmux.c
+    src/sys/logcat.c
+    src/sys/trace.c
+    src/sys/watchpoint.c
+    src/sys/coredump.c
+    src/sys/syslog.c
+#
+    src/drivers/neopixel.c
+    src/drivers/display.c
 #
     src/usr/users_config.c
 )

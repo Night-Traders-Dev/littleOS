@@ -1,0 +1,286 @@
+/* display.c - SSD1306 OLED I2C display driver for littleOS */
+#include <stdio.h>
+#include <string.h>
+#include <stdarg.h>
+#include "display.h"
+
+#ifdef PICO_BUILD
+#include "pico/stdlib.h"
+#include "hardware/i2c.h"
+#endif
+
+/* ---------- internal state ---------- */
+
+static uint8_t framebuffer[DISPLAY_BUF_SIZE];
+static uint8_t display_addr = 0x3C;
+static bool    display_connected = false;
+static bool    display_inverted = false;
+
+/* ---------- 5x7 font (ASCII 32-126) ---------- */
+
+static const uint8_t font5x7[][5] = {
+    /* 32 ' ' */ {0x00, 0x00, 0x00, 0x00, 0x00},
+    /* 33 '!' */ {0x00, 0x00, 0x5F, 0x00, 0x00},
+    /* 34 '"' */ {0x00, 0x07, 0x00, 0x07, 0x00},
+    /* 35 '#' */ {0x14, 0x7F, 0x14, 0x7F, 0x14},
+    /* 36 '$' */ {0x24, 0x2A, 0x7F, 0x2A, 0x12},
+    /* 37 '%' */ {0x23, 0x13, 0x08, 0x64, 0x62},
+    /* 38 '&' */ {0x36, 0x49, 0x55, 0x22, 0x50},
+    /* 39 ''' */ {0x00, 0x05, 0x03, 0x00, 0x00},
+    /* 40 '(' */ {0x00, 0x1C, 0x22, 0x41, 0x00},
+    /* 41 ')' */ {0x00, 0x41, 0x22, 0x1C, 0x00},
+    /* 42 '*' */ {0x14, 0x08, 0x3E, 0x08, 0x14},
+    /* 43 '+' */ {0x08, 0x08, 0x3E, 0x08, 0x08},
+    /* 44 ',' */ {0x00, 0x50, 0x30, 0x00, 0x00},
+    /* 45 '-' */ {0x08, 0x08, 0x08, 0x08, 0x08},
+    /* 46 '.' */ {0x00, 0x60, 0x60, 0x00, 0x00},
+    /* 47 '/' */ {0x20, 0x10, 0x08, 0x04, 0x02},
+    /* 48 '0' */ {0x3E, 0x51, 0x49, 0x45, 0x3E},
+    /* 49 '1' */ {0x00, 0x42, 0x7F, 0x40, 0x00},
+    /* 50 '2' */ {0x42, 0x61, 0x51, 0x49, 0x46},
+    /* 51 '3' */ {0x21, 0x41, 0x45, 0x4B, 0x31},
+    /* 52 '4' */ {0x18, 0x14, 0x12, 0x7F, 0x10},
+    /* 53 '5' */ {0x27, 0x45, 0x45, 0x45, 0x39},
+    /* 54 '6' */ {0x3C, 0x4A, 0x49, 0x49, 0x30},
+    /* 55 '7' */ {0x01, 0x71, 0x09, 0x05, 0x03},
+    /* 56 '8' */ {0x36, 0x49, 0x49, 0x49, 0x36},
+    /* 57 '9' */ {0x06, 0x49, 0x49, 0x29, 0x1E},
+    /* 58 ':' */ {0x00, 0x36, 0x36, 0x00, 0x00},
+    /* 59 ';' */ {0x00, 0x56, 0x36, 0x00, 0x00},
+    /* 60 '<' */ {0x08, 0x14, 0x22, 0x41, 0x00},
+    /* 61 '=' */ {0x14, 0x14, 0x14, 0x14, 0x14},
+    /* 62 '>' */ {0x00, 0x41, 0x22, 0x14, 0x08},
+    /* 63 '?' */ {0x02, 0x01, 0x51, 0x09, 0x06},
+    /* 64 '@' */ {0x32, 0x49, 0x79, 0x41, 0x3E},
+    /* 65 'A' */ {0x7E, 0x11, 0x11, 0x11, 0x7E},
+    /* 66 'B' */ {0x7F, 0x49, 0x49, 0x49, 0x36},
+    /* 67 'C' */ {0x3E, 0x41, 0x41, 0x41, 0x22},
+    /* 68 'D' */ {0x7F, 0x41, 0x41, 0x22, 0x1C},
+    /* 69 'E' */ {0x7F, 0x49, 0x49, 0x49, 0x41},
+    /* 70 'F' */ {0x7F, 0x09, 0x09, 0x09, 0x01},
+    /* 71 'G' */ {0x3E, 0x41, 0x49, 0x49, 0x7A},
+    /* 72 'H' */ {0x7F, 0x08, 0x08, 0x08, 0x7F},
+    /* 73 'I' */ {0x00, 0x41, 0x7F, 0x41, 0x00},
+    /* 74 'J' */ {0x20, 0x40, 0x41, 0x3F, 0x01},
+    /* 75 'K' */ {0x7F, 0x08, 0x14, 0x22, 0x41},
+    /* 76 'L' */ {0x7F, 0x40, 0x40, 0x40, 0x40},
+    /* 77 'M' */ {0x7F, 0x02, 0x0C, 0x02, 0x7F},
+    /* 78 'N' */ {0x7F, 0x04, 0x08, 0x10, 0x7F},
+    /* 79 'O' */ {0x3E, 0x41, 0x41, 0x41, 0x3E},
+    /* 80 'P' */ {0x7F, 0x09, 0x09, 0x09, 0x06},
+    /* 81 'Q' */ {0x3E, 0x41, 0x51, 0x21, 0x5E},
+    /* 82 'R' */ {0x7F, 0x09, 0x19, 0x29, 0x46},
+    /* 83 'S' */ {0x46, 0x49, 0x49, 0x49, 0x31},
+    /* 84 'T' */ {0x01, 0x01, 0x7F, 0x01, 0x01},
+    /* 85 'U' */ {0x3F, 0x40, 0x40, 0x40, 0x3F},
+    /* 86 'V' */ {0x1F, 0x20, 0x40, 0x20, 0x1F},
+    /* 87 'W' */ {0x3F, 0x40, 0x38, 0x40, 0x3F},
+    /* 88 'X' */ {0x63, 0x14, 0x08, 0x14, 0x63},
+    /* 89 'Y' */ {0x07, 0x08, 0x70, 0x08, 0x07},
+    /* 90 'Z' */ {0x61, 0x51, 0x49, 0x45, 0x43},
+    /* 91 '[' */ {0x00, 0x7F, 0x41, 0x41, 0x00},
+    /* 92 '\' */ {0x02, 0x04, 0x08, 0x10, 0x20},
+    /* 93 ']' */ {0x00, 0x41, 0x41, 0x7F, 0x00},
+    /* 94 '^' */ {0x04, 0x02, 0x01, 0x02, 0x04},
+    /* 95 '_' */ {0x40, 0x40, 0x40, 0x40, 0x40},
+    /* 96 '`' */ {0x00, 0x01, 0x02, 0x04, 0x00},
+    /* 97 'a' */ {0x20, 0x54, 0x54, 0x54, 0x78},
+    /* 98 'b' */ {0x7F, 0x48, 0x44, 0x44, 0x38},
+    /* 99 'c' */ {0x38, 0x44, 0x44, 0x44, 0x20},
+    /*100 'd' */ {0x38, 0x44, 0x44, 0x48, 0x7F},
+    /*101 'e' */ {0x38, 0x54, 0x54, 0x54, 0x18},
+    /*102 'f' */ {0x08, 0x7E, 0x09, 0x01, 0x02},
+    /*103 'g' */ {0x0C, 0x52, 0x52, 0x52, 0x3E},
+    /*104 'h' */ {0x7F, 0x08, 0x04, 0x04, 0x78},
+    /*105 'i' */ {0x00, 0x44, 0x7D, 0x40, 0x00},
+    /*106 'j' */ {0x20, 0x40, 0x44, 0x3D, 0x00},
+    /*107 'k' */ {0x7F, 0x10, 0x28, 0x44, 0x00},
+    /*108 'l' */ {0x00, 0x41, 0x7F, 0x40, 0x00},
+    /*109 'm' */ {0x7C, 0x04, 0x18, 0x04, 0x78},
+    /*110 'n' */ {0x7C, 0x08, 0x04, 0x04, 0x78},
+    /*111 'o' */ {0x38, 0x44, 0x44, 0x44, 0x38},
+    /*112 'p' */ {0x7C, 0x14, 0x14, 0x14, 0x08},
+    /*113 'q' */ {0x08, 0x14, 0x14, 0x18, 0x7C},
+    /*114 'r' */ {0x7C, 0x08, 0x04, 0x04, 0x08},
+    /*115 's' */ {0x48, 0x54, 0x54, 0x54, 0x20},
+    /*116 't' */ {0x04, 0x3F, 0x44, 0x40, 0x20},
+    /*117 'u' */ {0x3C, 0x40, 0x40, 0x20, 0x7C},
+    /*118 'v' */ {0x1C, 0x20, 0x40, 0x20, 0x1C},
+    /*119 'w' */ {0x3C, 0x40, 0x30, 0x40, 0x3C},
+    /*120 'x' */ {0x44, 0x28, 0x10, 0x28, 0x44},
+    /*121 'y' */ {0x0C, 0x50, 0x50, 0x50, 0x3C},
+    /*122 'z' */ {0x44, 0x64, 0x54, 0x4C, 0x44},
+    /*123 '{' */ {0x00, 0x08, 0x36, 0x41, 0x00},
+    /*124 '|' */ {0x00, 0x00, 0x7F, 0x00, 0x00},
+    /*125 '}' */ {0x00, 0x41, 0x36, 0x08, 0x00},
+    /*126 '~' */ {0x10, 0x08, 0x08, 0x10, 0x10},
+};
+
+/* ---------- I2C helpers ---------- */
+
+#ifdef PICO_BUILD
+static i2c_inst_t *display_i2c = i2c0;
+
+static void ssd1306_cmd(uint8_t cmd) {
+    uint8_t buf[2] = {0x00, cmd}; /* Co=0, D/C#=0 (command) */
+    i2c_write_blocking(display_i2c, display_addr, buf, 2, false);
+}
+
+static void ssd1306_cmd2(uint8_t cmd, uint8_t arg) {
+    uint8_t buf[3] = {0x00, cmd, arg};
+    i2c_write_blocking(display_i2c, display_addr, buf, 3, false);
+}
+#endif
+
+/* ---------- public API ---------- */
+
+void display_init(uint8_t i2c_addr) {
+    display_addr = i2c_addr;
+    memset(framebuffer, 0, sizeof(framebuffer));
+    display_inverted = false;
+
+#ifdef PICO_BUILD
+    /* SSD1306 initialization sequence */
+    ssd1306_cmd(0xAE);        /* display off */
+    ssd1306_cmd2(0xD5, 0x80); /* set display clock divide ratio */
+    ssd1306_cmd2(0xA8, 0x3F); /* set multiplex ratio (64-1) */
+    ssd1306_cmd2(0xD3, 0x00); /* set display offset = 0 */
+    ssd1306_cmd(0x40);        /* set start line = 0 */
+    ssd1306_cmd2(0x8D, 0x14); /* enable charge pump */
+    ssd1306_cmd2(0x20, 0x00); /* horizontal addressing mode */
+    ssd1306_cmd(0xA1);        /* segment remap (col 127 = SEG0) */
+    ssd1306_cmd(0xC8);        /* COM output scan direction remapped */
+    ssd1306_cmd2(0xDA, 0x12); /* COM pins hardware config */
+    ssd1306_cmd2(0x81, 0xCF); /* set contrast */
+    ssd1306_cmd2(0xD9, 0xF1); /* set pre-charge period */
+    ssd1306_cmd2(0xDB, 0x40); /* set VCOMH deselect level */
+    ssd1306_cmd(0xA4);        /* display from RAM */
+    ssd1306_cmd(0xA6);        /* normal display (not inverted) */
+    ssd1306_cmd(0xAF);        /* display on */
+
+    display_connected = true;
+#endif
+}
+
+void display_clear(void) {
+    memset(framebuffer, 0, sizeof(framebuffer));
+}
+
+void display_flush(void) {
+    if (!display_connected) return;
+
+#ifdef PICO_BUILD
+    /* Set column address 0-127 */
+    ssd1306_cmd(0x21);
+    ssd1306_cmd(0x00);
+    ssd1306_cmd(0x7F);
+    /* Set page address 0-7 */
+    ssd1306_cmd(0x22);
+    ssd1306_cmd(0x00);
+    ssd1306_cmd(0x07);
+
+    /* Send framebuffer in chunks (I2C has limited buffer) */
+    for (int i = 0; i < DISPLAY_BUF_SIZE; i += 16) {
+        uint8_t buf[17];
+        buf[0] = 0x40; /* Co=0, D/C#=1 (data) */
+        int chunk = DISPLAY_BUF_SIZE - i;
+        if (chunk > 16) chunk = 16;
+        memcpy(&buf[1], &framebuffer[i], (size_t)chunk);
+        i2c_write_blocking(display_i2c, display_addr, buf, (size_t)(chunk + 1), false);
+    }
+#endif
+}
+
+void display_pixel(int x, int y, bool on) {
+    if (x < 0 || x >= DISPLAY_WIDTH || y < 0 || y >= DISPLAY_HEIGHT) return;
+    int page = y / 8;
+    int bit  = y % 8;
+    int idx  = page * DISPLAY_WIDTH + x;
+    if (on)
+        framebuffer[idx] |=  (uint8_t)(1 << bit);
+    else
+        framebuffer[idx] &= (uint8_t)~(1 << bit);
+}
+
+void display_line(int x0, int y0, int x1, int y1) {
+    /* Bresenham's line algorithm */
+    int dx = x1 - x0;
+    int dy = y1 - y0;
+    int sx = (dx > 0) ? 1 : -1;
+    int sy = (dy > 0) ? 1 : -1;
+    if (dx < 0) dx = -dx;
+    if (dy < 0) dy = -dy;
+    int err = dx - dy;
+
+    for (;;) {
+        display_pixel(x0, y0, true);
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = 2 * err;
+        if (e2 > -dy) { err -= dy; x0 += sx; }
+        if (e2 <  dx) { err += dx; y0 += sy; }
+    }
+}
+
+void display_rect(int x, int y, int w, int h, bool fill) {
+    if (fill) {
+        for (int j = y; j < y + h; j++) {
+            for (int i = x; i < x + w; i++) {
+                display_pixel(i, j, true);
+            }
+        }
+    } else {
+        display_line(x, y, x + w - 1, y);
+        display_line(x + w - 1, y, x + w - 1, y + h - 1);
+        display_line(x + w - 1, y + h - 1, x, y + h - 1);
+        display_line(x, y + h - 1, x, y);
+    }
+}
+
+void display_text(int x, int y, const char *text) {
+    int cx = x;
+    while (*text) {
+        char ch = *text++;
+        if (ch < 32 || ch > 126) ch = '?';
+        int idx = ch - 32;
+        for (int col = 0; col < 5; col++) {
+            uint8_t column = font5x7[idx][col];
+            for (int row = 0; row < 7; row++) {
+                if (column & (1 << row)) {
+                    display_pixel(cx + col, y + row, true);
+                }
+            }
+        }
+        cx += 6; /* 5 pixel char + 1 pixel spacing */
+        if (cx + 5 > DISPLAY_WIDTH) break; /* stop at edge */
+    }
+}
+
+void display_printf(int x, int y, const char *fmt, ...) {
+    char buf[64];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    display_text(x, y, buf);
+}
+
+bool display_is_connected(void) {
+    return display_connected;
+}
+
+void display_set_contrast(uint8_t contrast) {
+#ifdef PICO_BUILD
+    if (!display_connected) return;
+    ssd1306_cmd2(0x81, contrast);
+#else
+    (void)contrast;
+#endif
+}
+
+void display_invert(bool invert) {
+    display_inverted = invert;
+#ifdef PICO_BUILD
+    if (!display_connected) return;
+    ssd1306_cmd(invert ? 0xA7 : 0xA6);
+#endif
+}

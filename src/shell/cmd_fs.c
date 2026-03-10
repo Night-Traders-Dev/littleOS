@@ -16,8 +16,8 @@
 // 4. NOINIT storage survives software reboot (watchdog 10-50ms)
 // 5. Does NOT survive power cycle or full reset
 
-#define NOINIT __attribute__((section(".noinit"), used, retain))
-#define FS_BACKEND_SIZE (128 * FS_BLOCK_SIZE)
+#define NOINIT __attribute__((section(".uninitialized_data"), used, retain))
+#define FS_BACKEND_SIZE (16 * FS_BLOCK_SIZE)
 
 // Persistent storage array - survives software reboot
 NOINIT static uint8_t fs_backend_noinit[FS_BACKEND_SIZE];
