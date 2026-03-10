@@ -12,6 +12,10 @@
 #include "lwip/dns.h"
 #include "lwip/pbuf.h"
 #include "lwip/netif.h"
+#include "lwip/raw.h"
+#include "lwip/icmp.h"
+#include "lwip/inet_chksum.h"
+#include "lwip/ip4.h"
 #endif
 
 /* ============================================================================
@@ -603,21 +607,190 @@ int net_dns_lookup(const char *hostname, net_ip4_t *ip) {
 
 /* ---------- Ping / HTTP stubs ---------- */
 
+/* ---------- Ping (ICMP Echo) ---------- */
+
+static volatile bool ping_reply_received = false;
+static uint32_t ping_rtt_ms = 0;
+
+static uint8_t ping_recv_cb(void *arg, struct raw_pcb *pcb, struct pbuf *p, const ip_addr_t *addr) {
+    (void)arg;
+    (void)pcb;
+    (void)addr;
+
+    /* Check for ICMP echo reply (type 0) */
+    if (p->len >= 8) {
+        uint8_t *data = (uint8_t *)p->payload;
+        /* Skip IP header (20 bytes minimum) */
+        if (p->len >= 28 && data[20] == 0) {  /* Type 0 = echo reply */
+            uint16_t id = (uint16_t)((data[24] << 8) | data[25]);
+            if (id == 0x4C4F) {  /* "LO" = littleOS */
+                ping_reply_received = true;
+                pbuf_free(p);
+                return 1;  /* consumed */
+            }
+        }
+    }
+    return 0;  /* not consumed */
+}
+
 int net_ping(net_ip4_t ip, uint32_t timeout_ms) {
-    /* ICMP ping requires raw sockets; stub for now */
-    (void)ip;
-    (void)timeout_ms;
-    dmesg_warn("net: ping not implemented");
-    return NET_ERR_NOT_SUPPORTED;
+    if (!net_initialized) return NET_ERR_INIT;
+
+    struct raw_pcb *pcb = raw_new(IP_PROTO_ICMP);
+    if (!pcb) return NET_ERR_NO_RESOURCE;
+
+    raw_recv(pcb, ping_recv_cb, NULL);
+    raw_bind(pcb, IP_ADDR_ANY);
+
+    /* Build ICMP echo request */
+    struct pbuf *p = pbuf_alloc(PBUF_IP, 32, PBUF_RAM);
+    if (!p) {
+        raw_remove(pcb);
+        return NET_ERR_NO_RESOURCE;
+    }
+
+    uint8_t *icmp = (uint8_t *)p->payload;
+    memset(icmp, 0, 32);
+    icmp[0] = 8;       /* Type: echo request */
+    icmp[1] = 0;       /* Code */
+    icmp[4] = 0x4C;    /* ID high: 'L' */
+    icmp[5] = 0x4F;    /* ID low:  'O' */
+    icmp[6] = 0;       /* Seq high */
+    icmp[7] = 1;       /* Seq low */
+
+    /* Compute ICMP checksum */
+    uint32_t sum = 0;
+    for (int i = 0; i < 32; i += 2) {
+        sum += (uint32_t)((icmp[i] << 8) | icmp[i + 1]);
+    }
+    while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+    uint16_t cksum = (uint16_t)~sum;
+    icmp[2] = (uint8_t)(cksum >> 8);
+    icmp[3] = (uint8_t)(cksum & 0xFF);
+
+    ip_addr_t remote;
+    IP4_ADDR(&remote, ip.addr[0], ip.addr[1], ip.addr[2], ip.addr[3]);
+
+    ping_reply_received = false;
+    uint32_t start = to_ms_since_boot(get_absolute_time());
+
+    raw_sendto(pcb, p, &remote);
+    pbuf_free(p);
+
+    /* Wait for reply or timeout */
+    while (!ping_reply_received) {
+        cyw43_arch_poll();
+        sleep_ms(1);
+        uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - start;
+        if (elapsed >= timeout_ms) {
+            raw_remove(pcb);
+            return NET_ERR_TIMEOUT;
+        }
+    }
+
+    ping_rtt_ms = to_ms_since_boot(get_absolute_time()) - start;
+    raw_remove(pcb);
+    return (int)ping_rtt_ms;
 }
 
 int net_http_get(const char *url, char *response_buf, size_t buf_size) {
-    /* Minimal HTTP GET would require URL parsing + TCP socket; stub for now */
-    (void)url;
-    (void)response_buf;
-    (void)buf_size;
-    dmesg_warn("net: http_get not implemented");
-    return NET_ERR_NOT_SUPPORTED;
+    if (!url || !response_buf || buf_size == 0) return NET_ERR_INVALID;
+    if (!net_initialized) return NET_ERR_INIT;
+
+    /* Parse URL: http://hostname[:port]/path */
+    const char *p = url;
+    if (strncmp(p, "http://", 7) == 0) p += 7;
+
+    char host[64];
+    uint16_t port = 80;
+    const char *path = "/";
+
+    /* Extract host */
+    const char *slash = strchr(p, '/');
+    const char *colon = strchr(p, ':');
+    size_t host_len;
+
+    if (colon && (!slash || colon < slash)) {
+        host_len = (size_t)(colon - p);
+        port = (uint16_t)atoi(colon + 1);
+    } else if (slash) {
+        host_len = (size_t)(slash - p);
+    } else {
+        host_len = strlen(p);
+    }
+
+    if (host_len >= sizeof(host)) host_len = sizeof(host) - 1;
+    memcpy(host, p, host_len);
+    host[host_len] = '\0';
+
+    if (slash) path = slash;
+
+    /* Resolve hostname */
+    net_ip4_t ip;
+    if (net_str_to_ip4(host, &ip) != NET_OK) {
+        int err = net_dns_lookup(host, &ip);
+        if (err != NET_OK) return err;
+    }
+
+    /* Create TCP socket and connect */
+    int sock = net_socket_create(NET_SOCK_TCP);
+    if (sock < 0) return sock;
+
+    int err = net_socket_connect(sock, ip, port, 5000);
+    if (err != NET_OK) {
+        net_socket_close(sock);
+        return err;
+    }
+
+    /* Send HTTP GET request */
+    char request[256];
+    int rlen = snprintf(request, sizeof(request),
+                        "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n",
+                        path, host);
+    if (rlen <= 0 || (size_t)rlen >= sizeof(request)) {
+        net_socket_close(sock);
+        return NET_ERR_INVALID;
+    }
+
+    err = net_socket_send(sock, request, (size_t)rlen);
+    if (err < 0) {
+        net_socket_close(sock);
+        return err;
+    }
+
+    /* Receive response */
+    size_t total = 0;
+    uint32_t start = to_ms_since_boot(get_absolute_time());
+
+    while (total < buf_size - 1) {
+        cyw43_arch_poll();
+        int n = net_socket_recv(sock, response_buf + total, buf_size - 1 - total);
+        if (n > 0) {
+            total += (size_t)n;
+            start = to_ms_since_boot(get_absolute_time()); /* reset timeout on data */
+        } else if (n == NET_ERR_CLOSED) {
+            break;  /* server closed connection = done */
+        }
+        sleep_ms(10);
+
+        if (to_ms_since_boot(get_absolute_time()) - start > 10000) {
+            break;  /* 10s idle timeout */
+        }
+    }
+
+    response_buf[total] = '\0';
+    net_socket_close(sock);
+
+    /* Find body (after \r\n\r\n header separator) */
+    char *body = strstr(response_buf, "\r\n\r\n");
+    if (body) {
+        body += 4;
+        size_t body_len = total - (size_t)(body - response_buf);
+        memmove(response_buf, body, body_len + 1);
+        return (int)body_len;
+    }
+
+    return (int)total;
 }
 
 /* ============================================================================

@@ -25,7 +25,7 @@ extern "C" {
  * Cron Definitions
  * ========================================================================== */
 
-#define CRON_MAX_JOBS        8
+#define CRON_MAX_JOBS        4
 #define CRON_MAX_NAME        24
 #define CRON_MAX_COMMAND     128
 

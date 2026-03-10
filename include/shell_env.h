@@ -28,11 +28,11 @@ extern "C" {
  * ============================================================================
  */
 
-#define SHELL_ENV_MAX_VARS      32      /* Maximum environment variables */
+#define SHELL_ENV_MAX_VARS      16      /* Maximum environment variables */
 #define SHELL_ENV_KEY_MAX       32      /* Max key length (including NUL) */
 #define SHELL_ENV_VAL_MAX       64      /* Max value length (including NUL) */
 
-#define SHELL_ALIAS_MAX         16      /* Maximum aliases */
+#define SHELL_ALIAS_MAX         8       /* Maximum aliases */
 #define SHELL_ALIAS_NAME_MAX    16      /* Max alias name length (including NUL) */
 #define SHELL_ALIAS_EXPAND_MAX  128     /* Max alias expansion length (including NUL) */
 

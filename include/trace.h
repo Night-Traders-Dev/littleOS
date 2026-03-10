@@ -7,8 +7,8 @@
 extern "C" {
 #endif
 
-#define TRACE_MAX_ENTRIES    256
-#define TRACE_MAX_NAME_LEN   24
+#define TRACE_MAX_ENTRIES    128
+#define TRACE_MAX_NAME_LEN   16
 
 typedef enum {
     TRACE_ENTER = 0,

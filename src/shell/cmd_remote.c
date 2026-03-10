@@ -2,6 +2,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef PICO_BUILD
+#include "pico/stdlib.h"
+#endif
 #include "remote_shell.h"
 
 static void cmd_remote_usage(void) {

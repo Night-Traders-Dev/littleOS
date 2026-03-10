@@ -62,7 +62,7 @@ static int cmd_trace_dump(void)
     }
 
     /* Allocate a static buffer for dump output */
-    static char dump_buf[8192];
+    static char dump_buf[4096];
     int n = trace_dump(dump_buf, sizeof(dump_buf));
     if (n > 0) {
         printf("%s", dump_buf);

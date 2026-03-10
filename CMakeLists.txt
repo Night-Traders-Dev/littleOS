@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.13)
 
-set(PICO_BOARD pico)
+option(LITTLEOS_PICO_W "Build for Pico W with WiFi support" OFF)
+
+if(LITTLEOS_PICO_W)
+    set(PICO_BOARD pico_w)
+else()
+    set(PICO_BOARD pico)
+endif()
 set(PICO_PLATFORM rp2040)
 
 # PICO_SDK_PATH must be set before configuring
@@ -22,6 +28,14 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${CPU_FLAGS} -O2 -g")
 set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} ${CPU_FLAGS} -O2 -g")
 
 message(STATUS "Using PICO_SDK_PATH=${PICO_SDK_PATH}")
+
+# Pico W WiFi support
+if(LITTLEOS_PICO_W)
+    add_compile_definitions(PICO_W=1)
+    message(STATUS "WiFi: Pico W support ENABLED (cyw43 + lwIP)")
+else()
+    message(STATUS "WiFi: Disabled (standard Pico)")
+endif()
 
 # =============================================================================
 # User / Permissions Configuration
@@ -108,16 +122,17 @@ set(SAGELANG_DIR ${CMAKE_SOURCE_DIR}/third_party/sagelang)
 if(EXISTS ${SAGELANG_DIR})
     message(STATUS "Found SageLang at ${SAGELANG_DIR}")
     
-    # SageLang library
+    # SageLang library (C sources in src/c/, self-hosting build in src/sage/)
     add_library(sagelang STATIC
-        ${SAGELANG_DIR}/src/lexer.c
-        ${SAGELANG_DIR}/src/parser.c
-        ${SAGELANG_DIR}/src/ast.c
-        ${SAGELANG_DIR}/src/interpreter.c
-        ${SAGELANG_DIR}/src/value.c
-        ${SAGELANG_DIR}/src/env.c
-        ${SAGELANG_DIR}/src/gc.c
-        ${SAGELANG_DIR}/src/module.c
+        ${SAGELANG_DIR}/src/c/lexer.c
+        ${SAGELANG_DIR}/src/c/parser.c
+        ${SAGELANG_DIR}/src/c/ast.c
+        ${SAGELANG_DIR}/src/c/interpreter.c
+        ${SAGELANG_DIR}/src/c/value.c
+        ${SAGELANG_DIR}/src/c/env.c
+        ${SAGELANG_DIR}/src/c/gc.c
+        ${SAGELANG_DIR}/src/c/module.c
+        ${SAGELANG_DIR}/src/c/sage_thread.c
     )
     
     target_include_directories(sagelang PUBLIC
@@ -270,6 +285,13 @@ target_link_libraries(littleos_core PUBLIC
     pico_unique_id
 )
 
+# Add Pico W networking libraries
+if(LITTLEOS_PICO_W)
+    target_link_libraries(littleos_core PUBLIC
+        pico_cyw43_arch_lwip_threadsafe_background
+    )
+endif()
+
 # Add SageLang embedding if available
 if(SAGELANG_AVAILABLE)
     target_sources(littleos_core PRIVATE
@@ -336,7 +358,6 @@ pico_enable_stdio_usb(littleos 0)
 target_link_options(littleos PRIVATE
     -Wl,--gc-sections
     -Wl,-Map=${CMAKE_BINARY_DIR}/littleos.map
-    SHELL:-Wl,--section-start=.noinit=0x20020000
 )
 
 # Generate .elf, .bin, .uf2, etc.

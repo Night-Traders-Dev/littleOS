@@ -13,9 +13,9 @@ extern "C" {
 
 // Configuration storage limits
 #define CONFIG_MAX_KEY_LEN 32
-#define CONFIG_MAX_VALUE_LEN 256
-#define CONFIG_MAX_ENTRIES 32
-#define CONFIG_AUTOBOOT_SCRIPT_SIZE 2048
+#define CONFIG_MAX_VALUE_LEN 128
+#define CONFIG_MAX_ENTRIES 16
+#define CONFIG_AUTOBOOT_SCRIPT_SIZE 1024
 
 // Configuration result codes
 typedef enum {

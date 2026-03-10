@@ -14,9 +14,9 @@ extern "C" {
  * Message Passing
  * ============================================================================ */
 
-#define IPC_MAX_MSG_SIZE        128     /* Max payload per message */
-#define IPC_MAX_CHANNELS        8       /* Max concurrent channels */
-#define IPC_CHANNEL_DEPTH       16      /* Messages per channel queue */
+#define IPC_MAX_MSG_SIZE        64      /* Max payload per message */
+#define IPC_MAX_CHANNELS        4       /* Max concurrent channels */
+#define IPC_CHANNEL_DEPTH       8       /* Messages per channel queue */
 #define IPC_CHANNEL_NAME_LEN    16      /* Max channel name length */
 
 /* Message priority */

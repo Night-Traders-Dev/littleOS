@@ -176,8 +176,8 @@ static const shell_cmd_t cmd_table[] = {
 // Command history
 // ===========================================================================
 
-#define HISTORY_SIZE 20
-#define MAX_CMD_LEN  512
+#define HISTORY_SIZE 10
+#define MAX_CMD_LEN  256
 
 static char history[HISTORY_SIZE][MAX_CMD_LEN];
 static int  history_count = 0;

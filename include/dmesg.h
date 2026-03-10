@@ -15,8 +15,8 @@
 #define DMESG_LEVEL_DEBUG   7  /* Debug-level messages */
 
 /* Configuration */
-#define DMESG_BUFFER_SIZE   128  /* Number of messages to store */
-#define DMESG_MSG_MAX       120  /* Max message length */
+#define DMESG_BUFFER_SIZE   64   /* Number of messages to store */
+#define DMESG_MSG_MAX       96   /* Max message length */
 
 /* Message entry structure */
 typedef struct {

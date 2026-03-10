@@ -19,8 +19,8 @@ typedef enum {
     LOG_FATAL   = 5,
 } log_level_t;
 
-#define LOGCAT_MAX_ENTRIES   128
-#define LOGCAT_MAX_MSG_LEN   80
+#define LOGCAT_MAX_ENTRIES   64
+#define LOGCAT_MAX_MSG_LEN   64
 #define LOGCAT_MAX_TAG_LEN   16
 #define LOGCAT_MAX_FILTERS   8
 

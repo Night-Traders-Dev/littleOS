@@ -23,6 +23,7 @@
 #include "devfs.h"
 #include "cron.h"
 #include "mqtt.h"
+#include "net.h"
 #include "pkg.h"
 #include "tmux.h"
 #include "logcat.h"
@@ -344,6 +345,18 @@ void kernel_main(void) {
     // Initialize cron scheduler
     cron_init();
     dmesg_info("Cron scheduler initialized");
+
+    // Initialize networking (WiFi for Pico W)
+#ifdef PICO_W
+    printf("Initializing network subsystem...\r\n");
+    if (net_init() == NET_OK) {
+        printf("  CYW43 WiFi ready\r\n");
+        dmesg_info("Network subsystem initialized (CYW43)");
+    } else {
+        printf("  Network init failed\r\n");
+        dmesg_warn("Network subsystem init failed");
+    }
+#endif
 
     // Initialize MQTT client
     mqtt_init();
