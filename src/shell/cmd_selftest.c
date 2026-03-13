@@ -12,6 +12,7 @@
 #include "hardware/watchdog.h"
 #endif
 
+#include "board/board_config.h"
 #include "memory_segmented.h"
 
 static int tests_run = 0;
@@ -193,7 +194,7 @@ static void test_flash(void) {
 
 int cmd_selftest(int argc, char *argv[]) {
     printf("=== littleOS Self-Test Suite ===\r\n");
-    printf("Platform: RP2040 Dual-Core ARM Cortex-M0+\r\n");
+    printf("Platform: %s %s\r\n", CHIP_MODEL_STR, CHIP_CORE_STR);
 
     tests_run = 0;
     tests_passed = 0;

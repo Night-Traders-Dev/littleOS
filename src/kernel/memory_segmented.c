@@ -5,7 +5,7 @@
  * Uses Pico SDK linker symbols to place heaps AFTER .data/.bss in SRAM,
  * avoiding overlap with program globals.
  *
- * RP2040: 264 KB SRAM (0x20000000 - 0x20042000)
+ * RP2040: 264 KB SRAM / RP2350: 520 KB SRAM
  *   - .data/.bss: placed by linker at start of SRAM
  *   - Kernel Heap: starts at __end__ (after BSS), 32 KB
  *   - Interpreter Heap: follows kernel heap, 32 KB
@@ -18,6 +18,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdio.h>
+#include "board/board_config.h"
 #include <stdbool.h>
 
 #include "memory_segmented.h"
@@ -378,7 +379,8 @@ void memory_print_stats(void)
 void memory_print_layout(void)
 {
     printf("\n╔════════════════════════════════════════════════════╗\n");
-    printf("║           MEMORY LAYOUT (264 KB SRAM)               ║\n");
+    printf("║           MEMORY LAYOUT (%u KB SRAM)               ║\n",
+               (unsigned)(CHIP_RAM_SIZE / 1024));
     printf("╠════════════════════════════════════════════════════╣\n");
 
     printf("║ BSS end:          0x%08x                       ║\n",

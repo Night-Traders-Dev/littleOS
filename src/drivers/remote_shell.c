@@ -1,6 +1,7 @@
 /* remote_shell.c - Remote Shell over TCP for littleOS (Pico W) */
 
 #include "remote_shell.h"
+#include "board/board_config.h"
 #include "dmesg.h"
 #include <stdio.h>
 #include <string.h>
@@ -164,7 +165,7 @@ static int remote_shell_execute(const char *line, char *out, size_t out_size) {
         printf("  script, users, perms, tasks, memory,\r\n");
         printf("  fs, ipc, hw, net, ota, remote\r\n");
     } else if (strcmp(argv[0], "version") == 0) {
-        printf("littleOS v0.4.0 - RP2040 (remote shell)\r\n");
+        printf("littleOS v0.6.0 - %s (remote shell)\r\n", CHIP_MODEL_STR);
     } else if (strcmp(argv[0], "health") == 0) {
         cmd_health(argc, argv);
     } else if (strcmp(argv[0], "stats") == 0) {

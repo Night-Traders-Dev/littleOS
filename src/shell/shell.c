@@ -6,6 +6,7 @@
 #include "pico/stdlib.h"
 #include "hardware/watchdog.h"
 
+#include "board/board_config.h"
 #include "watchdog.h"
 #include "supervisor.h"
 #include "dmesg.h"
@@ -678,7 +679,8 @@ static void show_motd(void) {
     printf(" | || ||  _||  _|| |/ -_)| (_) \\__ \\\r\n");
     printf(" |_||_| \\__| \\__||_|\\___|\\___/|___/\r\n");
     printf("\033[0m\r\n");
-    printf(" RP2040 Dual-Core ARM Cortex-M0+ | 264KB SRAM\r\n");
+    printf(" %s %s | %uKB SRAM\r\n", CHIP_MODEL_STR, CHIP_CORE_STR,
+           (unsigned)(CHIP_RAM_SIZE / 1024));
     printf(" Type \033[1mhelp\033[0m for commands, \033[1mman <cmd>\033[0m for details\r\n");
     printf("\r\n");
 }

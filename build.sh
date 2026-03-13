@@ -244,6 +244,17 @@ else
     echo "Building root-only configuration (no extra user account)."
 fi
 
+# USB stdio option
+echo
+read -rp "Enable USB stdio (shell over USB, no UART adapter needed)? [y/N] " usb_stdio
+USB_CMAKE_OPTS=()
+if [[ "$usb_stdio" =~ ^[Yy]$ ]]; then
+    USB_CMAKE_OPTS=("-DLITTLEOS_USB_STDIO=ON")
+    echo "  USB stdio enabled — shell will appear on /dev/ttyACM* after boot"
+else
+    echo "  UART-only — connect via GP0/GP1 at 115200 baud"
+fi
+
 echo
 echo "Cleaning previous build..."
 rm -rf build
@@ -252,7 +263,7 @@ echo "Configuring CMake..."
 mkdir -p build
 cd build
 
-cmake .. -DLITTLEOS_BOARD="$BOARD" "${USER_CMAKE_OPTS[@]}"
+cmake .. -DLITTLEOS_BOARD="$BOARD" "${USER_CMAKE_OPTS[@]}" "${USB_CMAKE_OPTS[@]}"
 
 echo
 echo "Building littleOS..."

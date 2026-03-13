@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "pico/stdlib.h"
+#include "board/board_config.h"
 #include "sage_embed.h"
 #include "config_storage.h"
 #include "watchdog.h"
@@ -227,10 +228,10 @@ void kernel_main(void) {
     // The Pico SDK's stdio is already initialized in boot.c
     printf("\r\n");
     printf("========================================\r\n");
-    printf("  RP2040 littleOS Kernel\r\n");
+    printf("  %s littleOS Kernel\r\n", CHIP_MODEL_STR);
     printf("  Built: %s %s\r\n", __DATE__, __TIME__);
     printf("========================================\r\n");
-    dmesg_info("RP2040 littleOS kernel starting");
+    dmesg_info("%s littleOS kernel starting", CHIP_MODEL_STR);
 
     // Check if we recovered from a watchdog reset
     if (wdt_get_reset_reason() == WATCHDOG_RESET_TIMEOUT) {

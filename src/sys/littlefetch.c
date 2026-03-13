@@ -84,18 +84,17 @@ static uint32_t get_cpu_freq_mhz(void) {
 #endif
 }
 
-// Get memory info using new littleOS memory API
+// Get memory info: physical SRAM total with heap usage
 static void get_memory_info(uint32_t *total_kb, uint32_t *used_kb, uint32_t *free_kb) {
     MemoryStats stats = memory_get_stats();
 
-    // Total = kernel + interpreter heap
-    *total_kb = (stats.kernel_used + stats.kernel_free +
-                 stats.interpreter_used + stats.interpreter_free) / 1024;
+    // Total = physical SRAM
+    *total_kb = CHIP_RAM_SIZE / 1024;
 
-    // Current usage = kernel + interpreter used
+    // Used = heap allocations (kernel + interpreter)
     *used_kb = (stats.kernel_used + stats.interpreter_used) / 1024;
 
-    // Free = Total - Used
+    // Free = total minus used
     *free_kb = *total_kb - *used_kb;
 }
 

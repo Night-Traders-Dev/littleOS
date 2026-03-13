@@ -6,7 +6,10 @@
 #ifdef PICO_BUILD
 #include "pico/stdlib.h"
 #include "hardware/timer.h"
+#include "hardware/clocks.h"
 #endif
+
+#include "board/board_config.h"
 
 static uint32_t get_us(void) {
 #ifdef PICO_BUILD
@@ -123,7 +126,12 @@ int cmd_benchmark(int argc, char *argv[]) {
     bool run_all = (argc < 2 || strcmp(argv[1], "all") == 0);
 
     printf("=== littleOS Benchmark Suite ===\r\n");
-    printf("Platform: RP2040 @ 125 MHz\r\n\r\n");
+#ifdef PICO_BUILD
+    printf("Platform: %s @ %lu MHz\r\n\r\n", CHIP_MODEL_STR,
+           (unsigned long)(clock_get_hz(clk_sys) / 1000000));
+#else
+    printf("Platform: %s\r\n\r\n", CHIP_MODEL_STR);
+#endif
 
     uint32_t total_start = get_us();
 

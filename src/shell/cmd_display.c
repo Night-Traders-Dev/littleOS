@@ -6,7 +6,10 @@
 
 #ifdef PICO_BUILD
 #include "pico/stdlib.h"
+#include "hardware/clocks.h"
 #endif
+
+#include "board/board_config.h"
 
 static bool disp_initialized = false;
 
@@ -135,7 +138,7 @@ int cmd_display(int argc, char *argv[]) {
         /* Small filled rect */
         display_rect(105, 20, 15, 15, true);
         /* Footer */
-        display_text(4, 56, "RP2040 SSD1306");
+        display_text(4, 56, CHIP_MODEL_STR " SSD1306");
         display_flush();
         printf("Demo pattern drawn\r\n");
         return 0;
@@ -145,9 +148,21 @@ int cmd_display(int argc, char *argv[]) {
         display_clear();
         display_text(0, 0,  "littleOS");
         display_line(0, 9, 127, 9);
-        display_text(0, 12, "CPU: RP2040 M0+");
-        display_text(0, 22, "RAM: 264KB SRAM");
-        display_text(0, 32, "CLK: 125MHz");
+        {
+            char cpu_str[20], ram_str[20], clk_str[20];
+            snprintf(cpu_str, sizeof(cpu_str), "CPU: %s", CHIP_MODEL_STR);
+            snprintf(ram_str, sizeof(ram_str), "RAM: %uKB SRAM",
+                     (unsigned)(CHIP_RAM_SIZE / 1024));
+#ifdef PICO_BUILD
+            snprintf(clk_str, sizeof(clk_str), "CLK: %luMHz",
+                     (unsigned long)(clock_get_hz(clk_sys) / 1000000));
+#else
+            snprintf(clk_str, sizeof(clk_str), "CLK: ???MHz");
+#endif
+            display_text(0, 12, cpu_str);
+            display_text(0, 22, ram_str);
+            display_text(0, 32, clk_str);
+        }
         display_text(0, 42, "DISP: SSD1306");
         display_text(0, 52, "128x64 I2C OLED");
         display_flush();

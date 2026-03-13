@@ -35,11 +35,17 @@ typedef enum {
     WAKE_EDGE_LOW     = 4,
 } wake_edge_t;
 
-/* Clock frequency presets */
+/* Clock frequency presets (kHz) */
 typedef enum {
-    POWER_CLOCK_FULL    = 125000,   /* 125 MHz (default) */
+#if PICO_RP2350
+    POWER_CLOCK_FULL    = 150000,   /* 150 MHz (RP2350 default) */
+    POWER_CLOCK_HALF    = 75000,    /* 75 MHz */
+    POWER_CLOCK_QUARTER = 37500,    /* 37.5 MHz */
+#else
+    POWER_CLOCK_FULL    = 125000,   /* 125 MHz (RP2040 default) */
     POWER_CLOCK_HALF    = 62500,    /* 62.5 MHz */
     POWER_CLOCK_QUARTER = 31250,    /* 31.25 MHz */
+#endif
     POWER_CLOCK_LOW     = 12000,    /* 12 MHz */
     POWER_CLOCK_ULTRA   = 6000,     /* 6 MHz */
 } power_clock_preset_t;

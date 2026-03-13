@@ -35,7 +35,11 @@ static void cmd_power_usage(void) {
     printf("  power voltage <volts>              - Set core voltage (0.80-1.30V)\r\n");
     printf("  power periph disable|enable <name> - Disable/enable peripheral\r\n");
     printf("\r\n");
+#if PICO_RP2350
+    printf("Clock presets: full=150MHz, half=75MHz, quarter=37.5MHz,\r\n");
+#else
     printf("Clock presets: full=125MHz, half=62.5MHz, quarter=31.25MHz,\r\n");
+#endif
     printf("               low=12MHz, ultra=6MHz\r\n");
     printf("Peripherals:   adc, i2c0, i2c1, spi0, spi1, uart0, uart1,\r\n");
     printf("               pwm, pio0, pio1, usb\r\n");

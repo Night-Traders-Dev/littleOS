@@ -2,6 +2,7 @@
 // SageLang Native Function Bindings for System Information
 #include "sage_embed.h"
 #include "system_info.h"
+#include "board/board_config.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -167,7 +168,7 @@ static Value sage_sys_info(int argc, Value* args) {
     // CPU info
     cpu_info_t cpu;
     if (system_get_cpu_info(&cpu)) {
-        dict_set(&dict, "cpu_model", val_string("RP2040"));
+        dict_set(&dict, "cpu_model", val_string(CHIP_MODEL_STR));
         dict_set(&dict, "cpu_mhz", val_number(cpu.clock_speed_hz / 1000000.0));
         dict_set(&dict, "cpu_cores", val_number(cpu.core_count));
         dict_set(&dict, "cpu_revision", val_number(cpu.chip_revision));

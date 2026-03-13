@@ -10,6 +10,7 @@
 #include <stdbool.h>
 
 #include "procfs.h"
+#include "board/board_config.h"
 #include "scheduler.h"
 #include "memory_segmented.h"
 #include "hal/dma.h"
@@ -170,7 +171,7 @@ static int procfs_gen_cpuinfo(char *buf, size_t buflen) {
     for (int core = 0; core < 2; core++) {
         pos = buf_append(buf, buflen, pos,
             "processor\t: %d\r\n"
-            "model name\t: ARM Cortex-M0+\r\n"
+            "model name\t: " CHIP_CORE_STR "\r\n"
             "cpu MHz\t\t: %lu\r\n"
             "Features\t: thumb\r\n"
             "\r\n",
@@ -205,7 +206,8 @@ static int procfs_gen_meminfo(char *buf, size_t buflen) {
                      (unsigned long)(stats.interpreter_free / 1024));
     pos = buf_append(buf, buflen, pos, "InterpPeak:\t%6lu kB\r\n",
                      (unsigned long)(stats.interpreter_peak / 1024));
-    pos = buf_append(buf, buflen, pos, "SRAMTotal:\t   264 kB\r\n");
+    pos = buf_append(buf, buflen, pos, "SRAMTotal:\t%6u kB\r\n",
+                     (unsigned)(CHIP_RAM_SIZE / 1024));
 
     return pos;
 }

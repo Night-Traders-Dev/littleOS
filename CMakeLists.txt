@@ -14,6 +14,7 @@ cmake_minimum_required(VERSION 3.13)
 #   adafruit_feather_rp2350_riscv  - Adafruit Feather RP2350 (RISC-V Hazard3)
 
 set(LITTLEOS_BOARD "pico" CACHE STRING "Target board")
+option(LITTLEOS_USB_STDIO "Enable stdio over USB CDC (in addition to UART)" OFF)
 set(LITTLEOS_PICO_W OFF)
 
 if(LITTLEOS_BOARD STREQUAL "pico")
@@ -401,9 +402,14 @@ target_link_libraries(littleos PRIVATE
     hardware_resets
 )
 
-# Enable stdio over both UART and USB
+# Stdio: UART always on, USB optional
 pico_enable_stdio_uart(littleos 1)
-pico_enable_stdio_usb(littleos 0)
+if(LITTLEOS_USB_STDIO)
+    pico_enable_stdio_usb(littleos 1)
+    message(STATUS "USB stdio: ON (will appear as /dev/ttyACM* after boot)")
+else()
+    pico_enable_stdio_usb(littleos 0)
+endif()
 
 target_link_options(littleos PRIVATE
     -Wl,--gc-sections
