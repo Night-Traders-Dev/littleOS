@@ -337,6 +337,24 @@ void kernel_main(void) {
     // Initialize module subsystem (registers built-in driver modules)
     module_subsys_init();
 
+    // Auto-load DVI console and USB keyboard on RP2350 boards
+#if LITTLEOS_HAS_HSTX
+    printf("Loading DVI text console...\r\n");
+    if (module_load("dvi_console") == 0) {
+        dmesg_info("DVI text console loaded (default TTY output)");
+    } else {
+        dmesg_warn("DVI text console failed to load");
+    }
+#endif
+#ifdef LITTLEOS_USB_HOST
+    printf("Loading USB HID keyboard...\r\n");
+    if (module_load("usb_keyboard") == 0) {
+        dmesg_info("USB HID keyboard loaded (host mode)");
+    } else {
+        dmesg_warn("USB HID keyboard failed to load");
+    }
+#endif
+
     // Initialize shell environment (env vars, aliases, prompt)
     shell_env_init();
     dmesg_info("Shell environment initialized");

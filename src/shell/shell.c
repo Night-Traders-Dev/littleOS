@@ -734,6 +734,12 @@ void shell_run(void) {
             last_cron_tick = now;
         }
 
+        /* Poll USB host stack for HID keyboard events */
+#ifdef LITTLEOS_USB_HOST
+        extern void usb_host_task(void);
+        usb_host_task();
+#endif
+
         int c = getchar_timeout_us(0);
         if (c == PICO_ERROR_TIMEOUT) {
             sleep_ms(10);

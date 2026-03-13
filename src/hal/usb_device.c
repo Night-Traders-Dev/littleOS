@@ -4,7 +4,8 @@
 #include "dmesg.h"
 #include <string.h>
 
-#ifdef PICO_BUILD
+/* USB device mode is mutually exclusive with USB host mode */
+#if defined(PICO_BUILD) && !defined(LITTLEOS_USB_HOST)
 #if __has_include("tusb.h")
 #include "tusb.h"
 #include "bsp/board.h"

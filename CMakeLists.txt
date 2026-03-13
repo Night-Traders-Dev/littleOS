@@ -15,6 +15,7 @@ cmake_minimum_required(VERSION 3.13)
 
 set(LITTLEOS_BOARD "pico" CACHE STRING "Target board")
 option(LITTLEOS_USB_STDIO "Enable stdio over USB CDC (in addition to UART)" OFF)
+option(LITTLEOS_USB_HOST "Enable USB host mode (HID keyboard input)" OFF)
 set(LITTLEOS_PICO_W OFF)
 
 if(LITTLEOS_BOARD STREQUAL "pico")
@@ -340,14 +341,34 @@ if(LITTLEOS_PICO_W)
     )
 endif()
 
-# RP2350-specific: HSTX DVI output
+# RP2350-specific: HSTX DVI output + DVI text console
 if(PICO_PLATFORM MATCHES "rp2350")
     target_sources(littleos_core PRIVATE
         src/hal/hstx_dvi.c
         src/shell/cmd_display_dvi.c
+        src/drivers/dvi_console.c
     )
     target_compile_definitions(littleos_core PUBLIC LITTLEOS_HAS_HSTX=1)
-    message(STATUS "HSTX: DVI output ENABLED (RP2350)")
+    message(STATUS "HSTX: DVI output + text console ENABLED (RP2350)")
+endif()
+
+# USB Host mode (HID keyboard)
+if(LITTLEOS_USB_HOST)
+    if(LITTLEOS_USB_STDIO)
+        message(FATAL_ERROR "LITTLEOS_USB_HOST and LITTLEOS_USB_STDIO are mutually exclusive. "
+                "The RP2040/RP2350 has a single USB controller.")
+    endif()
+    target_sources(littleos_core PRIVATE
+        src/hal/usb_host.c
+    )
+    target_compile_definitions(littleos_core PUBLIC LITTLEOS_USB_HOST=1)
+    # Use tusb_config_host.h as the TinyUSB config for host mode
+    # PUBLIC so tinyusb_host (linked via littleos) can find tusb_config.h
+    target_include_directories(littleos_core PUBLIC
+        ${CMAKE_SOURCE_DIR}/include/usb_host_config
+    )
+    target_link_libraries(littleos_core PUBLIC tinyusb_host)
+    message(STATUS "USB Host: HID keyboard ENABLED (device mode disabled)")
 endif()
 
 # Add SageLang embedding if available
@@ -409,9 +430,11 @@ target_link_libraries(littleos PRIVATE
     hardware_resets
 )
 
-# Stdio: UART always on, USB optional
+# Stdio: UART always on, USB optional (but disabled when USB host is active)
 pico_enable_stdio_uart(littleos 1)
-if(LITTLEOS_USB_STDIO)
+if(LITTLEOS_USB_HOST)
+    pico_enable_stdio_usb(littleos 0)
+elseif(LITTLEOS_USB_STDIO)
     pico_enable_stdio_usb(littleos 1)
     message(STATUS "USB stdio: ON (will appear as /dev/ttyACM* after boot)")
 else()
