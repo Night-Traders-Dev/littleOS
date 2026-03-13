@@ -445,7 +445,11 @@ int memory_validate_layout(void)
 uint32_t stack_get_current_sp(void)
 {
     uint32_t sp;
+#if __riscv
+    asm volatile("mv %0, sp" : "=r" (sp));
+#else
     asm volatile("mov %0, sp" : "=r" (sp));
+#endif
     return sp;
 }
 

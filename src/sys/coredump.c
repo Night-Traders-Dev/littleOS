@@ -89,9 +89,15 @@ void coredump_panic(const char *reason) {
 
     /* Capture registers */
     uint32_t sp_val;
+#if __riscv
+    asm volatile("mv %0, sp" : "=r"(sp_val));
+    dump.sp = sp_val;
+    asm volatile("mv %0, ra" : "=r"(dump.lr));
+#else
     asm volatile("mov %0, sp" : "=r"(sp_val));
     dump.sp = sp_val;
     asm volatile("mov %0, lr" : "=r"(dump.lr));
+#endif
 
     /* Capture stack */
     const uint8_t *sp_ptr = (const uint8_t *)sp_val;

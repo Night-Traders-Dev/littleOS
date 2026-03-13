@@ -34,7 +34,7 @@ setup_riscv_toolchain() {
     fi
 
     # Check common install locations for bare-metal toolchain
-    for dir in /opt/riscv/bin /opt/riscv32-elf/bin "$HOME/.local/bin"; do
+    for dir in /opt/risc-v-hazard/bin /opt/riscv/bin /opt/riscv32-elf/bin "$HOME/.local/bin"; do
         if [[ -x "$dir/riscv32-unknown-elf-gcc" ]]; then
             export PATH="$dir:$PATH"
             RISCV_AVAILABLE=true
