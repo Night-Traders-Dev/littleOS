@@ -2,6 +2,70 @@
 
 All notable changes to littleOS. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.7.0] - 2026-03-13
+
+### Added - RP2350 Multi-Board Support
+
+- **8 board targets** via `LITTLEOS_BOARD` CMake variable:
+  - `pico` (RP2040, ARM Cortex-M0+)
+  - `pico_w` (RP2040 + WiFi)
+  - `pico2` (RP2350, ARM Cortex-M33)
+  - `pico2_riscv` (RP2350, RISC-V Hazard3)
+  - `pico2_w` (RP2350 + WiFi, ARM)
+  - `pico2_w_riscv` (RP2350 + WiFi, RISC-V)
+  - `adafruit_feather_rp2350` (ARM Cortex-M33)
+  - `adafruit_feather_rp2350_riscv` (RISC-V Hazard3)
+- **Board config header** (`include/board/board_config.h`) - auto-detects chip, board name, features via SDK macros
+- **Board-specific pinout headers** (`include/board/pinout_pico.h`, `pinout_feather_rp2350.h`)
+- **Batch build flags** in `build.sh`: `--rp2040-all`, `--rp2350-all`, `--all`
+
+### Added - HSTX DVI Video Output (RP2350)
+
+- **DVI driver** (`src/hal/hstx_dvi.c`) - TMDS encoding via HSTX hardware peripheral
+- **Resolutions**: 640x480@60Hz, 320x240@60Hz (pixel-doubled)
+- **Pixel formats**: RGB332 (8-bit), RGB565 (16-bit)
+- **DMA-driven scanout** via `DREQ_HSTX` on GPIO 12-19
+- **`dvi` shell command** - init, start, stop, test pattern, fill, status
+
+### Changed - HAL Platform Abstraction
+
+- GPIO pin limit uses `NUM_BANK0_GPIOS` from SDK `platform_defs.h` instead of hardcoded 29
+- DMA channel count uses `NUM_DMA_CHANNELS` (12 for RP2040, 16 for RP2350)
+- PIO block count uses `NUM_PIOS` (2 for RP2040, 3 for RP2350)
+- PIO state machines per block uses `NUM_PIO_STATE_MACHINES`
+- DMA DREQ enum replaced with SDK's `DREQ_*` defines
+- Removed hardcoded `-mcpu=cortex-m0plus -mthumb` flags (SDK handles per-platform)
+
+### Changed - System Info
+
+- `system_info.c` uses `board_config.h` values instead of hardcoded RP2040 constants
+- `littlefetch.c` displays correct chip model, core type, and RAM size per board
+- RISC-V Hazard3 core detection via `PICO_RISCV` macro
+- Flash size from `PICO_FLASH_SIZE_BYTES` (2MB Pico, 8MB Feather)
+
+### Changed - Build System
+
+- `build.sh` expanded with interactive board selection menu (8 options)
+- CMake board selection replaces `LITTLEOS_PICO_W` option for WiFi boards
+- RP2350 targets automatically enable HSTX sources and `LITTLEOS_HAS_HSTX=1`
+
+### Fixed
+
+- `procfs.c` compilation on RP2350 - wrapped `GPIO_FUNC_XIP` with `#if !PICO_RP2350`
+- Added `GPIO_FUNC_PIO2` and `GPIO_FUNC_HSTX` for RP2350 GPIO function enumeration
+- `cmd_pinout.c` board name display uses `BOARD_NAME` from `board_config.h`
+
+### Technical Details
+
+**Supported chips:**
+
+| Chip | SRAM | Cores | DMA | PIO | GPIO | HSTX |
+|------|------|-------|-----|-----|------|------|
+| RP2040 | 264 KB | 2x Cortex-M0+ | 12 ch | 2 blocks | 30 pins | No |
+| RP2350 | 520 KB | 2x Cortex-M33 or Hazard3 | 16 ch | 3 blocks | 48 pins | Yes |
+
+---
+
 ## [0.6.0] - 2025-03-13
 
 ### Added - Debug & Diagnostics Suite
