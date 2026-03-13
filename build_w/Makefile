@@ -7131,197 +7131,221 @@ src/usr/users_config.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/littleos_core.dir/build.make CMakeFiles/littleos_core.dir/src/usr/users_config.c.s
 .PHONY : src/usr/users_config.c.s
 
-third_party/sagelang/src/ast.o: third_party/sagelang/src/ast.c.o
-.PHONY : third_party/sagelang/src/ast.o
+third_party/sagelang/src/c/ast.o: third_party/sagelang/src/c/ast.c.o
+.PHONY : third_party/sagelang/src/c/ast.o
 
 # target to build an object file
-third_party/sagelang/src/ast.c.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/ast.c.o
-.PHONY : third_party/sagelang/src/ast.c.o
+third_party/sagelang/src/c/ast.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/ast.c.o
+.PHONY : third_party/sagelang/src/c/ast.c.o
 
-third_party/sagelang/src/ast.i: third_party/sagelang/src/ast.c.i
-.PHONY : third_party/sagelang/src/ast.i
+third_party/sagelang/src/c/ast.i: third_party/sagelang/src/c/ast.c.i
+.PHONY : third_party/sagelang/src/c/ast.i
 
 # target to preprocess a source file
-third_party/sagelang/src/ast.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/ast.c.i
-.PHONY : third_party/sagelang/src/ast.c.i
+third_party/sagelang/src/c/ast.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/ast.c.i
+.PHONY : third_party/sagelang/src/c/ast.c.i
 
-third_party/sagelang/src/ast.s: third_party/sagelang/src/ast.c.s
-.PHONY : third_party/sagelang/src/ast.s
+third_party/sagelang/src/c/ast.s: third_party/sagelang/src/c/ast.c.s
+.PHONY : third_party/sagelang/src/c/ast.s
 
 # target to generate assembly for a file
-third_party/sagelang/src/ast.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/ast.c.s
-.PHONY : third_party/sagelang/src/ast.c.s
+third_party/sagelang/src/c/ast.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/ast.c.s
+.PHONY : third_party/sagelang/src/c/ast.c.s
 
-third_party/sagelang/src/env.o: third_party/sagelang/src/env.c.o
-.PHONY : third_party/sagelang/src/env.o
+third_party/sagelang/src/c/env.o: third_party/sagelang/src/c/env.c.o
+.PHONY : third_party/sagelang/src/c/env.o
 
 # target to build an object file
-third_party/sagelang/src/env.c.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/env.c.o
-.PHONY : third_party/sagelang/src/env.c.o
+third_party/sagelang/src/c/env.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/env.c.o
+.PHONY : third_party/sagelang/src/c/env.c.o
 
-third_party/sagelang/src/env.i: third_party/sagelang/src/env.c.i
-.PHONY : third_party/sagelang/src/env.i
+third_party/sagelang/src/c/env.i: third_party/sagelang/src/c/env.c.i
+.PHONY : third_party/sagelang/src/c/env.i
 
 # target to preprocess a source file
-third_party/sagelang/src/env.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/env.c.i
-.PHONY : third_party/sagelang/src/env.c.i
+third_party/sagelang/src/c/env.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/env.c.i
+.PHONY : third_party/sagelang/src/c/env.c.i
 
-third_party/sagelang/src/env.s: third_party/sagelang/src/env.c.s
-.PHONY : third_party/sagelang/src/env.s
+third_party/sagelang/src/c/env.s: third_party/sagelang/src/c/env.c.s
+.PHONY : third_party/sagelang/src/c/env.s
 
 # target to generate assembly for a file
-third_party/sagelang/src/env.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/env.c.s
-.PHONY : third_party/sagelang/src/env.c.s
+third_party/sagelang/src/c/env.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/env.c.s
+.PHONY : third_party/sagelang/src/c/env.c.s
 
-third_party/sagelang/src/gc.o: third_party/sagelang/src/gc.c.o
-.PHONY : third_party/sagelang/src/gc.o
+third_party/sagelang/src/c/gc.o: third_party/sagelang/src/c/gc.c.o
+.PHONY : third_party/sagelang/src/c/gc.o
 
 # target to build an object file
-third_party/sagelang/src/gc.c.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/gc.c.o
-.PHONY : third_party/sagelang/src/gc.c.o
+third_party/sagelang/src/c/gc.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/gc.c.o
+.PHONY : third_party/sagelang/src/c/gc.c.o
 
-third_party/sagelang/src/gc.i: third_party/sagelang/src/gc.c.i
-.PHONY : third_party/sagelang/src/gc.i
+third_party/sagelang/src/c/gc.i: third_party/sagelang/src/c/gc.c.i
+.PHONY : third_party/sagelang/src/c/gc.i
 
 # target to preprocess a source file
-third_party/sagelang/src/gc.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/gc.c.i
-.PHONY : third_party/sagelang/src/gc.c.i
+third_party/sagelang/src/c/gc.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/gc.c.i
+.PHONY : third_party/sagelang/src/c/gc.c.i
 
-third_party/sagelang/src/gc.s: third_party/sagelang/src/gc.c.s
-.PHONY : third_party/sagelang/src/gc.s
+third_party/sagelang/src/c/gc.s: third_party/sagelang/src/c/gc.c.s
+.PHONY : third_party/sagelang/src/c/gc.s
 
 # target to generate assembly for a file
-third_party/sagelang/src/gc.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/gc.c.s
-.PHONY : third_party/sagelang/src/gc.c.s
+third_party/sagelang/src/c/gc.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/gc.c.s
+.PHONY : third_party/sagelang/src/c/gc.c.s
 
-third_party/sagelang/src/interpreter.o: third_party/sagelang/src/interpreter.c.o
-.PHONY : third_party/sagelang/src/interpreter.o
+third_party/sagelang/src/c/interpreter.o: third_party/sagelang/src/c/interpreter.c.o
+.PHONY : third_party/sagelang/src/c/interpreter.o
 
 # target to build an object file
-third_party/sagelang/src/interpreter.c.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/interpreter.c.o
-.PHONY : third_party/sagelang/src/interpreter.c.o
+third_party/sagelang/src/c/interpreter.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/interpreter.c.o
+.PHONY : third_party/sagelang/src/c/interpreter.c.o
 
-third_party/sagelang/src/interpreter.i: third_party/sagelang/src/interpreter.c.i
-.PHONY : third_party/sagelang/src/interpreter.i
+third_party/sagelang/src/c/interpreter.i: third_party/sagelang/src/c/interpreter.c.i
+.PHONY : third_party/sagelang/src/c/interpreter.i
 
 # target to preprocess a source file
-third_party/sagelang/src/interpreter.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/interpreter.c.i
-.PHONY : third_party/sagelang/src/interpreter.c.i
+third_party/sagelang/src/c/interpreter.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/interpreter.c.i
+.PHONY : third_party/sagelang/src/c/interpreter.c.i
 
-third_party/sagelang/src/interpreter.s: third_party/sagelang/src/interpreter.c.s
-.PHONY : third_party/sagelang/src/interpreter.s
+third_party/sagelang/src/c/interpreter.s: third_party/sagelang/src/c/interpreter.c.s
+.PHONY : third_party/sagelang/src/c/interpreter.s
 
 # target to generate assembly for a file
-third_party/sagelang/src/interpreter.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/interpreter.c.s
-.PHONY : third_party/sagelang/src/interpreter.c.s
+third_party/sagelang/src/c/interpreter.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/interpreter.c.s
+.PHONY : third_party/sagelang/src/c/interpreter.c.s
 
-third_party/sagelang/src/lexer.o: third_party/sagelang/src/lexer.c.o
-.PHONY : third_party/sagelang/src/lexer.o
+third_party/sagelang/src/c/lexer.o: third_party/sagelang/src/c/lexer.c.o
+.PHONY : third_party/sagelang/src/c/lexer.o
 
 # target to build an object file
-third_party/sagelang/src/lexer.c.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/lexer.c.o
-.PHONY : third_party/sagelang/src/lexer.c.o
+third_party/sagelang/src/c/lexer.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/lexer.c.o
+.PHONY : third_party/sagelang/src/c/lexer.c.o
 
-third_party/sagelang/src/lexer.i: third_party/sagelang/src/lexer.c.i
-.PHONY : third_party/sagelang/src/lexer.i
+third_party/sagelang/src/c/lexer.i: third_party/sagelang/src/c/lexer.c.i
+.PHONY : third_party/sagelang/src/c/lexer.i
 
 # target to preprocess a source file
-third_party/sagelang/src/lexer.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/lexer.c.i
-.PHONY : third_party/sagelang/src/lexer.c.i
+third_party/sagelang/src/c/lexer.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/lexer.c.i
+.PHONY : third_party/sagelang/src/c/lexer.c.i
 
-third_party/sagelang/src/lexer.s: third_party/sagelang/src/lexer.c.s
-.PHONY : third_party/sagelang/src/lexer.s
+third_party/sagelang/src/c/lexer.s: third_party/sagelang/src/c/lexer.c.s
+.PHONY : third_party/sagelang/src/c/lexer.s
 
 # target to generate assembly for a file
-third_party/sagelang/src/lexer.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/lexer.c.s
-.PHONY : third_party/sagelang/src/lexer.c.s
+third_party/sagelang/src/c/lexer.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/lexer.c.s
+.PHONY : third_party/sagelang/src/c/lexer.c.s
 
-third_party/sagelang/src/module.o: third_party/sagelang/src/module.c.o
-.PHONY : third_party/sagelang/src/module.o
+third_party/sagelang/src/c/module.o: third_party/sagelang/src/c/module.c.o
+.PHONY : third_party/sagelang/src/c/module.o
 
 # target to build an object file
-third_party/sagelang/src/module.c.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/module.c.o
-.PHONY : third_party/sagelang/src/module.c.o
+third_party/sagelang/src/c/module.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/module.c.o
+.PHONY : third_party/sagelang/src/c/module.c.o
 
-third_party/sagelang/src/module.i: third_party/sagelang/src/module.c.i
-.PHONY : third_party/sagelang/src/module.i
+third_party/sagelang/src/c/module.i: third_party/sagelang/src/c/module.c.i
+.PHONY : third_party/sagelang/src/c/module.i
 
 # target to preprocess a source file
-third_party/sagelang/src/module.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/module.c.i
-.PHONY : third_party/sagelang/src/module.c.i
+third_party/sagelang/src/c/module.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/module.c.i
+.PHONY : third_party/sagelang/src/c/module.c.i
 
-third_party/sagelang/src/module.s: third_party/sagelang/src/module.c.s
-.PHONY : third_party/sagelang/src/module.s
+third_party/sagelang/src/c/module.s: third_party/sagelang/src/c/module.c.s
+.PHONY : third_party/sagelang/src/c/module.s
 
 # target to generate assembly for a file
-third_party/sagelang/src/module.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/module.c.s
-.PHONY : third_party/sagelang/src/module.c.s
+third_party/sagelang/src/c/module.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/module.c.s
+.PHONY : third_party/sagelang/src/c/module.c.s
 
-third_party/sagelang/src/parser.o: third_party/sagelang/src/parser.c.o
-.PHONY : third_party/sagelang/src/parser.o
+third_party/sagelang/src/c/parser.o: third_party/sagelang/src/c/parser.c.o
+.PHONY : third_party/sagelang/src/c/parser.o
 
 # target to build an object file
-third_party/sagelang/src/parser.c.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/parser.c.o
-.PHONY : third_party/sagelang/src/parser.c.o
+third_party/sagelang/src/c/parser.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/parser.c.o
+.PHONY : third_party/sagelang/src/c/parser.c.o
 
-third_party/sagelang/src/parser.i: third_party/sagelang/src/parser.c.i
-.PHONY : third_party/sagelang/src/parser.i
+third_party/sagelang/src/c/parser.i: third_party/sagelang/src/c/parser.c.i
+.PHONY : third_party/sagelang/src/c/parser.i
 
 # target to preprocess a source file
-third_party/sagelang/src/parser.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/parser.c.i
-.PHONY : third_party/sagelang/src/parser.c.i
+third_party/sagelang/src/c/parser.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/parser.c.i
+.PHONY : third_party/sagelang/src/c/parser.c.i
 
-third_party/sagelang/src/parser.s: third_party/sagelang/src/parser.c.s
-.PHONY : third_party/sagelang/src/parser.s
+third_party/sagelang/src/c/parser.s: third_party/sagelang/src/c/parser.c.s
+.PHONY : third_party/sagelang/src/c/parser.s
 
 # target to generate assembly for a file
-third_party/sagelang/src/parser.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/parser.c.s
-.PHONY : third_party/sagelang/src/parser.c.s
+third_party/sagelang/src/c/parser.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/parser.c.s
+.PHONY : third_party/sagelang/src/c/parser.c.s
 
-third_party/sagelang/src/value.o: third_party/sagelang/src/value.c.o
-.PHONY : third_party/sagelang/src/value.o
+third_party/sagelang/src/c/sage_thread.o: third_party/sagelang/src/c/sage_thread.c.o
+.PHONY : third_party/sagelang/src/c/sage_thread.o
 
 # target to build an object file
-third_party/sagelang/src/value.c.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/value.c.o
-.PHONY : third_party/sagelang/src/value.c.o
+third_party/sagelang/src/c/sage_thread.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/sage_thread.c.o
+.PHONY : third_party/sagelang/src/c/sage_thread.c.o
 
-third_party/sagelang/src/value.i: third_party/sagelang/src/value.c.i
-.PHONY : third_party/sagelang/src/value.i
+third_party/sagelang/src/c/sage_thread.i: third_party/sagelang/src/c/sage_thread.c.i
+.PHONY : third_party/sagelang/src/c/sage_thread.i
 
 # target to preprocess a source file
-third_party/sagelang/src/value.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/value.c.i
-.PHONY : third_party/sagelang/src/value.c.i
+third_party/sagelang/src/c/sage_thread.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/sage_thread.c.i
+.PHONY : third_party/sagelang/src/c/sage_thread.c.i
 
-third_party/sagelang/src/value.s: third_party/sagelang/src/value.c.s
-.PHONY : third_party/sagelang/src/value.s
+third_party/sagelang/src/c/sage_thread.s: third_party/sagelang/src/c/sage_thread.c.s
+.PHONY : third_party/sagelang/src/c/sage_thread.s
 
 # target to generate assembly for a file
-third_party/sagelang/src/value.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/value.c.s
-.PHONY : third_party/sagelang/src/value.c.s
+third_party/sagelang/src/c/sage_thread.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/sage_thread.c.s
+.PHONY : third_party/sagelang/src/c/sage_thread.c.s
+
+third_party/sagelang/src/c/value.o: third_party/sagelang/src/c/value.c.o
+.PHONY : third_party/sagelang/src/c/value.o
+
+# target to build an object file
+third_party/sagelang/src/c/value.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/value.c.o
+.PHONY : third_party/sagelang/src/c/value.c.o
+
+third_party/sagelang/src/c/value.i: third_party/sagelang/src/c/value.c.i
+.PHONY : third_party/sagelang/src/c/value.i
+
+# target to preprocess a source file
+third_party/sagelang/src/c/value.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/value.c.i
+.PHONY : third_party/sagelang/src/c/value.c.i
+
+third_party/sagelang/src/c/value.s: third_party/sagelang/src/c/value.c.s
+.PHONY : third_party/sagelang/src/c/value.s
+
+# target to generate assembly for a file
+third_party/sagelang/src/c/value.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sagelang.dir/build.make CMakeFiles/sagelang.dir/third_party/sagelang/src/c/value.c.s
+.PHONY : third_party/sagelang/src/c/value.c.s
 
 # Help Target
 help:
@@ -8124,30 +8148,33 @@ help:
 	@echo "... src/usr/users_config.o"
 	@echo "... src/usr/users_config.i"
 	@echo "... src/usr/users_config.s"
-	@echo "... third_party/sagelang/src/ast.o"
-	@echo "... third_party/sagelang/src/ast.i"
-	@echo "... third_party/sagelang/src/ast.s"
-	@echo "... third_party/sagelang/src/env.o"
-	@echo "... third_party/sagelang/src/env.i"
-	@echo "... third_party/sagelang/src/env.s"
-	@echo "... third_party/sagelang/src/gc.o"
-	@echo "... third_party/sagelang/src/gc.i"
-	@echo "... third_party/sagelang/src/gc.s"
-	@echo "... third_party/sagelang/src/interpreter.o"
-	@echo "... third_party/sagelang/src/interpreter.i"
-	@echo "... third_party/sagelang/src/interpreter.s"
-	@echo "... third_party/sagelang/src/lexer.o"
-	@echo "... third_party/sagelang/src/lexer.i"
-	@echo "... third_party/sagelang/src/lexer.s"
-	@echo "... third_party/sagelang/src/module.o"
-	@echo "... third_party/sagelang/src/module.i"
-	@echo "... third_party/sagelang/src/module.s"
-	@echo "... third_party/sagelang/src/parser.o"
-	@echo "... third_party/sagelang/src/parser.i"
-	@echo "... third_party/sagelang/src/parser.s"
-	@echo "... third_party/sagelang/src/value.o"
-	@echo "... third_party/sagelang/src/value.i"
-	@echo "... third_party/sagelang/src/value.s"
+	@echo "... third_party/sagelang/src/c/ast.o"
+	@echo "... third_party/sagelang/src/c/ast.i"
+	@echo "... third_party/sagelang/src/c/ast.s"
+	@echo "... third_party/sagelang/src/c/env.o"
+	@echo "... third_party/sagelang/src/c/env.i"
+	@echo "... third_party/sagelang/src/c/env.s"
+	@echo "... third_party/sagelang/src/c/gc.o"
+	@echo "... third_party/sagelang/src/c/gc.i"
+	@echo "... third_party/sagelang/src/c/gc.s"
+	@echo "... third_party/sagelang/src/c/interpreter.o"
+	@echo "... third_party/sagelang/src/c/interpreter.i"
+	@echo "... third_party/sagelang/src/c/interpreter.s"
+	@echo "... third_party/sagelang/src/c/lexer.o"
+	@echo "... third_party/sagelang/src/c/lexer.i"
+	@echo "... third_party/sagelang/src/c/lexer.s"
+	@echo "... third_party/sagelang/src/c/module.o"
+	@echo "... third_party/sagelang/src/c/module.i"
+	@echo "... third_party/sagelang/src/c/module.s"
+	@echo "... third_party/sagelang/src/c/parser.o"
+	@echo "... third_party/sagelang/src/c/parser.i"
+	@echo "... third_party/sagelang/src/c/parser.s"
+	@echo "... third_party/sagelang/src/c/sage_thread.o"
+	@echo "... third_party/sagelang/src/c/sage_thread.i"
+	@echo "... third_party/sagelang/src/c/sage_thread.s"
+	@echo "... third_party/sagelang/src/c/value.o"
+	@echo "... third_party/sagelang/src/c/value.i"
+	@echo "... third_party/sagelang/src/c/value.s"
 .PHONY : help
 
 

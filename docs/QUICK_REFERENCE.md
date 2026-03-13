@@ -1,110 +1,226 @@
 # littleOS Quick Reference
 
-Quick reference for all available littleOS commands and functions.
+Quick reference for all littleOS shell commands and SageLang functions.
 
 ---
 
-## GPIO Functions
+## Shell Commands
 
-Control hardware GPIO pins on the RP2040.
+### System
+
+| Command | Description |
+| ------- | ----------- |
+| `help` | Show all commands grouped by category |
+| `version` | OS version, SageLang version, supervisor status |
+| `clear` | Clear terminal screen |
+| `reboot` | Software reboot via watchdog |
+| `history` | Show command history |
+| `health` | Quick system health check |
+| `stats` | Detailed system statistics |
+| `supervisor` | Core 1 supervisor (start/stop/status/alerts) |
+| `dmesg` | Kernel messages (-f follow, -l level, -c clear) |
+| `fetch` | System info display (neofetch-style) |
+| `top` | Live system monitor (htop-style) |
+
+### Processes & Memory
+
+| Command | Description |
+| ------- | ----------- |
+| `tasks` | Task scheduler management |
+| `memory` | Heap diagnostics (stats/leaks/test/defrag/threshold) |
+| `profile` | Runtime profiling |
+
+### Filesystem & Text
+
+| Command | Description |
+| ------- | ----------- |
+| `fs` | Filesystem (init/mount/mkdir/touch/cat/write/ls/sync/info/fsck) |
+| `cat <file>` | Display file contents |
+| `echo <text>` | Print text (supports `>` redirect) |
+| `head <file>` | Show first lines |
+| `tail <file>` | Show last lines |
+| `wc <file>` | Word/line/byte count |
+| `grep <pat> <file>` | Search patterns |
+| `hexdump <file>` | Hex dump |
+| `tee <file>` | Duplicate output to file |
+| `proc` | Process filesystem (/proc) |
+| `dev` | Device filesystem (/dev) |
+
+### Hardware
+
+| Command | Description |
+| ------- | ----------- |
+| `hw` | I2C/SPI/PWM/ADC peripherals |
+| `pio` | PIO programmable I/O |
+| `dma` | DMA engine control |
+| `usb` | USB device mode |
+| `pinout` | Visual GPIO pin diagram |
+| `i2cscan` | I2C bus scanner |
+| `wire` | Interactive I2C/SPI REPL |
+| `pwmtune` | PWM frequency/duty tuner |
+| `adc` | ADC read/stream/stats |
+| `gpiowatch` | GPIO state monitor |
+| `neopixel` | WS2812 NeoPixel LED control |
+| `display` | SSD1306 OLED display |
+
+### Networking (Pico W)
+
+| Command | Description |
+| ------- | ----------- |
+| `net` | WiFi/TCP/UDP (scan/connect/status/ping/http) |
+| `mqtt` | MQTT client (connect/pub/sub) |
+| `remote` | Remote shell over TCP |
+| `ota` | Over-the-air firmware updates |
+
+### Scripting & Services
+
+| Command | Description |
+| ------- | ----------- |
+| `sage` | SageLang REPL / `-e "code"` inline |
+| `script` | Flash script storage (save/list/run/autoboot) |
+| `pkg` | Package manager |
+| `sensor` | Sensor framework |
+| `power` | Power management and sleep |
+| `cron` | Scheduled tasks |
+| `ipc` | Inter-process communication |
+| `users` | User account management |
+| `perms` | Permission utilities |
+
+### Shell Built-ins
+
+| Command | Description |
+| ------- | ----------- |
+| `env` | View/set environment variables |
+| `alias` | Command aliases |
+| `export` | Set environment variable |
+| `screen` | Terminal multiplexer |
+| `man` | Manual pages |
+
+### Debug & Diagnostics
+
+| Command | Description |
+| ------- | ----------- |
+| `logcat` | Structured logging with filters |
+| `trace` | Execution trace buffer |
+| `watchpoint` | Memory watchpoints |
+| `benchmark` | Performance benchmarks (cpu/mem/gpio/fs) |
+| `selftest` | Hardware self-test suite |
+| `coredump` | Crash dump viewer |
+| `syslog` | Persistent system log |
+
+---
+
+## SageLang Native Functions
+
+### GPIO
 
 | Function | Description | Example |
-|----------|-------------|----------|
-| `gpio_init(pin, is_output)` | Initialize GPIO pin | `gpio_init(25, true);` |
-| `gpio_write(pin, value)` | Set pin output state | `gpio_write(25, true);` |
-| `gpio_read(pin)` | Read pin input state | `let state = gpio_read(15);` |
-| `gpio_toggle(pin)` | Toggle pin output | `gpio_toggle(25);` |
-| `gpio_set_pull(pin, mode)` | Set pull resistor | `gpio_set_pull(15, 1);` |
+| -------- | ----------- | ------- |
+| `gpio_init(pin, is_output)` | Initialize pin | `gpio_init(25, true)` |
+| `gpio_write(pin, value)` | Set output | `gpio_write(25, true)` |
+| `gpio_read(pin)` | Read input | `let v = gpio_read(15)` |
+| `gpio_toggle(pin)` | Toggle output | `gpio_toggle(25)` |
+| `gpio_set_pull(pin, mode)` | Set pull resistor | `gpio_set_pull(15, 1)` |
 
-**Pull modes:** `0` = None, `1` = Pull-up, `2` = Pull-down
+Pull modes: `0` = None, `1` = Pull-up, `2` = Pull-down
 
-**See also:** [GPIO_INTEGRATION.md](GPIO_INTEGRATION.md)
-
----
-
-## System Information Functions
-
-Get system metrics and hardware information.
+### System Info
 
 | Function | Returns | Description |
-|----------|---------|-------------|
-| `sys_version()` | string | OS version ("0.2.0") |
+| -------- | ------- | ----------- |
+| `sys_version()` | string | OS version |
 | `sys_uptime()` | number | Uptime in seconds |
-| `sys_temp()` | number | Temperature in °C |
+| `sys_temp()` | number | CPU temperature (C) |
 | `sys_clock()` | number | CPU clock in MHz |
 | `sys_free_ram()` | number | Free RAM in KB |
 | `sys_total_ram()` | number | Total RAM in KB |
-| `sys_board_id()` | string | Unique board ID (16 hex chars) |
-| `sys_info()` | dict | Complete system info |
+| `sys_board_id()` | string | Unique board ID |
+| `sys_info()` | dict | All system metrics |
 | `sys_print()` | nil | Print formatted report |
 
-**See also:** [SYSTEM_INFO.md](SYSTEM_INFO.md)
+### Timing
+
+| Function | Description | Example |
+| -------- | ----------- | ------- |
+| `sleep(ms)` | Delay milliseconds | `sleep(1000)` |
+| `sleep_us(us)` | Delay microseconds | `sleep_us(100)` |
+| `time_ms()` | Milliseconds since boot | `let t = time_ms()` |
+| `time_us()` | Microseconds since boot | `let t = time_us()` |
+
+### Configuration
+
+| Function | Description | Example |
+| -------- | ----------- | ------- |
+| `config_set(key, value)` | Set config | `config_set("name", "pico")` |
+| `config_get(key)` | Get value (or null) | `let v = config_get("name")` |
+| `config_has(key)` | Check existence | `if config_has("name")` |
+| `config_remove(key)` | Delete key | `config_remove("old")` |
+| `config_save()` | Write to flash | `config_save()` |
+| `config_load()` | Read from flash | `config_load()` |
+
+### Watchdog
+
+| Function | Description |
+| -------- | ----------- |
+| `wdt_enable(timeout_ms)` | Enable watchdog timer |
+| `wdt_disable()` | Disable watchdog |
+| `wdt_feed()` | Reset watchdog timer |
+| `wdt_get_timeout()` | Get current timeout value |
 
 ---
 
-## SageLang Built-in Functions
+## SageLang Syntax
 
-Standard library functions available in SageLang.
+### Variables and Types
 
-### I/O Functions
+```sagelang
+let x = 42
+let name = "Alice"
+let flag = true
+let items = [1, 2, 3]
+let info = {"key": "value"}
+```
 
-| Function | Description | Example |
-|----------|-------------|----------|
-| `print(value)` | Print to console | `print("Hello");` |
-| `input()` | Read user input | `let name = input();` |
+### Control Flow
 
-### Type Conversion
+```sagelang
+if (x > 10):
+    print("Large")
+else:
+    print("Small")
 
-| Function | Description | Example |
-|----------|-------------|----------|
-| `tonumber(value)` | Convert to number | `let n = tonumber("123");` |
-| `str(value)` | Convert to string | `let s = str(42);` |
+while (x < 100):
+    x = x + 1
 
-### Array Functions
+for (item in items):
+    print(item)
+```
 
-| Function | Description | Example |
-|----------|-------------|----------|
-| `len(array)` | Get array length | `let count = len(arr);` |
-| `push(array, value)` | Add to end | `push(arr, 42);` |
-| `pop(array)` | Remove from end | `let last = pop(arr);` |
-| `range(start, end)` | Generate range | `let nums = range(0, 10);` |
-| `slice(array, start, end)` | Extract subarray | `let sub = slice(arr, 0, 5);` |
+### Functions and Classes
 
-### String Functions
+```sagelang
+proc greet(name):
+    print("Hello, " + name)
 
-| Function | Description | Example |
-|----------|-------------|----------|
-| `split(str, delimiter)` | Split string | `let words = split("a,b,c", ",");` |
-| `join(array, separator)` | Join array | `let str = join(words, " ");` |
-| `replace(str, old, new)` | Replace text | `let s = replace("hi", "i", "ello");` |
-| `upper(str)` | Convert to uppercase | `let up = upper("hello");` |
-| `lower(str)` | Convert to lowercase | `let low = lower("HELLO");` |
-| `strip(str)` | Remove whitespace | `let clean = strip(" text ");` |
+class Sensor:
+    proc init(self, pin):
+        self.pin = pin
+        gpio_init(pin, false)
+    proc read(self):
+        return gpio_read(self.pin)
+```
 
-### Dictionary Functions
+### Generators
 
-| Function | Description | Example |
-|----------|-------------|----------|
-| `dict_keys(dict)` | Get all keys | `let keys = dict_keys(d);` |
-| `dict_values(dict)` | Get all values | `let vals = dict_values(d);` |
-| `dict_has(dict, key)` | Check if key exists | `let exists = dict_has(d, "name");` |
-| `dict_delete(dict, key)` | Remove key | `dict_delete(d, "old_key");` |
-
-### Time Functions
-
-| Function | Description | Example |
-|----------|-------------|----------|
-| `clock()` | Get current time | `let t = clock();` |
-| `sleep(ms)` | Sleep milliseconds | `sleep(1000);` |
-
-### Garbage Collection
-
-| Function | Description | Example |
-|----------|-------------|----------|
-| `gc_collect()` | Force garbage collection | `gc_collect();` |
-| `gc_stats()` | Get GC statistics | `let stats = gc_stats();` |
-| `gc_enable()` | Enable automatic GC | `gc_enable();` |
-| `gc_disable()` | Disable automatic GC | `gc_disable();` |
+```sagelang
+proc fibonacci(n):
+    let a = 0, b = 1
+    for i in range(n):
+        yield a
+        let temp = a + b
+        a = b
+        b = temp
+```
 
 ---
 
@@ -113,194 +229,77 @@ Standard library functions available in SageLang.
 ### Blink LED
 
 ```sagelang
-gpio_init(25, true);
-while (true) {
-    gpio_toggle(25);
-    sleep(500);
-}
+gpio_init(25, true)
+while (true):
+    gpio_toggle(25)
+    sleep(500)
 ```
 
 ### Read Button
 
 ```sagelang
-gpio_init(15, false);
-gpio_set_pull(15, 1);
-
-while (true) {
-    if (!gpio_read(15)) {
-        print("Button pressed!");
-    }
-    sleep(100);
-}
+gpio_init(15, false)
+gpio_set_pull(15, 1)
+while (true):
+    if (!gpio_read(15)):
+        print("Pressed!")
+    sleep(100)
 ```
 
-### Monitor System
+### System Monitor
 
 ```sagelang
-while (true) {
-    let temp = sys_temp();
-    let free = sys_free_ram();
-    print("Temp: " + str(temp) + "°C, RAM: " + str(free) + " KB");
-    sleep(5000);
-}
+while (true):
+    let temp = sys_temp()
+    let free = sys_free_ram()
+    print("Temp: " + str(temp) + "C, RAM: " + str(free) + " KB")
+    sleep(5000)
 ```
 
-### Temperature Alert
+---
 
-```sagelang
-let threshold = 45;
-while (true) {
-    let temp = sys_temp();
-    if (temp > threshold) {
-        print("⚠️  HIGH TEMP: " + str(temp) + "°C");
-        gpio_init(25, true);
-        gpio_write(25, true);  // Turn on warning LED
-    } else {
-        gpio_write(25, false);
-    }
-    sleep(2000);
-}
-```
+## Shell Features
 
-### Memory Usage Bar
-
-```sagelang
-let total = sys_total_ram();
-let free = sys_free_ram();
-let used = total - free;
-let percent = (used / total) * 100;
-
-let bars = percent / 5;
-let bar = "[";
-let i = 0;
-while (i < 20) {
-    if (i < bars) {
-        bar = bar + "█";
-    } else {
-        bar = bar + "░";
-    }
-    i = i + 1;
-}
-bar = bar + "]";
-print(bar + " " + str(percent) + "%");
-```
+- **Pipes:** `proc cpuinfo | grep MHz`
+- **Redirect:** `echo "data" > /file.txt`
+- **Env vars:** `export VAR=value`, use `$VAR` in commands
+- **Aliases:** `alias ll="fs ls /"`
+- **Repeat:** `!!` repeats last command
+- **Tab completion:** Press Tab on partial command name
+- **History:** UP/DOWN arrows, `history` to list
 
 ---
 
 ## RP2040 Pin Reference
 
-### Special Pins
-
-- **GPIO 25**: Built-in LED (Pico board)
-- **GPIO 0-22**: General purpose I/O on edge connectors
-- **GPIO 26-29**: Can be used as ADC inputs (ADC0-ADC3)
-
-### Important Notes
-
-- Logic levels: 3.3V (HIGH), 0V (LOW)
-- **Do NOT apply 5V** to any pin
-- Max current per pin: 12mA (recommended), 16mA (absolute max)
-- Total current all GPIO: 50mA max
-- Valid pin range: 0-29
+- GPIO 25: Built-in LED (Pico), CYW43 controlled (Pico W)
+- GPIO 0: UART TX
+- GPIO 1: UART RX
+- GPIO 0-22: General purpose I/O
+- GPIO 26-29: ADC capable (ADC0-ADC3)
+- Logic levels: 3.3V, max 12mA per pin, 50mA total
 
 ---
 
-## SageLang Syntax Basics
+## Build Quick Reference
 
-### Variables
+```bash
+# Standard Pico
+export PICO_SDK_PATH=/path/to/pico-sdk
+mkdir build && cd build && cmake .. && make -j$(nproc)
 
-```sagelang
-let x = 42;
-let name = "Alice";
-let flag = true;
-let items = [1, 2, 3];
-let info = {"key": "value"};
-```
+# Pico W (with WiFi)
+mkdir build_w && cd build_w && cmake -DLITTLEOS_PICO_W=ON .. && make -j$(nproc)
 
-### Control Flow
+# Flash
+cp littleos.uf2 /media/$USER/RPI-RP2/
 
-```sagelang
-// If statement
-if (x > 10) {
-    print("Large");
-} else {
-    print("Small");
-}
-
-// While loop
-while (x < 100) {
-    x = x + 1;
-}
-
-// For loop
-for (item in items) {
-    print(item);
-}
-```
-
-### Functions
-
-```sagelang
-proc greet(name) {
-    print("Hello, " + name + "!");
-}
-
-proc add(a, b) {
-    return a + b;
-}
-
-greet("World");
-let sum = add(5, 3);
+# Connect
+screen /dev/ttyACM0 115200
 ```
 
 ---
 
-## Shell Commands
-
-| Command | Description |
-|---------|-------------|
-| `help` | Show available commands |
-| `sage` | Enter SageLang REPL |
-| `version` | Show OS version |
-| `clear` | Clear screen |
-
----
-
-## Getting Help
-
-- **Full Documentation**: See `/docs/` directory
-- **GPIO Guide**: [GPIO_INTEGRATION.md](GPIO_INTEGRATION.md)
-- **System Info Guide**: [SYSTEM_INFO.md](SYSTEM_INFO.md)
-- **SageLang Quickstart**: [SAGELANG_QUICKSTART.md](../SAGELANG_QUICKSTART.md)
-- **Contributing**: [CONTRIBUTING.md](../CONTRIBUTING.md)
-
----
-
-## Quick Troubleshooting
-
-### GPIO Issues
-
-- **LED won't light**: Check pin is initialized as output: `gpio_init(pin, true)`
-- **Button not responding**: Enable pull-up resistor: `gpio_set_pull(pin, 1)`
-- **Pin validation errors**: RP2040 only has GPIO 0-29
-
-### System Info Issues
-
-- **Temperature reads 0**: Call `sys_temp()` a second time (ADC initialization)
-- **Free RAM seems wrong**: This is an estimate; use for trends, not exact values
-- **Board ID all zeros**: Try power cycle; may indicate hardware issue
-
-### General Issues
-
-- **SageLang commands not found**: Ensure `SAGE_ENABLED=1` in build
-- **Out of memory**: Check with `sys_free_ram()`, call `gc_collect()`
-- **System freezes**: May be infinite loop; check your script logic
-
----
-
-## Version Information
-
-- **littleOS Version**: 0.2.0
-- **SageLang Version**: 0.8.0
-- **Target Platform**: Raspberry Pi Pico (RP2040)
-- **Last Updated**: December 2, 2025
+**Version**: 0.6.0
+**Platform**: Raspberry Pi Pico / Pico W (RP2040)
+**Last Updated**: March 2026

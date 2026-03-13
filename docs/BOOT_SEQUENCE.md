@@ -2,255 +2,188 @@
 
 ## Boot Flow
 
+```text
+Pico SDK Boot (crt0.S)
+│  Initialize clocks, memory, BSS
+│
+▼
+boot/boot.c - main()
+│  stdio_init_all()
+│  sleep_ms(1000)
+│
+▼
+kernel_main() - src/kernel/kernel.c
+│
+├── Phase 1: Core Init
+│   ├── memory_init()          # Heap allocator
+│   ├── dmesg_init()           # Kernel message buffer
+│   ├── Watchdog reset check   # Detect crash recovery
+│   ├── littleos_uart_init()   # UART with permissions
+│   ├── scheduler_init()       # Task scheduler
+│   ├── config_init()          # Flash key-value store
+│   └── users_init()           # User database + display
+│
+├── Phase 2: SageLang
+│   ├── sage_init()            # Interpreter + native functions
+│   ├── script_storage_init()  # Flash script storage
+│   └── autoboot script        # Execute if configured
+│
+├── Phase 3: Security
+│   ├── Root security context  # UID=0, GID=0
+│   └── init_device_permissions()
+│       ├── UART0:    root/drivers  0660
+│       ├── Watchdog: root/system   0640
+│       ├── Scheduler: root/system  0660
+│       ├── Memory:   root/system   0600
+│       ├── Config:   root/system   0640
+│       ├── SageLang: root/users    0755
+│       ├── Scripts:  root/users    0770
+│       └── Supervisor: root/system 0600
+│
+├── Phase 4: Subsystems
+│   ├── ipc_init()             # Inter-process communication
+│   ├── memory_accounting_init()
+│   ├── ota_init()             # Over-the-air updates
+│   ├── dma_hal_init()         # DMA engine
+│   ├── power_init()           # Power management
+│   ├── sensor_init()          # Sensor framework
+│   ├── profiler_init()        # Runtime profiler
+│   └── shell_env_init()       # Env vars, aliases, prompt
+│
+├── Phase 5: Virtual FS & Services
+│   ├── procfs_init()          # /proc filesystem
+│   ├── devfs_init()           # /dev filesystem
+│   ├── cron_init()            # Scheduled tasks
+│   ├── net_init()             # WiFi (Pico W only)
+│   ├── mqtt_init()            # MQTT client
+│   ├── pkg_init()             # Package manager
+│   └── tmux_init()            # Terminal multiplexer
+│
+├── Phase 6: Debug Subsystems
+│   ├── logcat_init()          # Structured logging
+│   ├── trace_init()           # Execution tracing
+│   ├── coredump_init()        # Crash dumps
+│   └── syslog_init()          # Persistent log
+│
+├── Phase 7: Watchdog & Supervisor
+│   ├── wdt_enable(8000)       # 8 second timeout
+│   └── supervisor_init()      # Core 1 health monitoring
+│
+▼
+shell_run() - src/shell/shell.c
+   Main command loop
 ```
-┌─────────────────────────────────────┐
-│  Pico SDK Boot (crt0.S)             │
-│  - Initialize clocks                │
-│  - Initialize memory                │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────┐
-│  boot/boot.c - main()               │
-│  - stdio_init_all()                 │
-│  - Wait for USB connection          │
-│  - sleep_ms(1000)                   │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────┐
-│  src/kernel.c - kernel_main()       │
-│  - Display "RP2040 littleOS kernel" │
-│  - sage_init() → Initialize SageLang│
-│  - script_storage_init()            │
-│  - Display boot messages            │
-│  - sleep_ms(3000) → 3 second delay  │
-│  - Clear screen (ANSI codes)        │
-│  - Display welcome message          │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────┐
-│  src/shell/shell.c - shell_run()    │
-│  - Main command loop                │
-│  - Process user commands            │
-└─────────────────────────────────────┘
-```
-
----
 
 ## Boot Messages
 
-### Phase 1: Initialization (3 seconds)
+### Initialization Output
 
+```text
+========================================
+  RP2040 littleOS Kernel
+  Built: Mar 13 2026 14:30:00
+========================================
+
+Initializing task scheduler...
+Initializing user database...
+
+=== User Account Configuration ===
+Total accounts: 2
+[0] root
+    UID: 0, GID: 0, Capabilities: ALL
+[1] appuser
+    UID: 1000, GID: 1000, Capabilities: NONE
+==================================
+
+Initializing SageLang interpreter...
+  SageLang ready
+  Script storage initialized
+
+Setting up device and subsystem permissions...
+  UART0:      owner=root, group=drivers, mode=0660
+  Watchdog:   owner=root, group=system, mode=0640
+  ...
+
+Watchdog: Active (8s timeout)
+Supervisor: Core 1 monitoring system health
+
+Boot sequence complete. Starting shell in 2 seconds...
 ```
-RP2040 littleOS kernel
-SageLang: Embedded mode (64KB heap)
-GPIO: Registered 5 native functions
-System: Registered 9 native functions
-Time: Registered sleep() function
-SageLang initialized
-Script storage initialized
+
+### Crash Recovery
+
+If the system was reset by watchdog:
+
+```text
+*** RECOVERED FROM CRASH ***
+System was reset by watchdog timer
 ```
 
-**Duration:** Displayed for 3 seconds
+### Welcome Screen
 
-**Purpose:** 
-- Show system initialization status
-- Confirm all subsystems loaded
-- Verify native function registration
+After boot delay, screen clears and shows:
 
----
-
-### Phase 2: Welcome Screen (after clear)
-
-```
-Welcome to littleOS Shell!
+```text
+========================================
+  Welcome to littleOS Shell!
+========================================
 Type 'help' for available commands
->
+
+Running as: root (UID=0, GID=0)
 ```
-
-**What happens:**
-1. Screen clears using ANSI escape codes (`\033[2J\033[H`)
-2. Welcome message displayed
-3. Shell prompt ready for input
-
----
-
-## SageLang Initialization
-
-During `sage_init()`, the following functions are registered:
-
-### GPIO Functions (5)
-- `gpio_init(pin, is_output)`
-- `gpio_write(pin, value)`
-- `gpio_read(pin)`
-- `gpio_toggle(pin)`
-- `gpio_set_pull(pin, mode)`
-
-### System Functions (9)
-- `sys_version()`
-- `sys_uptime()`
-- `sys_temp()`
-- `sys_clock()`
-- `sys_free_ram()`
-- `sys_total_ram()`
-- `sys_board_id()`
-- `sys_info()`
-- `sys_print()`
-
-### Time Functions (1)
-- `sleep(milliseconds)`
-
-**Total:** 15 native functions registered
-
----
-
-## Reboot Functionality
-
-### Command
-```bash
-> reboot
-```
-
-### Implementation
-
-Located in `src/shell/shell.c`:
-
-```c
-if (strcmp(argv[0], "reboot") == 0) {
-    printf("Rebooting system...\r\n");
-    sleep_ms(500);  // Give time for message to transmit
-    
-    // Use watchdog to trigger a reset
-    watchdog_enable(1, 1);  // 1ms timeout, no pause on debug
-    while(1) {
-        // Wait for watchdog to trigger reset
-    }
-}
-```
-
-### How It Works
-
-1. **Display message**: "Rebooting system..."
-2. **Wait 500ms**: Ensures message is transmitted over UART/USB
-3. **Enable watchdog**: 1ms timeout
-4. **Trigger reset**: Watchdog fires and resets the RP2040
-5. **Restart**: Boot sequence begins again from Phase 1
-
-### Technical Details
-
-- **Method**: Hardware watchdog timer reset
-- **Delay**: 1ms timeout (minimum)
-- **SDK Function**: `watchdog_enable(timeout_ms, pause_on_debug)`
-- **Result**: Complete system restart (equivalent to power cycle)
-
-**Note:** This is a hardware reset, not a software reset. All peripherals, GPIO states, and memory are reset to their default states.
-
----
-
-## Available Shell Commands
-
-After boot, the following commands are available:
-
-| Command | Description |
-|---------|-------------|
-| `help` | Show available commands |
-| `version` | Show OS and SageLang version |
-| `clear` | Clear the screen |
-| `reboot` | Reboot the system |
-| `sage` | Enter SageLang REPL |
-| `script` | Manage stored scripts |
-
----
-
-## Screen Clear Mechanism
-
-### ANSI Escape Codes
-
-```c
-printf("\033[2J");   // Clear entire screen
-printf("\033[H");    // Move cursor to home (1,1)
-```
-
-**Compatibility:**
-- ✅ Works with most terminal emulators (PuTTY, screen, minicom)
-- ✅ Works with USB serial terminals
-- ✅ Works with UART terminals
-- ❌ May not work with very basic terminals
-
----
 
 ## Boot Timing
 
 | Phase | Duration | Description |
-|-------|----------|-------------|
-| SDK Boot | ~100ms | Hardware initialization |
-| USB Wait | Variable | Wait for USB connection (if enabled) |
-| Initial Delay | 1000ms | Allow USB enumeration |
-| SageLang Init | ~50ms | Initialize interpreter and register functions |
-| Boot Message Display | 3000ms | Show initialization status |
-| **Total** | **~4.2s** | From power-on to shell ready |
-
----
+| ----- | -------- | ----------- |
+| SDK Boot | ~100ms | Hardware init |
+| stdio + delay | ~1000ms | USB/UART enumeration |
+| Core init | ~50ms | Memory, scheduler, users |
+| SageLang init | ~50ms | Interpreter + native functions |
+| Subsystem init | ~100ms | IPC, OTA, DMA, sensors, etc. |
+| Boot message display | 2000ms | Show init status |
+| **Total** | **~3.3s** | Power-on to shell prompt |
 
 ## Customization
 
 ### Change Boot Delay
 
-In `src/kernel.c`, modify:
+In `src/kernel/kernel.c`:
 
 ```c
-// Display boot log for 3 seconds
-sleep_ms(3000);  // Change to desired milliseconds
+sleep_ms(2000);  // Change to desired milliseconds
 ```
 
 ### Disable Screen Clear
 
-Comment out in `src/kernel.c`:
+Comment out in `src/kernel/kernel.c`:
 
 ```c
-// printf("\033[2J\033[H");  // Disabled
+// printf("\033[2J\033[H");
 ```
 
-### Custom Welcome Message
+### Pico W Networking
 
-Edit in `src/kernel.c`:
+WiFi init only runs when built with `-DLITTLEOS_PICO_W=ON`:
 
 ```c
-printf("\r\n");
-printf("Welcome to littleOS Shell!\r\n");  // Customize here
-printf("Type 'help' for available commands\r\n");
+#ifdef PICO_W
+    net_init();
+#endif
 ```
+
+## Reboot
+
+The `reboot` command uses the hardware watchdog:
+
+```c
+watchdog_enable(1, 1);  // 1ms timeout
+while(1) {}             // Watchdog fires, full reset
+```
+
+This is a hardware reset - all peripherals, GPIO states, and memory are reset. Data in `.uninitialized_data` section survives (coredump, syslog).
 
 ---
 
-## Troubleshooting
-
-### Boot messages not visible
-- Check USB connection
-- Verify terminal baud rate (115200)
-- Ensure `stdio_usb_connected()` returns true
-
-### Screen doesn't clear
-- Terminal may not support ANSI escape codes
-- Try a different terminal emulator (PuTTY recommended)
-
-### Reboot doesn't work
-- Watchdog may not be enabled in SDK
-- Check `hardware_watchdog` is linked in CMakeLists.txt
-- Verify BOOTSEL button isn't held during reset
-
-### Boot takes too long
-- USB enumeration can take 1-2 seconds
-- Disable USB stdio and use UART only for faster boot
-- Reduce boot message delay in kernel.c
-
----
-
-## Version Information
-
-- **littleOS**: 0.2.0
-- **SageLang**: 0.8.0
-- **Target**: Raspberry Pi Pico (RP2040)
-- **Last Updated**: December 2, 2025
+**Version**: 0.6.0
+**Last Updated**: March 2026

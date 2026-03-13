@@ -2,17 +2,156 @@
 
 All notable changes to littleOS. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.6.0] - 2025-03-13
+
+### Added - Debug & Diagnostics Suite
+
+- **`logcat`** - Structured logging with tag/level filters
+- **`trace`** - Execution trace buffer with function-level timing
+- **`watchpoint`** - Memory watchpoints (break on read/write to address ranges)
+- **`benchmark`** - Performance benchmarks (cpu, mem, gpio, fs)
+- **`selftest`** - Hardware self-test suite (RAM, flash, GPIO, ADC, timers)
+- **`coredump`** - Crash dump viewer (survives soft reboot via `.uninitialized_data` section)
+- **`syslog`** - Persistent system log (survives soft reboot)
+
+### Added - Hardware Tools
+
+- **`i2cscan`** - I2C bus scanner (detect devices on I2C0/I2C1)
+- **`wire`** - Interactive I2C/SPI REPL for raw bus communication
+- **`pwmtune`** - PWM frequency/duty cycle tuner with live adjustment
+- **`adc`** - ADC read/stream/stats (continuous sampling, min/max/avg)
+- **`gpiowatch`** - GPIO state monitor (watch pins for changes)
+- **`neopixel`** - WS2812 NeoPixel LED control (set colors, patterns, animations)
+- **`display`** - SSD1306 OLED display driver (text, pixels, shapes)
+
+### Added - Networking (Pico W)
+
+- **WiFi support** via `pico_cyw43_arch_lwip_threadsafe_background`
+- **`net`** command - WiFi scan/connect/status, TCP/UDP sockets, ping, HTTP GET, DNS
+- **`mqtt`** - MQTT IoT client (connect, publish, subscribe)
+- **`remote`** - Remote shell over TCP
+- **`ota`** - Over-the-air firmware update framework
+- **lwIP configuration** (`include/lwipopts.h`) - conservative memory settings for RP2040
+- Pico W build: `cmake -DLITTLEOS_PICO_W=ON ..`
+
+### Added - Shell Enhancements
+
+- **`env`** - Environment variables (`$HOME`, `$PATH`, etc.)
+- **`alias`** - Command aliases (`alias ll="ls -la"`)
+- **`export`** - Set/modify environment variables
+- **`screen`** - Terminal multiplexer (split panes)
+- **`man`** - Built-in manual pages for all commands
+- **`top`** - Live system monitor (htop-style, auto-refreshing)
+- **Pipes** - `cmd1 | cmd2` pipe output between commands
+- **Output redirect** - `echo hello > file`
+- **`!!`** - Repeat last command
+- **Tab completion** for command names
+
+### Added - Text Processing
+
+- **`cat`** - Display file contents
+- **`echo`** - Print text with redirect support
+- **`head`** / **`tail`** - Show first/last lines
+- **`wc`** - Word/line/byte count
+- **`grep`** - Pattern search in files
+- **`hexdump`** - Hex dump of file contents
+- **`tee`** - Duplicate output to file
+
+### Added - Virtual Filesystems
+
+- **`proc`** - Process filesystem (`/proc/cpuinfo`, `/proc/meminfo`, etc.)
+- **`dev`** - Device filesystem (`/dev/gpio`, `/dev/uart`, etc.)
+
+### Added - System Services
+
+- **`cron`** - Scheduled task execution (add, list, remove jobs)
+- **`pkg`** - Package manager framework
+- **`sensor`** - Sensor framework with validation and logging
+- **`power`** - Power management and sleep modes
+- **`ipc`** - Inter-process communication channels
+- **`profile`** - Runtime profiling
+
+### Added - System Info
+
+- **`fetch`** - System info display (neofetch-style)
+- **`pinout`** - Visual GPIO pin diagram
+
+### Changed - SageLang Submodule
+
+- Updated to commit `24dd9ba` with complete `PICO_BUILD` guards
+- Source layout changed: C sources now in `src/c/`, self-hosting Sage in `src/sage/`
+- Added `sage_thread.c` to build (provides thread stubs for embedded)
+- Uses `SAGE_PLATFORM_PICO` and `SAGE_HAS_THREADS` macros
+
+### Changed - RAM Optimization
+
+Reduced BSS from 167KB to 105KB (62KB freed):
+
+- `DMESG_BUFFER_SIZE` 128 -> 64, `DMESG_MSG_MAX` 120 -> 96
+- `LOGCAT_MAX_ENTRIES` 128 -> 64, `LOGCAT_MAX_MSG_LEN` 80 -> 64
+- `TRACE_MAX_ENTRIES` 256 -> 128, `TRACE_MAX_NAME_LEN` 24 -> 16
+- `HISTORY_SIZE` 20 -> 10, `MAX_CMD_LEN` 512 -> 256
+- `IPC_MAX_MSG_SIZE` 128 -> 64, `IPC_MAX_CHANNELS` 8 -> 4
+- `CONFIG_MAX_VALUE_LEN` 256 -> 128, `CONFIG_MAX_ENTRIES` 32 -> 16
+- `SHELL_ENV_MAX_VARS` 32 -> 16, `SHELL_ALIAS_MAX` 16 -> 8
+- `CRON_MAX_JOBS` 8 -> 4
+- FS backend blocks 128 -> 16
+
+### Fixed
+
+- `.noinit` section overlap with `.bss` - changed to `.uninitialized_data` (Pico SDK native)
+- `cmd_neopixel.c` `uint` type error - changed to `unsigned int`
+- `cmd_remote.c` missing `pico/stdlib.h` for `absolute_time_t`
+- lwIP `TCP_SND_QUEUELEN` sanity check failure
+
+### Technical Details
+
+**Binary sizes:**
+
+- Standard Pico: text=361KB, BSS=105KB, ~151KB free RAM
+- Pico W (WiFi): text=679KB, BSS=135KB, ~121KB free RAM
+
+---
+
+## [0.5.0] - 2025-02-15
+
+### Added - System Infrastructure
+
+- **Task scheduler** - Cooperative multitasking with priority support
+- **IPC subsystem** - Message-passing channels between tasks
+- **OTA framework** - Over-the-air update infrastructure
+- **DMA engine** - DMA transfer management
+- **Power management** - Sleep modes and power state control
+- **Sensor framework** - Unified sensor registration, polling, and validation
+- **Runtime profiler** - Function-level timing and call counting
+- **Memory accounting** - Per-task memory tracking
+
+### Added - Hardware Drivers
+
+- **PIO** - Programmable I/O state machine control
+- **USB** - USB device mode (CDC, HID, MSC)
+- **Hardware peripherals** (`hw` command) - I2C, SPI, PWM, ADC access
+
+### Changed
+
+- Kernel boot sequence expanded with IPC, OTA, DMA, power, sensor, profiler init
+- Shell environment system (env vars, aliases, prompt customization)
+- Security context integrated into boot flow
+
+---
+
 ## [0.4.0] - 2025-12-29
 
-### 💾 **Added - Production Filesystem (F2FS-inspired)**
+### Added - Production Filesystem (F2FS-inspired)
 
 **Complete modular filesystem with crash recovery, directories, and full shell integration**
 
 #### Core Implementation (`src/drivers/fs/`)
+
 - **`fs.h`** - Complete public API + on-disk structures
   - Superblock with CRC32 protection
   - Dual checkpoints (CP0/CP1) for crash recovery
-  - NAT (Node Address Table) - log-structured inodes  
+  - NAT (Node Address Table) - log-structured inodes
   - SIT (Segment Information Table) - wear leveling
   - 512B blocks, 4KB segments, 256 inodes max
 - **`fs_core.c`** - Metadata + lifecycle (format/mount/sync/fsck)
@@ -20,20 +159,8 @@ All notable changes to littleOS. Format based on [Keep a Changelog](https://keep
 - **`fs_dir.c`** - Hash-based directory lookup + slack space optimization
 - **`fs_file.c`** - Path resolution + read/write/seek/open/close
 
-#### Key Features
-```
-✅ 65KB RAM filesystem (128 blocks)
-✅ Hierarchical directories (/a/b/c)
-✅ Crash recovery (dual checkpoints)
-✅ Pathname resolution
-✅ File create/read/write (touch/cat/write)
-✅ Directory create/list (mkdir/ls)
-✅ fsck validation
-✅ mount_count tracking
-✅ 119 blocks free after format
-```
-
 #### Shell Integration (`src/shell/cmd_fs.c`)
+
 ```bash
 fs init 128     # Format RAM FS
 fs mount        # Mount (auto-recovery after reboot!)
@@ -46,533 +173,60 @@ fs sync         # Persist checkpoints
 fs info         # Superblock + runtime stats
 ```
 
-#### Technical Details
-```
-Memory:  ~15KB RAM (NAT/SIT tables)
-Crash Recovery: Dual CP + mount_count
-Block Layout: SB(0)+CP0(1)+CP1(2)+NAT(3-6)+SIT(7)+Data(8+)
-Inodes: 256 max, root=inode#2
-Directories: djb2 hash + 4-byte aligned dirents
-Files: 10 direct blocks (5KB max/file)
-Performance: <10μs GPIO, ~2ms FS ops
-```
-
-**Usage Example:**
-```bash
-> fs init 128
-fs: formatted RAM FS (128 blocks, 65536 bytes)
-> fs mount
-fs: mounted (mount_count=1)
-
-> fs mkdir /app
-fs: created directory '/app'
-
-> fs touch /app/config.txt
-fs: created '/app/config.txt'
-
-> fs write /app/config.txt "device_id=pico001"
-fs: wrote 18 bytes to '/app/config.txt'
-
-> fs cat /app/config.txt
-device_id=pico001
-
-> fs ls /app
-Listing '/app':
-  ino=3 type=file
-
-> fs sync
-fs: sync OK (checkpoints written)
-
-> reboot
-[System reboots]
-
-> fs mount
-fs: auto-init RAM backend (128 blocks)...
-fs: mounted (mount_count=2)
-
-> fs ls /app
-Listing '/app':
-  ino=3 type=file
-
-> fs cat /app/config.txt
-device_id=pico001
-```
-
-#### Architecture Highlights
-
-**Modular Design:**
-```
-fs.h         → Public API + structures
-fs_core.c    → SB/CP/NAT/SIT + lifecycle
-fs_inode.c   → Load/store inodes + bmap
-fs_dir.c     → Directory lookup/add
-fs_file.c    → Path resolution + file ops
-cmd_fs.c     → Shell integration
-```
-
-**Crash Recovery:**
-- Dual checkpoints (CP0/CP1) with alternating writes
-- mount_count increment on each mount
-- CRC32 validation on superblock + checkpoints
-- NAT/SIT dirty flags for selective sync
-- Auto-recovery: `fs mount` re-inits RAM + recovers state
-
-**Log-Structured Design:**
-- Inodes written to fresh blocks (never overwrite)
-- NAT maps inode# → physical block
-- SIT tracks valid blocks per segment
-- Wear leveling via segment allocation
-
-#### Compilation Fixes
-- Exported shared helpers from `fs_core.c`:
-  - `fs_read_block_i()` - Read block via backend
-  - `fs_write_block_i()` - Write block via backend
-  - `fs_find_first_free_data_block()` - Allocator
-  - `fs_mark_block_valid()` - SIT updater
-- Removed conflicting `static` declarations in `fs_inode.c`, `fs_dir.c`, `fs_file.c`
-- Fixed linker errors across 4 modular files
-
-#### Future Enhancements
-- **Indirect blocks** - Support files >5KB
-- **Flash backend** - SPI NOR/NAND for real persistence
-- **Wear leveling** - Active block rotation
-- **GC** - Clean invalid blocks
-- **Permissions** - Integrate with user system
-- **Symlinks** - Symbolic link support
-
 ---
 
 ## [0.3.0] - 2025-12-02
 
-### 🛡️ Added - Watchdog Timer System
+### Added - Watchdog Timer System
 
-**Comprehensive crash protection with automatic recovery**
+- Hardware watchdog timer driver (8 second default timeout)
+- Multi-layer feed protection (shell, REPL, scripts)
+- Crash recovery detection and reporting
+- SageLang bindings (`wdt_enable`, `wdt_disable`, `wdt_feed`, `wdt_get_timeout`)
 
-#### Core Implementation
-- **`src/watchdog.c`** - Hardware watchdog timer driver
-  - Initialization and configuration (8 second default timeout)
-  - Feed/reset functionality for keep-alive
-  - Enable/disable control
-  - Reset reason detection (distinguish crashes from normal reboots)
-  - Configurable timeout periods
-  
-#### System Integration
-- **Multi-layer protection:**
-  - Shell main loop: Feeds every 1 second during idle
-  - Command execution: Feeds before/after each command
-  - SageLang REPL: Feeds every 1 second waiting for input
-  - Script evaluation: Feeds before/after execution and between statements
-  
-- **Boot protection:**
-  - Watchdog initialized but disabled during boot
-  - Enabled only after full system initialization
-  - Prevents false triggers during startup
-  
-- **Recovery indication:**
-  - Clear "RECOVERED FROM CRASH" message on boot
-  - User-visible indication of watchdog resets
-  - Distinguishes crashes from intentional reboots
+### Added - Script Storage System
 
-#### SageLang Bindings
-- **`src/sage_watchdog.c`** - Watchdog control from scripts
-  - `wdt_enable(timeout_ms)` - Enable with custom timeout
-  - `wdt_disable()` - Disable watchdog
-  - `wdt_feed()` - Manual keep-alive
-  - `wdt_get_timeout()` - Query current timeout
+- Flash-based script storage (up to 8 slots, 4KB flash sector)
+- Auto-boot support via config storage
+- Shell commands: `script save/list/run/delete/show/autoboot/noboot`
 
-#### Technical Details
-- 8 second default timeout (configurable 1ms - 8388ms)
-- Sub-millisecond feed overhead (<5μs)
-- No dynamic memory allocation
-- Minimal stack usage (~50 bytes)
-- Hardware-based (RP2040 watchdog peripheral)
+### Added - System Information Module
 
-**Usage Example:**
-```sagelang
-# Enable custom 5-second timeout
-wdt_enable(5000)
+- CPU, memory, temperature, board ID, uptime monitoring
+- SageLang bindings (`sys_version`, `sys_uptime`, `sys_temp`, `sys_clock`, etc.)
 
-# Long-running task
-while(true):
-    # Do work...
-    wdt_feed()  # Reset timer
-    sleep(1000)
-```
+### Added - GPIO Integration
 
----
+- Platform-independent GPIO HAL (init, read, write, toggle, pull config)
+- SageLang bindings (`gpio_init`, `gpio_write`, `gpio_read`, `gpio_toggle`, `gpio_set_pull`)
 
-### 💾 Added - Script Storage System
+### Added - Timing Functions
 
-**Persistent script storage in flash memory**
+- SageLang bindings (`sleep`, `sleep_us`, `time_ms`, `time_us`)
 
-#### Core Implementation
-- **`src/script_storage.c`** - Flash-based script storage
-  - Save scripts with names (up to 8 slots)
-  - List all stored scripts with sizes
-  - Load and execute scripts by name
-  - Delete scripts to free space
-  - View script contents
-  - 4KB flash sector allocation
-  
-#### Auto-boot Support
-- **`src/config_storage.c`** - Enhanced with autoboot config
-  - Store auto-boot script name
-  - Automatic execution on system startup
-  - Enable/disable auto-boot via config
-  - Integrated with kernel boot sequence
+### Added - Configuration Storage
 
-#### Shell Commands
-- **`src/shell/cmd_script.c`** - Storage command handler
-  - `storage save <name>` - Interactive script entry
-  - `storage list` - Show all scripts
-  - `storage run <name>` - Execute script
-  - `storage delete <name>` - Remove script
-  - `storage show <name>` - Display source
-  - `storage autoboot <name>` - Set auto-boot
-  - `storage noboot` - Disable auto-boot
+- Flash-backed key-value store (16 entries, 128-byte values)
+- SageLang bindings (`config_set`, `config_get`, `config_has`, `config_remove`, `config_save`, `config_load`)
 
-#### Documentation
-- **`docs/SCRIPT_STORAGE.md`** - Complete storage guide
-  - API reference
-  - Usage examples
-  - Storage limits and constraints
-  - Flash memory layout
+### Added - Memory Management Core
 
-**Usage Example:**
-```bash
-> storage save blink
-# Paste script, end with Ctrl+D
-gpio_init(25, true)
-while(true):
-    gpio_toggle(25)
-    sleep(500)
-^D
-Script saved: blink (72 bytes)
+- 32KB heap with linked-list allocator and coalescing
+- Guard bytes, fragmentation tracking, leak detection
+- Shell commands: `memory stats/available/leaks/test/defrag/threshold`
 
-> storage autoboot blink
-Auto-boot enabled: blink
+### Added - User & Permission System
 
-> reboot
-# LED starts blinking automatically after boot
-```
-
----
-
-### 📟 Added - System Information Module
-
-**Real-time hardware monitoring and diagnostics**
-
-#### Core Implementation
-- **`src/system_info.c`** - System information API
-  - CPU: Model, clock speed, core count, silicon revision
-  - Memory: Total/free/used RAM, flash size
-  - Sensors: Internal temperature sensor
-  - Identity: 64-bit unique board ID
-  - Uptime: Millisecond-precision tracking
-  - Version: OS version and build info
-
-#### SageLang Bindings
-- **`src/sage_system.c`** - System monitoring from scripts
-  - `sys_version()` - OS version string
-  - `sys_uptime()` - Uptime in seconds
-  - `sys_temp()` - CPU temperature (°C, ±5°C accuracy)
-  - `sys_clock()` - Clock speed (MHz)
-  - `sys_free_ram()` - Free RAM (KB)
-  - `sys_total_ram()` - Total RAM (KB)
-  - `sys_board_id()` - Unique chip ID string
-  - `sys_info()` - Complete info dictionary
-  - `sys_print()` - Formatted system report
-
-#### Documentation
-- **`docs/SYSTEM_INFO.md`** - Complete monitoring guide
-  - Full API reference
-  - 4+ working examples
-  - Performance characteristics
-  - Troubleshooting
-
-**Usage Example:**
-```sagelang
-# System monitor dashboard
-while(true):
-    let info = sys_info()
-    print "===== System Status ====="
-    print "Temp: " + str(info["temperature"]) + "°C"
-    print "RAM: " + str(info["free_ram"]) + "/" + str(info["total_ram"]) + " KB"
-    print "Uptime: " + str(sys_uptime()) + "s"
-    print ""
-    sleep(5000)
-```
-
----
-
-### 🎯 Added - GPIO Integration
-
-**Complete hardware abstraction layer for GPIO control**
-
-#### Hardware Abstraction
-- **`src/hal/gpio.c`** - Platform-independent GPIO HAL
-  - Pin initialization (input/output modes)
-  - Digital read/write operations
-  - Output toggling
-  - Pull-up/pull-down resistor configuration
-  - Input validation (GPIO 0-29)
-
-#### SageLang Bindings
-- **`src/sage_gpio.c`** - Hardware control from scripts
-  - `gpio_init(pin, is_output)` - Configure pin direction
-  - `gpio_write(pin, value)` - Set output state
-  - `gpio_read(pin)` - Read input state
-  - `gpio_toggle(pin)` - Toggle output
-  - `gpio_set_pull(pin, mode)` - Configure pulls (0=none, 1=up, 2=down)
-
-#### Documentation
-- **`docs/GPIO_INTEGRATION.md`** - Complete hardware guide
-  - Architecture overview
-  - Full API reference
-  - Pin reference for Pico
-  - 4+ complete examples
-  - Safety guidelines
-
-**Usage Example:**
-```sagelang
-# Button-controlled LED
-class LED:
-    proc init(self, pin):
-        self.pin = pin
-        gpio_init(pin, true)
-    
-    proc toggle(self):
-        gpio_toggle(self.pin)
-
-class Button:
-    proc init(self, pin):
-        self.pin = pin
-        gpio_init(pin, false)
-        gpio_set_pull(pin, 1)  # Pull-up
-    
-    proc is_pressed(self):
-        return gpio_read(self.pin) == false
-
-let led = LED(25)
-let button = Button(15)
-
-while(true):
-    if button.is_pressed():
-        led.toggle()
-        sleep(200)  # Debounce
-    sleep(50)
-```
-
----
-
-### ⏱️ Added - Timing Functions
-
-**Precise timing and delay utilities**
-
-#### SageLang Bindings
-- **`src/sage_time.c`** - Time utilities
-  - `sleep(ms)` - Millisecond delay
-  - `sleep_us(us)` - Microsecond delay  
-  - `time_ms()` - Milliseconds since boot
-  - `time_us()` - Microseconds since boot
-
-**Usage Example:**
-```sagelang
-let start = time_ms()
-# Do something...
-let elapsed = time_ms() - start
-print "Operation took " + str(elapsed) + "ms"
-```
-
----
-
-### ⚙️ Added - Configuration Storage
-
-**Persistent key-value storage in flash**
-
-#### Core Implementation
-- **`src/config_storage.c`** - Flash-backed configuration
-  - Key-value pairs (up to 16 entries)
-  - String values (up to 64 bytes)
-  - Flash persistence
-  - Auto-boot script support
-  - 4KB flash sector
-
-#### SageLang Bindings
-- **`src/sage_config.c`** - Configuration from scripts
-  - `config_set(key, value)` - Set configuration
-  - `config_get(key)` - Get value (returns null if missing)
-  - `config_has(key)` - Check existence
-  - `config_remove(key)` - Delete entry
-  - `config_save()` - Persist to flash
-  - `config_load()` - Load from flash
-
-**Usage Example:**
-```sagelang
-# Device configuration
-config_set("device_name", "sensor_node_01")
-config_set("sample_rate", "1000")
-config_save()
-
-# Later...
-let name = config_get("device_name")
-let rate = int(config_get("sample_rate"))
-```
-
----
-
-### 🧠 Added - Memory Management Core
-
-**Centralized heap tracking and diagnostics**
-
-#### Core Implementation
-- **`src/sys/memory.c`** - Memory management system
-  - 32 KB heap (configurable)
-  - Linked-list allocator with coalescing
-  - Guard bytes for corruption detection
-  - Fragmentation tracking
-  - Peak usage monitoring
-
-#### Shell Commands
-- **`src/shell/cmd_memory.c`** - Memory diagnostics
-  - `memory stats` - Show heap statistics
-  - `memory available` - Show free memory
-  - `memory leaks` - Check for memory leaks
-  - `memory test <sz> <cnt>` - Test allocations
-  - `memory defrag` - Compact heap
-  - `memory threshold <%>` - Set warning level
-
-**Usage Example:**
-```bash
-> memory stats
-=== Memory Statistics ===
-Total Heap:      32768 bytes
-Current Usage:   2048 bytes (6.3%)
-Available:       30720 bytes (93.7%)
-Peak Usage:      4096 bytes (12.5%)
-
-Allocation Stats:
-Total Allocated: 8192 bytes
-Total Freed:     6144 bytes
-Num Allocations: 32
-Num Frees:       24
-Fragmentation:   12%
-
-Heap Usage: [===                                      ] 6%
-```
-
----
-
-### 👤 Added - User & Permission System
-
-**Multi-user support with capability-based access control**
-
-#### Core Implementation
-- **`src/sys/users_config.c`** - User database
-  - Root user (UID 0) with all capabilities
-  - Optional non-root user (configurable at build)
-  - User lookup by name or UID
-  - Existence checks
-
-- **`src/sys/permissions.c`** - Permission system
-  - Unix-style permission bits (rwx)
-  - Capability-based access control
-  - Permission checking (owner/group/other)
-  - Umask support
-
-#### Shell Commands
-- **`src/shell/cmd_users.c`** - User management
-  - `users list` - List all users
-  - `users get <name|uid>` - Get user info
-  - `users exists <name>` - Check existence
-
-- **`src/shell/cmd_perms.c`** - Permission utilities
-  - `perms decode <mode>` - Decode permission bits
-  - `perms check <uid> <mode> <action>` - Check permission
-  - `perms presets` - Show common presets
-
-**Usage Example:**
-```bash
-> users list
-=== User Account Configuration ===
-Total accounts: 2
-
-[0] root
-    UID:          0
-    GID:          0
-    Umask:        0022
-    Capabilities: ALL
-
-[1] appuser
-    UID:          1000
-    GID:          1000
-    Umask:        0022
-    Capabilities: NONE
-
-> perms decode 0644
-Permission Mode: 0644
-Rwx:    rw-r--r--
-
-Owner: rw- (6)
-Group: r-- (4)
-Other: r-- (4)
-
-> perms check 1000 0644 read
-Permission Check:
-  UID:    1000
-  Mode:   0644 (rw-r--r--)
-  Action: read
-  Result: ALLOWED
-```
-
----
-
-### 📚 Documentation Improvements
-
-- **Reorganized docs/** - Non-redundant, topic-focused guides
-- **Comprehensive README** - Quick start to advanced features
-- **API references** - Complete function documentation
-- **Working examples** - Copy-paste ready code
-- **Troubleshooting** - Common issues and solutions
-
----
-
-### 🔧 Changed
-
-- **Build system:** Updated CMakeLists.txt for all new modules
-- **SageLang integration:** Automatic function registration
-- **Kernel:** Watchdog initialization and boot sequence
-- **Shell:** Added storage, memory, users, perms, and fs commands
-
----
-
-### 🛠️ Technical Details
-
-**Memory Impact:**
-- Kernel + drivers: ~150KB flash, ~100KB RAM
-- SageLang runtime: 64KB heap (configurable)
-- Script storage: 4KB flash
-- Configuration: 4KB flash
-- Filesystem: 15KB RAM (NAT/SIT tables)
-
-**Performance:**
-- Boot time: <1 second to shell
-- GPIO operations: <10μs
-- Temperature reading: ~100μs
-- Watchdog feed: <5μs
-- FS operations: ~2ms
-- Script execution: Direct interpretation
-
-**Platform Support:**
-- Tested on Raspberry Pi Pico (RP2040)
-- Compatible with all RP2040-based boards
-- Portable HAL design for future platforms
+- Multi-user with capability-based access control
+- Unix-style permission bits (rwx, owner/group/other)
+- Shell commands: `users list/get/exists`, `perms decode/check/presets`
 
 ---
 
 ## [0.2.0] - 2024-11-28
 
 ### Added
+
 - SageLang integration with full REPL
 - Interactive shell with command history
 - USB and UART dual I/O support
@@ -584,6 +238,7 @@ Permission Check:
 ## [0.1.0] - 2024-11-20
 
 ### Added
+
 - Initial littleOS kernel
 - Basic UART communication
 - Minimal shell interface

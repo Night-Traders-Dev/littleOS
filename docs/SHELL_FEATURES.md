@@ -1,267 +1,246 @@
 # littleOS Shell Features
 
-## Command History
+## Overview
 
-### Overview
+The littleOS shell provides a Unix-like command environment with 60+ commands, pipes, aliases, environment variables, tab completion, and command history. All commands support `man <cmd>` for built-in documentation.
 
-The littleOS shell maintains a command history buffer that stores up to 20 previously executed commands. You can navigate through this history using arrow keys.
+## Command Reference
 
-### Usage
+### System
 
-| Key | Action |
-|-----|--------|
-| **↑** (Up Arrow) | Navigate to previous command |
-| **↓** (Down Arrow) | Navigate to next command |
-| **Enter** | Execute current command |
-| **Backspace** | Delete character |
+| Command | Description |
+|---------|-------------|
+| `help` | Show all commands grouped by category |
+| `version` | OS version, SageLang version, supervisor status |
+| `clear` | Clear terminal screen (ANSI escape) |
+| `reboot` | Software reboot via watchdog |
+| `history` | Show command history |
+| `exit` | Logout |
+| `health` | Quick system health check |
+| `stats` | Detailed system statistics |
+| `supervisor` | Core 1 supervisor control (start/stop/status/alerts) |
+| `dmesg` | Kernel message buffer (-f follow, -l level, -c clear, -s stats) |
+| `fetch` | System info display (neofetch-style) |
+| `top` | Live system monitor (htop-style, auto-refreshing) |
 
-### Features
+### Processes & Memory
 
-✅ **Stores 20 commands** - Circular buffer maintains last 20 commands  
-✅ **Duplicate filtering** - Consecutive duplicate commands are not stored  
-✅ **Persistent navigation** - Browse up and down through entire history  
-✅ **Empty command filtering** - Empty commands are not added to history  
-✅ **ANSI escape support** - Works with all standard terminal emulators  
+| Command | Description |
+|---------|-------------|
+| `tasks` | Task scheduler management |
+| `memory` | Heap diagnostics (stats/available/leaks/test/defrag/threshold) |
+| `profile` | Runtime profiling (function timing and call counts) |
 
-### Examples
+### Users & Security
 
-#### Basic Usage
+| Command | Description |
+|---------|-------------|
+| `users` | User account management (list/get/exists) |
+| `perms` | Permission utilities (check/decode/presets) |
 
-```bash
-> version
-littleOS v0.2.0 - RP2040
-With SageLang v0.8.0
+### Filesystem & Text
 
-> help
-Available commands:
-  help     - Show this help message
-  ...
+| Command | Description |
+|---------|-------------|
+| `fs` | F2FS-style filesystem (init/mount/mkdir/touch/cat/write/ls/sync/info/fsck) |
+| `cat` | Display file contents |
+| `echo` | Print text (supports `>` redirect) |
+| `head` | Show first lines of file |
+| `tail` | Show last lines of file |
+| `wc` | Word/line/byte count |
+| `grep` | Search for patterns in files |
+| `hexdump` | Hex dump of file |
+| `tee` | Duplicate output to file |
 
-> [Press ↑]  # Shows: help
-> [Press ↑]  # Shows: version
-> [Press ↓]  # Shows: help
-> [Press ↓]  # Shows: (empty)
-```
+### Virtual Filesystems
 
-#### View History
+| Command | Description |
+|---------|-------------|
+| `proc` | Process filesystem (/proc/cpuinfo, /proc/meminfo, etc.) |
+| `dev` | Device filesystem (/dev/gpio, /dev/uart, etc.) |
 
-```bash
-> history
-Command history:
-  1: version
-  2: help
-  3: gpio_init(25, true)
-  4: sys_temp()
-  5: history
-```
+### Hardware
 
-### Technical Implementation
+| Command | Description |
+|---------|-------------|
+| `hw` | Hardware peripherals (I2C/SPI/PWM/ADC) |
+| `pio` | PIO programmable I/O state machines |
+| `dma` | DMA engine control |
+| `usb` | USB device mode (CDC/HID/MSC) |
+| `pinout` | Visual GPIO pin diagram |
+| `i2cscan` | I2C bus scanner |
+| `wire` | Interactive I2C/SPI REPL |
+| `pwmtune` | PWM frequency/duty cycle tuner |
+| `adc` | ADC read/stream/stats |
+| `gpiowatch` | GPIO state monitor (watch pins for changes) |
+| `neopixel` | WS2812 NeoPixel LED control |
+| `display` | SSD1306 OLED display driver |
 
-#### ANSI Escape Sequences
+### Networking (Pico W)
 
-Arrow keys send multi-byte ANSI escape sequences:
+| Command | Description |
+|---------|-------------|
+| `net` | WiFi/TCP/UDP (scan/connect/status/ping/http/socket) |
+| `mqtt` | MQTT IoT client (connect/pub/sub) |
+| `remote` | Remote shell over TCP |
+| `ota` | Over-the-air firmware updates |
 
-- **Up Arrow**: `ESC [ A` (0x1B 0x5B 0x41)
-- **Down Arrow**: `ESC [ B` (0x1B 0x5B 0x42)
-- **Right Arrow**: `ESC [ C` (0x1B 0x5B 0x43) - ignored
-- **Left Arrow**: `ESC [ D` (0x1B 0x5B 0x44) - ignored
+### Scripting & Packages
 
-#### State Machine
+| Command | Description |
+|---------|-------------|
+| `sage` | SageLang REPL / inline execution (`-e "code"`) |
+| `script` | Flash script storage (save/list/run/delete/show/autoboot/noboot) |
+| `pkg` | Package manager |
 
-The shell uses a 3-state parser:
+### Services
 
-```c
-enum {
-    STATE_NORMAL,   // Normal character input
-    STATE_ESC,      // Received ESC (0x1B)
-    STATE_CSI       // Received ESC [ (Control Sequence Introducer)
-} escape_state;
-```
+| Command | Description |
+|---------|-------------|
+| `sensor` | Sensor framework and logging |
+| `power` | Power management and sleep modes |
+| `cron` | Scheduled tasks (add/list/remove) |
+| `ipc` | Inter-process communication channels |
 
-**Sequence:**
-1. Receive `ESC` → STATE_NORMAL → STATE_ESC
-2. Receive `[` → STATE_ESC → STATE_CSI
-3. Receive `A`/`B` → STATE_CSI → Handle arrow → STATE_NORMAL
+### Debug & Diagnostics
 
-#### History Buffer
+| Command | Description |
+|---------|-------------|
+| `logcat` | Structured logging with tag/level filters |
+| `trace` | Execution trace buffer |
+| `watchpoint` | Memory watchpoints (break on read/write) |
+| `benchmark` | Performance benchmarks (cpu/mem/gpio/fs) |
+| `selftest` | Hardware self-test suite |
+| `coredump` | Crash dump viewer (survives reboot) |
+| `syslog` | Persistent system log (survives reboot) |
 
-```c
-#define HISTORY_SIZE 20
-#define MAX_CMD_LEN 512
+### Shell Built-ins
 
-static char history[HISTORY_SIZE][MAX_CMD_LEN];
-static int history_count = 0;   // Total commands entered
-static int history_pos = 0;     // Current position in history
-```
-
-**Circular buffer logic:**
-- Commands stored at `history[history_count % HISTORY_SIZE]`
-- When full, oldest commands are overwritten
-- Navigation wraps around buffer boundaries
-
-### Terminal Compatibility
-
-#### Tested Terminal Emulators
-
-| Terminal | USB Serial | UART | Arrow Keys | Notes |
-|----------|-----------|------|------------|-------|
-| **PuTTY** | ✅ | ✅ | ✅ | Recommended |
-| **screen** | ✅ | ✅ | ✅ | Linux/Mac |
-| **minicom** | ✅ | ✅ | ✅ | Linux |
-| **TeraTerm** | ✅ | ✅ | ✅ | Windows |
-| **CoolTerm** | ✅ | ✅ | ✅ | Cross-platform |
-| **Arduino Serial Monitor** | ✅ | ❌ | ❌ | Limited ANSI support |
-| **Windows Terminal** | ✅ | ✅ | ✅ | Modern Windows |
-
-#### Configuration
-
-**Recommended terminal settings:**
-
-- **Baud Rate**: 115200
-- **Data Bits**: 8
-- **Parity**: None
-- **Stop Bits**: 1
-- **Flow Control**: None
-- **Local Echo**: Off (shell echoes characters)
-- **Line Mode**: Off (character mode)
-- **ANSI/VT100**: Enabled
-
-### Line Editing
-
-#### Current Features
-
-✅ **Backspace** - Delete last character  
-✅ **Arrow navigation** - Browse command history  
-✅ **Line clear** - When loading history command  
-✅ **Character echo** - Immediate visual feedback  
-
-#### Future Enhancements
-
-⬜ **Left/Right arrows** - Cursor movement within line  
-⬜ **Home/End keys** - Jump to start/end of line  
-⬜ **Ctrl+A/E** - Emacs-style line navigation  
-⬜ **Ctrl+K/U** - Kill line forward/backward  
-⬜ **Tab completion** - Command/file completion  
-⬜ **Search history** - Ctrl+R reverse search  
-
-### Troubleshooting
-
-#### Arrow keys print garbage characters
-
-**Problem:** Terminal not sending ANSI escape sequences
-
-**Solutions:**
-- Enable "ANSI" or "VT100" mode in terminal settings
-- Try different terminal emulator (PuTTY recommended)
-- Check "Application Keypad" mode is disabled
-
-#### History doesn't work
-
-**Problem:** Commands not being stored
-
-**Check:**
-```bash
-> version
-> help
-> history
-```
-
-Should show both commands. If not, debug info might reveal parsing issue.
-
-#### Commands get corrupted when navigating
-
-**Problem:** Line clearing not working properly
-
-**Cause:** Terminal doesn't handle backspace correctly
-
-**Solution:** Change terminal backspace mode:
-- ASCII DEL (127) - recommended
-- Control-H (8) - alternative
-
-### Performance
-
-- **Memory usage**: ~10KB (20 commands × 512 bytes)
-- **Navigation speed**: Instant (<1ms)
-- **History lookup**: O(1) constant time
-- **No dynamic allocation**: Fixed buffers only
-
-### Code Example
-
-#### Adding a command to history
-
-```c
-static void add_to_history(const char* cmd) {
-    // Don't add empty commands
-    if (cmd[0] == '\0') return;
-    
-    // Don't add duplicate of last command
-    if (history_count > 0 && 
-        strcmp(history[(history_count - 1) % HISTORY_SIZE], cmd) == 0) {
-        return;
-    }
-    
-    // Add to circular buffer
-    strncpy(history[history_count % HISTORY_SIZE], cmd, MAX_CMD_LEN - 1);
-    history[history_count % HISTORY_SIZE][MAX_CMD_LEN - 1] = '\0';
-    history_count++;
-    
-    // Reset position to end
-    history_pos = history_count;
-}
-```
-
-#### Navigating history
-
-```c
-if (c == 'A') {  // Up arrow
-    const char* cmd = get_history(-1);
-    if (cmd != NULL) {
-        clear_line(idx);  // Erase current line
-        strcpy(buffer, cmd);
-        idx = strlen(buffer);
-        printf("%s", buffer);
-        fflush(stdout);
-    }
-}
-```
-
-### Best Practices
-
-1. **Use descriptive commands** - Easier to find in history
-2. **Check history periodically** - Use `history` command
-3. **Navigate before editing** - Browse to similar command, then modify
-4. **Test with multiple terminals** - Verify ANSI compatibility
-
-### Shell Commands Reference
-
-| Command | Description | Since |
-|---------|-------------|-------|
-| `help` | Show available commands | v0.1.0 |
-| `version` | Show OS version | v0.1.0 |
-| `clear` | Clear screen | v0.1.0 |
-| `reboot` | Reboot system | v0.2.0 |
-| `history` | Show command history | v0.2.0 |
-| `sage` | SageLang REPL | v0.1.0 |
-| `script` | Script management | v0.1.0 |
-
-### Keyboard Shortcuts
-
-| Shortcut | Action | Terminal |
-|----------|--------|----------|
-| `Ctrl+C` | Interrupt (if implemented) | All |
-| `Ctrl+D` | EOF (if implemented) | All |
-| `Ctrl+L` | Clear screen (alternative) | Most |
-| `↑` | Previous command | All with ANSI |
-| `↓` | Next command | All with ANSI |
-| `Backspace` | Delete character | All |
-| `Enter` | Execute command | All |
+| Command | Description |
+|---------|-------------|
+| `env` | View/set environment variables |
+| `alias` | Command aliases |
+| `export` | Set environment variable |
+| `screen` | Terminal multiplexer (split panes) |
+| `man` | Manual pages for all commands |
 
 ---
 
-## Version Information
+## Shell Capabilities
 
-- **Feature Added**: v0.2.0
-- **History Size**: 20 commands
-- **Max Command Length**: 512 characters
-- **ANSI Support**: Required for arrow keys
-- **Last Updated**: December 2, 2025
+### Command History
+
+The shell maintains a circular buffer of the last 10 commands, navigable with arrow keys.
+
+| Key | Action |
+|-----|--------|
+| Up Arrow | Previous command |
+| Down Arrow | Next command |
+| Backspace | Delete character |
+| Enter | Execute command |
+| Tab | Auto-complete command name |
+
+- Consecutive duplicate commands are not stored
+- Empty commands are not added to history
+- Use `history` to view all stored commands
+- Use `!!` to repeat the last command
+
+### Pipes
+
+Chain commands together with `|`:
+
+```bash
+> proc cpuinfo | grep MHz
+> echo "hello world" | wc
+```
+
+### Output Redirect
+
+Redirect output to a file with `>`:
+
+```bash
+> echo "config=value" > /config.txt
+```
+
+### Environment Variables
+
+```bash
+> export DEVICE=pico001
+> echo $DEVICE
+pico001
+> env
+DEVICE=pico001
+```
+
+Variables are expanded in all commands. Set defaults at boot with `shell_env_init()`.
+
+### Aliases
+
+```bash
+> alias ll="fs ls /"
+> alias info="health"
+> ll
+# Executes: fs ls /
+```
+
+### Tab Completion
+
+Press Tab to auto-complete command names. If multiple matches exist, all candidates are shown.
+
+### ANSI Escape Support
+
+Arrow keys send multi-byte ANSI escape sequences:
+
+- Up Arrow: `ESC [ A` (0x1B 0x5B 0x41)
+- Down Arrow: `ESC [ B` (0x1B 0x5B 0x42)
+
+The shell uses a 3-state parser (NORMAL -> ESC -> CSI) to handle these sequences.
+
+---
+
+## Terminal Configuration
+
+Recommended settings:
+
+| Setting | Value |
+|---------|-------|
+| Baud Rate | 115200 |
+| Data Bits | 8 |
+| Parity | None |
+| Stop Bits | 1 |
+| Flow Control | None |
+| Local Echo | Off |
+| ANSI/VT100 | Enabled |
+
+### Tested Terminals
+
+| Terminal | Status |
+|----------|--------|
+| PuTTY | Works |
+| screen | Works |
+| minicom | Works |
+| TeraTerm | Works |
+| Windows Terminal | Works |
+| Arduino Serial Monitor | Limited ANSI support |
+
+---
+
+## Technical Details
+
+### Memory Usage
+
+- History buffer: ~2.5 KB (10 commands x 256 bytes)
+- Command parsing: stack-based, no dynamic allocation
+- Tab completion: scans command table (no extra memory)
+
+### Performance
+
+- Navigation speed: <1ms
+- History lookup: O(1) constant time
+- Tab completion: O(n) command table scan
+- Command dispatch: O(n) table lookup
+
+---
+
+**Version**: 0.6.0
+**Last Updated**: March 2026
