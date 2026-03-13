@@ -120,6 +120,26 @@ if [[ "$1" == "--all" ]]; then
     exit 0
 fi
 
+if [[ "$1" == "--clean-all" ]]; then
+    echo "Cleaning all build directories and artifacts..."
+    echo
+    for d in build build_*; do
+        if [[ -d "$d" ]]; then
+            echo "  Removing $d/"
+            rm -rf "$d"
+        fi
+    done
+    for f in littleos_*.uf2 littleos.uf2; do
+        if [[ -f "$f" ]]; then
+            echo "  Removing $f"
+            rm -f "$f"
+        fi
+    done
+    echo
+    echo "Clean complete."
+    exit 0
+fi
+
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     echo "Usage: $0 [option]"
     echo
@@ -128,6 +148,7 @@ if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     echo "  --rp2040-all    Build all RP2040 boards (Pico, Pico W)"
     echo "  --rp2350-all    Build all RP2350 boards (Pico 2, Pico 2 W, Feather)"
     echo "  --all           Build all boards"
+    echo "  --clean-all     Remove all build directories and firmware artifacts"
     echo "  --help          Show this help"
     echo
     echo "Boards:"
