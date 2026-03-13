@@ -1,11 +1,19 @@
 /* hstx_dvi.c - HSTX DVI Output Driver for RP2350
  *
- * Implements DVI output using the RP2350 HSTX peripheral.
- * HSTX provides hardware TMDS encoding and shift-register-based
- * serialization on GPIO 12-19.
+ * Functional DVI output using the RP2350 HSTX peripheral with hardware
+ * TMDS encoding. Based on the official Pico SDK dvi_out_hstx_encoder example.
  *
- * DVI timing uses DMA to feed pixel data from a framebuffer
- * through the HSTX FIFO with DREQ pacing.
+ * The HSTX command expander generates proper DVI timing with TMDS-encoded
+ * pixel data. DMA ping-pong channels provide glitch-free continuous scanout
+ * via IRQ-driven per-scanline reconfiguration.
+ *
+ * Pin mapping (Pico DVI Sock compatible):
+ *   GPIO 12-13: TMDS D0+/D0- (Lane 0)
+ *   GPIO 14-15: TMDS CK+/CK- (Clock)
+ *   GPIO 16-17: TMDS D2+/D2- (Lane 2)
+ *   GPIO 18-19: TMDS D1+/D1- (Lane 1)
+ *
+ * Requires 270-ohm current-limiting resistors on each GPIO pin.
  */
 
 #include "hal/hstx_dvi.h"
@@ -16,112 +24,320 @@
 #if LITTLEOS_HAS_HSTX
 
 #include "pico/stdlib.h"
-#include "hardware/gpio.h"
 #include "hardware/dma.h"
-#include "hardware/clocks.h"
+#include "hardware/gpio.h"
+#include "hardware/irq.h"
+#include "hardware/structs/bus_ctrl.h"
 #include "hardware/structs/hstx_ctrl.h"
 #include "hardware/structs/hstx_fifo.h"
-#include "hardware/regs/dreq.h"
 
-/* HSTX uses GPIO 12-19 (8 output pins) */
-#define HSTX_GPIO_BASE  12
-#define HSTX_GPIO_COUNT 8
+/* =========================================================================
+ * DVI / TMDS Constants
+ * ========================================================================= */
 
-/* 640x480@60Hz timing constants (in pixel clocks)
- * Pixel clock: 25.175 MHz
- * H: 640 active + 16 front porch + 96 sync + 48 back porch = 800 total
- * V: 480 active + 10 front porch + 2 sync + 33 back porch = 525 total */
-#define VGA_H_ACTIVE    640
-#define VGA_H_FRONT     16
-#define VGA_H_SYNC      96
-#define VGA_H_BACK      48
-#define VGA_H_TOTAL     (VGA_H_ACTIVE + VGA_H_FRONT + VGA_H_SYNC + VGA_H_BACK)
+/* Pre-encoded 10-bit TMDS control symbols (used during blanking/sync) */
+#define TMDS_CTRL_00 0x354u
+#define TMDS_CTRL_01 0x0abu
+#define TMDS_CTRL_10 0x154u
+#define TMDS_CTRL_11 0x2abu
 
-#define VGA_V_ACTIVE    480
-#define VGA_V_FRONT     10
-#define VGA_V_SYNC      2
-#define VGA_V_BACK      33
-#define VGA_V_TOTAL     (VGA_V_ACTIVE + VGA_V_FRONT + VGA_V_SYNC + VGA_V_BACK)
+/* Sync symbol combinations: each 30-bit word packs 3 lanes (10 bits each)
+ * Lane order in the 30-bit word: [29:20]=Lane2, [19:10]=Lane1, [9:0]=Lane0
+ * HSync and VSync are active-low for 640x480 mode */
+#define SYNC_V0_H0 (TMDS_CTRL_00 | (TMDS_CTRL_00 << 10) | (TMDS_CTRL_00 << 20))
+#define SYNC_V0_H1 (TMDS_CTRL_01 | (TMDS_CTRL_00 << 10) | (TMDS_CTRL_00 << 20))
+#define SYNC_V1_H0 (TMDS_CTRL_10 | (TMDS_CTRL_00 << 10) | (TMDS_CTRL_00 << 20))
+#define SYNC_V1_H1 (TMDS_CTRL_11 | (TMDS_CTRL_00 << 10) | (TMDS_CTRL_00 << 20))
 
-/* Driver state */
+/* 640x480 @ 60 Hz VGA timing (pixel clock 25.175 MHz)
+ * HSTX at 125 MHz with 2 bits/cycle = 250 Mbps ~ 252 MHz needed */
+#define MODE_H_FRONT_PORCH   16
+#define MODE_H_SYNC_WIDTH    96
+#define MODE_H_BACK_PORCH    48
+#define MODE_H_ACTIVE_PIXELS 640
+
+#define MODE_V_FRONT_PORCH   10
+#define MODE_V_SYNC_WIDTH    2
+#define MODE_V_BACK_PORCH    33
+#define MODE_V_ACTIVE_LINES  480
+
+#define MODE_V_TOTAL_LINES ( \
+    MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH + \
+    MODE_V_BACK_PORCH  + MODE_V_ACTIVE_LINES \
+)
+
+/* HSTX command expander opcodes (bits [15:12] of command word) */
+#define HSTX_CMD_RAW         (0x0u << 12)
+#define HSTX_CMD_RAW_REPEAT  (0x1u << 12)
+#define HSTX_CMD_TMDS        (0x2u << 12)
+#define HSTX_CMD_TMDS_REPEAT (0x3u << 12)
+#define HSTX_CMD_NOP         (0xfu << 12)
+
+/* DMA channel indices */
+#define DMACH_PING 0
+#define DMACH_PONG 1
+
+/* =========================================================================
+ * HSTX Command Lists (per-scanline DMA payloads)
+ * ========================================================================= */
+
+/* Vertical blanking line (VSync inactive):
+ * Front porch + HSync + Back porch + Inactive active region */
+static uint32_t vblank_line_vsync_off[] = {
+    HSTX_CMD_RAW_REPEAT | MODE_H_FRONT_PORCH,
+    SYNC_V1_H1,
+    HSTX_CMD_RAW_REPEAT | MODE_H_SYNC_WIDTH,
+    SYNC_V1_H0,
+    HSTX_CMD_RAW_REPEAT | (MODE_H_BACK_PORCH + MODE_H_ACTIVE_PIXELS),
+    SYNC_V1_H1,
+    HSTX_CMD_NOP
+};
+
+/* Vertical blanking line (VSync active) */
+static uint32_t vblank_line_vsync_on[] = {
+    HSTX_CMD_RAW_REPEAT | MODE_H_FRONT_PORCH,
+    SYNC_V0_H1,
+    HSTX_CMD_RAW_REPEAT | MODE_H_SYNC_WIDTH,
+    SYNC_V0_H0,
+    HSTX_CMD_RAW_REPEAT | (MODE_H_BACK_PORCH + MODE_H_ACTIVE_PIXELS),
+    SYNC_V0_H1,
+    HSTX_CMD_NOP
+};
+
+/* Active video line (command portion — pixel data follows via separate DMA):
+ * Front porch + HSync + Back porch + TMDS pixel command */
+static uint32_t vactive_line[] = {
+    HSTX_CMD_RAW_REPEAT | MODE_H_FRONT_PORCH,
+    SYNC_V1_H1,
+    HSTX_CMD_NOP,
+    HSTX_CMD_RAW_REPEAT | MODE_H_SYNC_WIDTH,
+    SYNC_V1_H0,
+    HSTX_CMD_NOP,
+    HSTX_CMD_RAW_REPEAT | MODE_H_BACK_PORCH,
+    SYNC_V1_H1,
+    HSTX_CMD_TMDS       | MODE_H_ACTIVE_PIXELS
+};
+
+/* =========================================================================
+ * Driver State
+ * ========================================================================= */
+
 static struct {
-    bool initialized;
-    bool active;
-    dvi_mode_t mode;
+    bool            initialized;
+    bool            active;
+    dvi_mode_t      mode;
     dvi_pixel_format_t format;
-    uint16_t width;
-    uint16_t height;
-    uint8_t bpp;            /* bytes per pixel */
-    const uint8_t *framebuffer;
-    uint32_t fb_size;
-    int dma_channel;
-    uint32_t frame_count;
+    uint16_t        width;          /* Framebuffer width */
+    uint16_t        height;         /* Framebuffer height */
+    uint8_t         bpp;            /* Bytes per pixel */
+    const uint8_t  *framebuffer;
+    uint32_t        fb_size;
+    int             dma_ping;       /* DMA channel A */
+    int             dma_pong;       /* DMA channel B */
+    volatile uint32_t frame_count;
+    bool            pixel_double;   /* 320x240 → 640x480 doubling */
 } s_dvi;
 
-/* Configure HSTX GPIO pins for HSTX function */
-static void hstx_gpio_init(void) {
-    for (int i = 0; i < HSTX_GPIO_COUNT; i++) {
-        gpio_set_function(HSTX_GPIO_BASE + i, GPIO_FUNC_HSTX);
+/* Line buffer for 320x240 horizontal pixel doubling (640 bytes max) */
+static uint8_t s_line_buf[MODE_H_ACTIVE_PIXELS] __attribute__((aligned(4)));
+
+/* IRQ state — must survive across interrupts */
+static volatile bool     s_dma_pong = false;
+static volatile uint     s_v_scanline = 2;  /* Start at 2 (ping+pong pre-cued) */
+static volatile bool     s_vactive_cmdlist_posted = false;
+
+/* =========================================================================
+ * DMA IRQ Handler (runs in RAM for speed)
+ * ========================================================================= */
+
+static void __not_in_flash_func(hstx_dma_irq_handler)(void) {
+    /* Determine which channel just finished and needs reconfiguration */
+    uint ch_num = s_dma_pong ? s_dvi.dma_pong : s_dvi.dma_ping;
+    dma_channel_hw_t *ch = &dma_hw->ch[ch_num];
+    dma_hw->intr = 1u << ch_num;
+    s_dma_pong = !s_dma_pong;
+
+    uint v = s_v_scanline;
+
+    if (v >= MODE_V_FRONT_PORCH &&
+        v < (MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH)) {
+        /* VSync active region */
+        ch->read_addr = (uintptr_t)vblank_line_vsync_on;
+        ch->transfer_count = count_of(vblank_line_vsync_on);
+    } else if (v < MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH + MODE_V_BACK_PORCH) {
+        /* VBlank (VSync inactive) */
+        ch->read_addr = (uintptr_t)vblank_line_vsync_off;
+        ch->transfer_count = count_of(vblank_line_vsync_off);
+    } else if (!s_vactive_cmdlist_posted) {
+        /* Active region: first DMA for this line sends the command list */
+        ch->read_addr = (uintptr_t)vactive_line;
+        ch->transfer_count = count_of(vactive_line);
+        s_vactive_cmdlist_posted = true;
+    } else {
+        /* Active region: second DMA for this line sends pixel data */
+        uint active_line = v - (MODE_V_TOTAL_LINES - MODE_V_ACTIVE_LINES);
+
+        if (s_dvi.pixel_double) {
+            /* 320x240 mode: pixel-double horizontally into line buffer */
+            uint fb_row = active_line / 2;
+            const uint8_t *src = &s_dvi.framebuffer[fb_row * s_dvi.width];
+            uint8_t *dst = s_line_buf;
+            for (uint i = 0; i < s_dvi.width; i++) {
+                dst[i * 2]     = src[i];
+                dst[i * 2 + 1] = src[i];
+            }
+            ch->read_addr = (uintptr_t)s_line_buf;
+        } else {
+            /* 640x480 mode: DMA directly from framebuffer */
+            ch->read_addr = (uintptr_t)&s_dvi.framebuffer[
+                active_line * MODE_H_ACTIVE_PIXELS];
+        }
+
+        ch->transfer_count = MODE_H_ACTIVE_PIXELS / sizeof(uint32_t);
+        s_vactive_cmdlist_posted = false;
     }
-    dmesg_debug("hstx_dvi: GPIO %d-%d configured for HSTX",
-                HSTX_GPIO_BASE, HSTX_GPIO_BASE + HSTX_GPIO_COUNT - 1);
+
+    /* Advance scanline only after both command list and pixels are posted */
+    if (!s_vactive_cmdlist_posted) {
+        s_v_scanline = (v + 1) % MODE_V_TOTAL_LINES;
+
+        /* Track frame count at start of vblank */
+        if (s_v_scanline == 0) {
+            s_dvi.frame_count++;
+        }
+    }
 }
 
-/* Configure HSTX control registers for TMDS encoding */
-static void hstx_configure_tmds(void) {
-    /* Reset HSTX */
-    hstx_ctrl_hw->csr = 0;
+/* =========================================================================
+ * HSTX Hardware Configuration
+ * ========================================================================= */
 
-    /* Configure HSTX for TMDS output:
-     * - Clock divider for pixel clock generation
-     * - TMDS encoding enabled via expand mode
-     * - 3 TMDS data lanes + 1 clock lane mapped to 8 GPIO pins
+static void hstx_configure(dvi_pixel_format_t format) {
+    /* Configure TMDS encoder for the pixel format.
      *
-     * Pin mapping (typical DVI-over-HSTX):
-     *   GPIO12-13: TMDS Lane 2 (Blue)  differential pair
-     *   GPIO14-15: TMDS Lane 1 (Green) differential pair
-     *   GPIO16-17: TMDS Lane 0 (Red)   differential pair
-     *   GPIO18-19: TMDS Clock          differential pair
+     * The TMDS encoder takes N bits per lane from the shift register,
+     * after applying a per-lane rotation. The rotation positions the
+     * correct color channel bits at the encoder input.
      *
-     * Each lane uses 2 pins for differential signaling.
-     * The HSTX shift register feeds the TMDS encoder which
-     * produces 10-bit symbols serialized across the pin pairs.
+     * RGB332 (RRRGGGBB, 8 bits per pixel, 4 pixels per 32-bit word):
+     *   Lane 2: 3 bits, rot 0  → bits [7:5] = Red
+     *   Lane 1: 3 bits, rot 29 → bits [4:2] = Green (after rotation)
+     *   Lane 0: 2 bits, rot 26 → bits [1:0] = Blue (after rotation)
+     *
+     * RGB565 (RRRRRGGGGGGBBBBB, 16 bits per pixel, 2 pixels per word):
+     *   Lane 2: 5 bits, rot 24 → bits [15:11] = Red
+     *   Lane 1: 6 bits, rot 29 → bits [10:5]  = Green
+     *   Lane 0: 5 bits, rot 27 → bits [4:0]   = Blue
      */
 
-    /* Configure bit outputs: each BITn register maps a shift register
-     * bit to an output pin. For TMDS, we configure the expand/TMDS
-     * mode which handles the encoding automatically. */
+    if (format == DVI_PIXEL_RGB332) {
+        hstx_ctrl_hw->expand_tmds =
+            2  << HSTX_CTRL_EXPAND_TMDS_L2_NBITS_LSB |
+            0  << HSTX_CTRL_EXPAND_TMDS_L2_ROT_LSB   |
+            2  << HSTX_CTRL_EXPAND_TMDS_L1_NBITS_LSB |
+            29 << HSTX_CTRL_EXPAND_TMDS_L1_ROT_LSB   |
+            1  << HSTX_CTRL_EXPAND_TMDS_L0_NBITS_LSB |
+            26 << HSTX_CTRL_EXPAND_TMDS_L0_ROT_LSB;
 
-    /* Set clock divider: determines HSTX output rate
-     * For 640x480@60Hz, we need ~252 MHz HSTX clock for 25.2 MHz pixel
-     * clock with 10:1 TMDS serialization */
-    uint32_t csr = 0;
-    csr |= (1u << HSTX_CTRL_CSR_CLKDIV_LSB);     /* clkdiv = 1 */
-    csr |= (5u << HSTX_CTRL_CSR_N_SHIFTS_LSB);    /* 5 shifts per refill */
-    csr |= HSTX_CTRL_CSR_EXPAND_EN_BITS;          /* Enable TMDS expand */
+        /* 4 pixels per 32-bit word, advance 8 bits per pixel */
+        hstx_ctrl_hw->expand_shift =
+            4 << HSTX_CTRL_EXPAND_SHIFT_ENC_N_SHIFTS_LSB |
+            8 << HSTX_CTRL_EXPAND_SHIFT_ENC_SHIFT_LSB |
+            1 << HSTX_CTRL_EXPAND_SHIFT_RAW_N_SHIFTS_LSB |
+            0 << HSTX_CTRL_EXPAND_SHIFT_RAW_SHIFT_LSB;
+    } else {
+        /* RGB565 */
+        hstx_ctrl_hw->expand_tmds =
+            4  << HSTX_CTRL_EXPAND_TMDS_L2_NBITS_LSB |
+            24 << HSTX_CTRL_EXPAND_TMDS_L2_ROT_LSB   |
+            5  << HSTX_CTRL_EXPAND_TMDS_L1_NBITS_LSB |
+            29 << HSTX_CTRL_EXPAND_TMDS_L1_ROT_LSB   |
+            4  << HSTX_CTRL_EXPAND_TMDS_L0_NBITS_LSB |
+            27 << HSTX_CTRL_EXPAND_TMDS_L0_ROT_LSB;
 
-    hstx_ctrl_hw->csr = csr;
+        /* 2 pixels per 32-bit word, advance 16 bits per pixel */
+        hstx_ctrl_hw->expand_shift =
+            2  << HSTX_CTRL_EXPAND_SHIFT_ENC_N_SHIFTS_LSB |
+            16 << HSTX_CTRL_EXPAND_SHIFT_ENC_SHIFT_LSB |
+            1  << HSTX_CTRL_EXPAND_SHIFT_RAW_N_SHIFTS_LSB |
+            0  << HSTX_CTRL_EXPAND_SHIFT_RAW_SHIFT_LSB;
+    }
 
-    dmesg_debug("hstx_dvi: TMDS encoding configured, CSR=0x%08lx",
-                (unsigned long)hstx_ctrl_hw->csr);
+    /* Serial output config:
+     * CLKDIV=5: Clock period of 5 HSTX cycles
+     * N_SHIFTS=5: Pop from expander every 5 cycles
+     * SHIFT=2: Right-rotate shift register by 2 bits each cycle (DDR)
+     * EXPAND_EN: Command expander enabled
+     * EN: HSTX enabled
+     *
+     * At 125 MHz HSTX clock, 2 bits/cycle = 250 Mbps output rate.
+     * This is within spec for 640x480@60Hz (needs 252 Mbps). */
+    hstx_ctrl_hw->csr = 0;
+    hstx_ctrl_hw->csr =
+        HSTX_CTRL_CSR_EXPAND_EN_BITS |
+        5u << HSTX_CTRL_CSR_CLKDIV_LSB |
+        5u << HSTX_CTRL_CSR_N_SHIFTS_LSB |
+        2u << HSTX_CTRL_CSR_SHIFT_LSB |
+        HSTX_CTRL_CSR_EN_BITS;
+
+    /* Configure HSTX output pin mapping.
+     *
+     * HSTX outputs 0-7 map to GPIO 12-19. Each TMDS lane uses a
+     * differential pair (2 pins). The second pin is inverted.
+     *
+     * Pinout (Pico DVI Sock):
+     *   Output 0-1 (GPIO 12-13): TMDS D0+/D0- (Lane 0)
+     *   Output 2-3 (GPIO 14-15): TMDS CK+/CK- (Clock)
+     *   Output 4-5 (GPIO 16-17): TMDS D2+/D2- (Lane 2)
+     *   Output 6-7 (GPIO 18-19): TMDS D1+/D1- (Lane 1)
+     */
+
+    /* Clock pair on outputs 2-3 */
+    hstx_ctrl_hw->bit[2] = HSTX_CTRL_BIT0_CLK_BITS;
+    hstx_ctrl_hw->bit[3] = HSTX_CTRL_BIT0_CLK_BITS | HSTX_CTRL_BIT0_INV_BITS;
+
+    /* Data lanes: each TMDS lane serializes 10-bit symbols.
+     * The shift register outputs even bits on SEL_P (first half-clock)
+     * and odd bits on SEL_N (second half-clock). SHIFT=2 advances
+     * by 2 bits each cycle, so we get DDR serialization. */
+    static const int lane_to_output_bit[3] = {0, 6, 4};
+    for (uint lane = 0; lane < 3; lane++) {
+        int bit = lane_to_output_bit[lane];
+        uint32_t lane_data_sel =
+            (lane * 10    ) << HSTX_CTRL_BIT0_SEL_P_LSB |
+            (lane * 10 + 1) << HSTX_CTRL_BIT0_SEL_N_LSB;
+        hstx_ctrl_hw->bit[bit]     = lane_data_sel;
+        hstx_ctrl_hw->bit[bit + 1] = lane_data_sel | HSTX_CTRL_BIT0_INV_BITS;
+    }
+
+    /* Set GPIO 12-19 to HSTX function */
+    for (int i = 12; i <= 19; i++) {
+        gpio_set_function(i, GPIO_FUNC_HSTX);
+    }
 }
+
+/* =========================================================================
+ * Public API
+ * ========================================================================= */
 
 int hstx_dvi_init(dvi_mode_t mode, dvi_pixel_format_t format) {
     if (s_dvi.initialized) {
-        dmesg_warn("hstx_dvi: already initialized");
+        dmesg_warn("hstx_dvi: already initialized, call stop first");
         return -1;
     }
 
-    memset(&s_dvi, 0, sizeof(s_dvi));
+    memset((void *)&s_dvi, 0, sizeof(s_dvi));
 
     switch (mode) {
     case DVI_MODE_640x480_60HZ:
         s_dvi.width = 640;
         s_dvi.height = 480;
+        s_dvi.pixel_double = false;
         break;
     case DVI_MODE_320x240_60HZ:
         s_dvi.width = 320;
         s_dvi.height = 240;
+        s_dvi.pixel_double = true;
         break;
     default:
         dmesg_err("hstx_dvi: invalid mode %d", mode);
@@ -134,6 +350,10 @@ int hstx_dvi_init(dvi_mode_t mode, dvi_pixel_format_t format) {
         break;
     case DVI_PIXEL_RGB565:
         s_dvi.bpp = 2;
+        if (mode == DVI_MODE_640x480_60HZ) {
+            dmesg_err("hstx_dvi: RGB565 at 640x480 requires 614KB — exceeds SRAM");
+            return -1;
+        }
         break;
     default:
         dmesg_err("hstx_dvi: invalid pixel format %d", format);
@@ -142,25 +362,29 @@ int hstx_dvi_init(dvi_mode_t mode, dvi_pixel_format_t format) {
 
     s_dvi.mode = mode;
     s_dvi.format = format;
-    s_dvi.dma_channel = -1;
 
-    /* Configure GPIO pins for HSTX */
-    hstx_gpio_init();
-
-    /* Configure HSTX for TMDS encoding */
-    hstx_configure_tmds();
-
-    /* Claim a DMA channel for framebuffer scanout */
-    s_dvi.dma_channel = dma_claim_unused_channel(false);
-    if (s_dvi.dma_channel < 0) {
-        dmesg_err("hstx_dvi: no DMA channel available");
+    /* Claim two DMA channels for ping-pong scanout */
+    s_dvi.dma_ping = dma_claim_unused_channel(false);
+    if (s_dvi.dma_ping < 0) {
+        dmesg_err("hstx_dvi: no DMA channel available (ping)");
         return -1;
     }
 
+    s_dvi.dma_pong = dma_claim_unused_channel(false);
+    if (s_dvi.dma_pong < 0) {
+        dma_channel_unclaim(s_dvi.dma_ping);
+        dmesg_err("hstx_dvi: no DMA channel available (pong)");
+        return -1;
+    }
+
+    /* Configure HSTX hardware */
+    hstx_configure(format);
+
     s_dvi.initialized = true;
-    dmesg_info("hstx_dvi: initialized %ux%u %s",
+    dmesg_info("hstx_dvi: initialized %ux%u %s (DMA ch %d/%d)",
                s_dvi.width, s_dvi.height,
-               format == DVI_PIXEL_RGB332 ? "RGB332" : "RGB565");
+               format == DVI_PIXEL_RGB332 ? "RGB332" : "RGB565",
+               s_dvi.dma_ping, s_dvi.dma_pong);
 
     return 0;
 }
@@ -180,9 +404,6 @@ int hstx_dvi_set_framebuffer(const uint8_t *fb, uint32_t fb_size) {
 
     s_dvi.framebuffer = fb;
     s_dvi.fb_size = fb_size;
-
-    dmesg_debug("hstx_dvi: framebuffer set at %p (%lu bytes)",
-                (const void *)fb, (unsigned long)fb_size);
     return 0;
 }
 
@@ -200,49 +421,97 @@ int hstx_dvi_start(void) {
         return 0;
     }
 
-    /* Configure DMA to feed framebuffer into HSTX FIFO */
-    dma_channel_config cfg = dma_channel_get_default_config(s_dvi.dma_channel);
-    channel_config_set_transfer_data_size(&cfg, DMA_SIZE_32);
-    channel_config_set_read_increment(&cfg, true);
-    channel_config_set_write_increment(&cfg, false);
-    channel_config_set_dreq(&cfg, DREQ_HSTX);
+    /* Reset scanline state */
+    s_dma_pong = false;
+    s_v_scanline = 2;
+    s_vactive_cmdlist_posted = false;
+    s_dvi.frame_count = 0;
 
+    /* Configure DMA ping-pong channels.
+     * Both channels write to the HSTX FIFO and chain to each other.
+     * When one finishes, the IRQ handler reconfigures it while the
+     * other channel continues outputting data. */
+    dma_channel_config c;
+
+    c = dma_channel_get_default_config(s_dvi.dma_ping);
+    channel_config_set_chain_to(&c, s_dvi.dma_pong);
+    channel_config_set_dreq(&c, DREQ_HSTX);
     dma_channel_configure(
-        s_dvi.dma_channel,
-        &cfg,
-        &hstx_fifo_hw->fifo,           /* Write to HSTX FIFO */
-        s_dvi.framebuffer,              /* Read from framebuffer */
-        s_dvi.fb_size / 4,             /* Transfer count (32-bit words) */
-        false                           /* Don't start yet */
+        s_dvi.dma_ping,
+        &c,
+        &hstx_fifo_hw->fifo,
+        vblank_line_vsync_off,
+        count_of(vblank_line_vsync_off),
+        false
     );
 
-    /* Enable HSTX */
-    hstx_ctrl_hw->csr |= HSTX_CTRL_CSR_EN_BITS;
+    c = dma_channel_get_default_config(s_dvi.dma_pong);
+    channel_config_set_chain_to(&c, s_dvi.dma_ping);
+    channel_config_set_dreq(&c, DREQ_HSTX);
+    dma_channel_configure(
+        s_dvi.dma_pong,
+        &c,
+        &hstx_fifo_hw->fifo,
+        vblank_line_vsync_off,
+        count_of(vblank_line_vsync_off),
+        false
+    );
 
-    /* Start DMA */
-    dma_channel_start(s_dvi.dma_channel);
+    /* Enable DMA completion IRQs for both channels */
+    dma_hw->ints0 = (1u << s_dvi.dma_ping) | (1u << s_dvi.dma_pong);
+    dma_hw->inte0 = (1u << s_dvi.dma_ping) | (1u << s_dvi.dma_pong);
+    irq_set_exclusive_handler(DMA_IRQ_0, hstx_dma_irq_handler);
+    irq_set_enabled(DMA_IRQ_0, true);
+
+    /* Give DMA highest bus priority for consistent video output */
+    bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_DMA_W_BITS |
+                            BUSCTRL_BUS_PRIORITY_DMA_R_BITS;
+
+    /* Start the ping channel — it chains to pong automatically */
+    dma_channel_start(s_dvi.dma_ping);
 
     s_dvi.active = true;
-    dmesg_info("hstx_dvi: output started (%ux%u)", s_dvi.width, s_dvi.height);
+    dmesg_info("hstx_dvi: output started (%ux%u → 640x480)",
+               s_dvi.width, s_dvi.height);
 
     return 0;
 }
 
 int hstx_dvi_stop(void) {
-    if (!s_dvi.initialized || !s_dvi.active) {
+    if (!s_dvi.initialized) {
         return 0;
     }
 
-    /* Stop DMA */
-    dma_channel_abort(s_dvi.dma_channel);
+    if (s_dvi.active) {
+        /* Disable IRQs first */
+        irq_set_enabled(DMA_IRQ_0, false);
+        dma_hw->inte0 &= ~((1u << s_dvi.dma_ping) | (1u << s_dvi.dma_pong));
 
-    /* Disable HSTX */
-    hstx_ctrl_hw->csr &= ~HSTX_CTRL_CSR_EN_BITS;
+        /* Abort both DMA channels */
+        dma_channel_abort(s_dvi.dma_ping);
+        dma_channel_abort(s_dvi.dma_pong);
 
-    s_dvi.active = false;
-    s_dvi.frame_count = 0;
-    dmesg_info("hstx_dvi: output stopped");
+        /* Disable HSTX */
+        hstx_ctrl_hw->csr &= ~HSTX_CTRL_CSR_EN_BITS;
 
+        /* Restore default bus priority */
+        bus_ctrl_hw->priority = 0;
+
+        s_dvi.active = false;
+        dmesg_info("hstx_dvi: output stopped");
+    }
+
+    /* Release DMA channels */
+    dma_channel_unclaim(s_dvi.dma_ping);
+    dma_channel_unclaim(s_dvi.dma_pong);
+
+    /* Reset GPIO pins to default */
+    for (int i = 12; i <= 19; i++) {
+        gpio_set_function(i, GPIO_FUNC_SIO);
+        gpio_disable_pulls(i);
+    }
+
+    s_dvi.initialized = false;
     return 0;
 }
 
@@ -260,42 +529,53 @@ int hstx_dvi_get_status(dvi_status_t *status) {
     status->height = s_dvi.height;
     status->frame_count = s_dvi.frame_count;
 
-    return 0;
+    return s_dvi.initialized ? 0 : -1;
 }
 
 void hstx_dvi_fill(uint8_t *fb, uint32_t fb_size, uint32_t color) {
-    if (!fb) return;
-    memset(fb, (int)(color & 0xFF), fb_size);
+    if (!fb || !fb_size) return;
+
+    if (s_dvi.format == DVI_PIXEL_RGB565) {
+        /* Fill with 16-bit color */
+        uint16_t c16 = (uint16_t)(color & 0xFFFF);
+        uint16_t *fb16 = (uint16_t *)fb;
+        uint32_t count = fb_size / 2;
+        for (uint32_t i = 0; i < count; i++) {
+            fb16[i] = c16;
+        }
+    } else {
+        /* Fill with 8-bit RGB332 color */
+        memset(fb, (int)(color & 0xFF), fb_size);
+    }
 }
 
 void hstx_dvi_test_pattern(uint8_t *fb, uint16_t width, uint16_t height,
                            dvi_pixel_format_t format) {
     if (!fb) return;
 
-    /* Draw vertical color bars */
     uint16_t bar_width = width / 8;
 
     for (uint16_t y = 0; y < height; y++) {
         for (uint16_t x = 0; x < width; x++) {
             uint8_t bar = x / bar_width;
-            uint32_t offset;
 
             if (format == DVI_PIXEL_RGB332) {
-                /* 8-bit color: RRRGGGBB */
-                static const uint8_t bars_rgb332[] = {
-                    0xFF, 0xE0, 0x1C, 0xFC, 0x03, 0xE3, 0x1F, 0x00
+                /* 8-bit RRRGGGBB color bars:
+                 * White, Yellow, Cyan, Green, Magenta, Red, Blue, Black */
+                static const uint8_t bars[] = {
+                    0xFF, 0xFC, 0x1F, 0x1C, 0xE3, 0xE0, 0x03, 0x00
                 };
-                offset = (uint32_t)y * width + x;
-                fb[offset] = bars_rgb332[bar & 7];
+                uint32_t offset = (uint32_t)y * width + x;
+                fb[offset] = bars[bar & 7];
             } else {
-                /* 16-bit RGB565 */
-                static const uint16_t bars_rgb565[] = {
-                    0xFFFF, 0xFFE0, 0x07E0, 0x07FF,
-                    0x001F, 0xF81F, 0xF800, 0x0000
+                /* 16-bit RGB565 color bars */
+                static const uint16_t bars[] = {
+                    0xFFFF, 0xFFE0, 0x07FF, 0x07E0,
+                    0xF81F, 0xF800, 0x001F, 0x0000
                 };
-                offset = ((uint32_t)y * width + x) * 2;
-                uint16_t c = bars_rgb565[bar & 7];
-                fb[offset] = c & 0xFF;
+                uint32_t offset = ((uint32_t)y * width + x) * 2;
+                uint16_t c = bars[bar & 7];
+                fb[offset]     = c & 0xFF;
                 fb[offset + 1] = c >> 8;
             }
         }
@@ -304,7 +584,10 @@ void hstx_dvi_test_pattern(uint8_t *fb, uint16_t width, uint16_t height,
 
 #else /* !LITTLEOS_HAS_HSTX */
 
-/* Stubs for non-RP2350 builds */
+/* Non-RP2350 builds: these functions are never called because the shell
+ * command is guarded by LITTLEOS_HAS_HSTX, but we provide error returns
+ * for safety. */
+
 int hstx_dvi_init(dvi_mode_t mode, dvi_pixel_format_t format) {
     (void)mode; (void)format;
     printf("HSTX DVI not available on this platform\r\n");

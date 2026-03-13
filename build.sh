@@ -14,6 +14,74 @@ DEFAULT_UID="1000"
 DEFAULT_CAPS="0"
 export PICO_SDK_PATH=${PICO_SDK_PATH:-$HOME/pico-sdk}
 
+# =========================================================================
+# RISC-V Toolchain Detection
+# =========================================================================
+# The Pico SDK requires riscv32-unknown-elf-gcc (bare-metal) for RISC-V builds.
+# Note: riscv32-unknown-linux-gnu-gcc (Linux target) will NOT work — it lacks
+# nosys.specs and other bare-metal support files the SDK needs.
+RISCV_AVAILABLE=false
+
+setup_riscv_toolchain() {
+    if $RISCV_AVAILABLE; then
+        return 0
+    fi
+
+    # Already have the bare-metal toolchain in PATH?
+    if command -v riscv32-unknown-elf-gcc &>/dev/null; then
+        RISCV_AVAILABLE=true
+        return 0
+    fi
+
+    # Check common install locations for bare-metal toolchain
+    for dir in /opt/riscv/bin /opt/riscv32-elf/bin "$HOME/.local/bin"; do
+        if [[ -x "$dir/riscv32-unknown-elf-gcc" ]]; then
+            export PATH="$dir:$PATH"
+            RISCV_AVAILABLE=true
+            return 0
+        fi
+    done
+
+    # No bare-metal RISC-V toolchain found
+    echo "  WARNING: No RISC-V bare-metal toolchain found."
+    echo "  The Pico SDK requires riscv32-unknown-elf-gcc (bare-metal)."
+    echo "  Note: riscv32-unknown-linux-gnu-gcc (Linux target) will NOT work."
+    echo "  Install: https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack"
+    return 1
+}
+
+# Check if a board target requires RISC-V
+is_riscv_board() {
+    [[ "$1" == *"riscv"* ]]
+}
+
+# Build a single board target
+build_board() {
+    local board="$1"
+    echo "--- Building: $board ---"
+
+    if is_riscv_board "$board"; then
+        if ! setup_riscv_toolchain; then
+            echo "  SKIPPED (no RISC-V toolchain)"
+            echo
+            return 0
+        fi
+    fi
+
+    local build_dir="build_${board}"
+    rm -rf "$build_dir"
+    mkdir -p "$build_dir"
+    if (cd "$build_dir" && cmake -DLITTLEOS_BOARD="$board" .. && make -j"$(nproc)"); then
+        if [[ -f "$build_dir/littleos.uf2" ]]; then
+            cp "$build_dir/littleos.uf2" "littleos_${board}.uf2"
+            echo "  -> littleos_${board}.uf2"
+        fi
+    else
+        echo "  FAILED: Build error for $board"
+    fi
+    echo
+}
+
 # Board definitions
 BOARDS_RP2040=("pico" "pico_w")
 BOARDS_RP2350=("pico2" "pico2_riscv" "pico2_w" "pico2_w_riscv" "adafruit_feather_rp2350" "adafruit_feather_rp2350_riscv")
@@ -26,16 +94,7 @@ if [[ "$1" == "--rp2040-all" ]]; then
     echo "Batch build: All RP2040 boards"
     echo
     for board in "${BOARDS_RP2040[@]}"; do
-        echo "--- Building: $board ---"
-        build_dir="build_${board}"
-        rm -rf "$build_dir"
-        mkdir -p "$build_dir"
-        (cd "$build_dir" && cmake -DLITTLEOS_BOARD="$board" .. && make -j"$(nproc)")
-        if [[ -f "$build_dir/littleos.uf2" ]]; then
-            cp "$build_dir/littleos.uf2" "littleos_${board}.uf2"
-            echo "  -> littleos_${board}.uf2"
-        fi
-        echo
+        build_board "$board"
     done
     echo "RP2040 batch build complete."
     exit 0
@@ -45,16 +104,7 @@ if [[ "$1" == "--rp2350-all" ]]; then
     echo "Batch build: All RP2350 boards"
     echo
     for board in "${BOARDS_RP2350[@]}"; do
-        echo "--- Building: $board ---"
-        build_dir="build_${board}"
-        rm -rf "$build_dir"
-        mkdir -p "$build_dir"
-        (cd "$build_dir" && cmake -DLITTLEOS_BOARD="$board" .. && make -j"$(nproc)")
-        if [[ -f "$build_dir/littleos.uf2" ]]; then
-            cp "$build_dir/littleos.uf2" "littleos_${board}.uf2"
-            echo "  -> littleos_${board}.uf2"
-        fi
-        echo
+        build_board "$board"
     done
     echo "RP2350 batch build complete."
     exit 0
@@ -64,16 +114,7 @@ if [[ "$1" == "--all" ]]; then
     echo "Batch build: All boards"
     echo
     for board in "${ALL_BOARDS[@]}"; do
-        echo "--- Building: $board ---"
-        build_dir="build_${board}"
-        rm -rf "$build_dir"
-        mkdir -p "$build_dir"
-        (cd "$build_dir" && cmake -DLITTLEOS_BOARD="$board" .. && make -j"$(nproc)")
-        if [[ -f "$build_dir/littleos.uf2" ]]; then
-            cp "$build_dir/littleos.uf2" "littleos_${board}.uf2"
-            echo "  -> littleos_${board}.uf2"
-        fi
-        echo
+        build_board "$board"
     done
     echo "All boards built."
     exit 0
@@ -85,7 +126,7 @@ if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     echo "Options:"
     echo "  (none)          Interactive build with board selection"
     echo "  --rp2040-all    Build all RP2040 boards (Pico, Pico W)"
-    echo "  --rp2350-all    Build all RP2350 boards (Feather ARM, Feather RISC-V)"
+    echo "  --rp2350-all    Build all RP2350 boards (Pico 2, Pico 2 W, Feather)"
     echo "  --all           Build all boards"
     echo "  --help          Show this help"
     echo
@@ -93,6 +134,11 @@ if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     for b in "${ALL_BOARDS[@]}"; do
         echo "  $b"
     done
+    echo
+    echo "RISC-V toolchain:"
+    echo "  The Pico SDK expects riscv32-unknown-elf-gcc."
+    echo "  If you have riscv32-unknown-linux-gnu-gcc (e.g. /opt/riscv32/bin),"
+    echo "  the build script will create compatibility symlinks automatically."
     exit 0
 fi
 
@@ -127,6 +173,15 @@ case "$board_choice" in
 esac
 echo "  Selected: $BOARD"
 echo
+
+# Set up RISC-V toolchain if needed
+if is_riscv_board "$BOARD"; then
+    if ! setup_riscv_toolchain; then
+        echo "ERROR: RISC-V toolchain required for $BOARD but not found."
+        echo "Install riscv32-unknown-elf-gcc or place riscv32-unknown-linux-gnu-gcc in /opt/riscv32/bin"
+        exit 1
+    fi
+fi
 
 # User account configuration
 read -rp "Enable non-root user account? [Y/n] " enable_user
