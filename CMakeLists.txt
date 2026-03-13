@@ -299,6 +299,13 @@ add_library(littleos_core STATIC
 #
     src/drivers/neopixel.c
     src/drivers/display.c
+    src/drivers/drv_ssd1306.c
+    src/drivers/drv_sh1107.c
+#
+    src/kernel/module.c
+    src/kernel/module_builtins.c
+#
+    src/shell/cmd_mod.c
 #
     src/usr/users_config.c
 )

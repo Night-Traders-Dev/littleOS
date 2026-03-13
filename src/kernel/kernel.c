@@ -19,6 +19,7 @@
 #include "hal/power.h"
 #include "sensor.h"
 #include "profiler.h"
+#include "module.h"
 #include "shell_env.h"
 #include "procfs.h"
 #include "devfs.h"
@@ -332,6 +333,9 @@ void kernel_main(void) {
     // Initialize profiler
     profiler_init();
     dmesg_info("Runtime profiler initialized");
+
+    // Initialize module subsystem (registers built-in driver modules)
+    module_subsys_init();
 
     // Initialize shell environment (env vars, aliases, prompt)
     shell_env_init();

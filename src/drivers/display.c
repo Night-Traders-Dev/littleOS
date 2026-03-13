@@ -1,22 +1,57 @@
-/* display.c - SSD1306 OLED I2C display driver for littleOS */
+/* display.c - Display subsystem for littleOS
+ *
+ * Manages the shared framebuffer and drawing primitives.
+ * Hardware-specific code lives in driver modules (ssd1306.c, sh1107.c).
+ * The active driver is set via display_set_active_driver().
+ */
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
 #include "display.h"
+#include "drivers/display_module.h"
 
-#ifdef PICO_BUILD
-#include "pico/stdlib.h"
-#include "hardware/i2c.h"
-#endif
+/* ================================================================
+ * Internal state
+ * ================================================================ */
 
-/* ---------- internal state ---------- */
+static uint8_t        framebuffer[DISPLAY_MAX_BUF_SIZE];
+static display_type_t disp_type      = DISPLAY_NONE;
+static int            disp_width     = 0;
+static int            disp_height    = 0;
+static bool           disp_connected = false;
+static bool           disp_inverted  = false;
 
-static uint8_t framebuffer[DISPLAY_BUF_SIZE];
-static uint8_t display_addr = 0x3C;
-static bool    display_connected = false;
-static bool    display_inverted = false;
+/* Active driver callbacks (set by driver modules) */
+static const display_driver_ops_t *active_drv = NULL;
 
-/* ---------- 5x7 font (ASCII 32-126) ---------- */
+/* ================================================================
+ * Driver module integration
+ * ================================================================ */
+
+void display_set_active_driver(const display_driver_ops_t *ops, int w, int h) {
+    active_drv     = ops;
+    disp_width     = w;
+    disp_height    = h;
+    disp_connected = true;
+    disp_inverted  = false;
+    memset(framebuffer, 0, sizeof(framebuffer));
+}
+
+void display_clear_active_driver(void) {
+    active_drv     = NULL;
+    disp_type      = DISPLAY_NONE;
+    disp_width     = 0;
+    disp_height    = 0;
+    disp_connected = false;
+}
+
+uint8_t *display_get_framebuffer(void) {
+    return framebuffer;
+}
+
+/* ================================================================
+ * 5x7 font (ASCII 32-126)
+ * ================================================================ */
 
 static const uint8_t font5x7[][5] = {
     /* 32 ' ' */ {0x00, 0x00, 0x00, 0x00, 0x00},
@@ -116,86 +151,47 @@ static const uint8_t font5x7[][5] = {
     /*126 '~' */ {0x10, 0x08, 0x08, 0x10, 0x10},
 };
 
-/* ---------- I2C helpers ---------- */
-
-#ifdef PICO_BUILD
-static i2c_inst_t *display_i2c = i2c0;
-
-static void ssd1306_cmd(uint8_t cmd) {
-    uint8_t buf[2] = {0x00, cmd}; /* Co=0, D/C#=0 (command) */
-    i2c_write_blocking(display_i2c, display_addr, buf, 2, false);
-}
-
-static void ssd1306_cmd2(uint8_t cmd, uint8_t arg) {
-    uint8_t buf[3] = {0x00, cmd, arg};
-    i2c_write_blocking(display_i2c, display_addr, buf, 3, false);
-}
-#endif
-
-/* ---------- public API ---------- */
+/* ================================================================
+ * Legacy init wrappers (delegate to driver modules)
+ * ================================================================ */
 
 void display_init(uint8_t i2c_addr) {
-    display_addr = i2c_addr;
-    memset(framebuffer, 0, sizeof(framebuffer));
-    display_inverted = false;
-
-#ifdef PICO_BUILD
-    /* SSD1306 initialization sequence */
-    ssd1306_cmd(0xAE);        /* display off */
-    ssd1306_cmd2(0xD5, 0x80); /* set display clock divide ratio */
-    ssd1306_cmd2(0xA8, 0x3F); /* set multiplex ratio (64-1) */
-    ssd1306_cmd2(0xD3, 0x00); /* set display offset = 0 */
-    ssd1306_cmd(0x40);        /* set start line = 0 */
-    ssd1306_cmd2(0x8D, 0x14); /* enable charge pump */
-    ssd1306_cmd2(0x20, 0x00); /* horizontal addressing mode */
-    ssd1306_cmd(0xA1);        /* segment remap (col 127 = SEG0) */
-    ssd1306_cmd(0xC8);        /* COM output scan direction remapped */
-    ssd1306_cmd2(0xDA, 0x12); /* COM pins hardware config */
-    ssd1306_cmd2(0x81, 0xCF); /* set contrast */
-    ssd1306_cmd2(0xD9, 0xF1); /* set pre-charge period */
-    ssd1306_cmd2(0xDB, 0x40); /* set VCOMH deselect level */
-    ssd1306_cmd(0xA4);        /* display from RAM */
-    ssd1306_cmd(0xA6);        /* normal display (not inverted) */
-    ssd1306_cmd(0xAF);        /* display on */
-
-    display_connected = true;
-#endif
+    disp_type = DISPLAY_SSD1306;
+    extern void ssd1306_hw_init_direct(uint8_t addr);
+    ssd1306_hw_init_direct(i2c_addr);
 }
+
+void display_init_sh1107(uint8_t spi_inst, uint8_t mosi, uint8_t sck,
+                         uint8_t cs, uint8_t dc, uint8_t rst) {
+    disp_type = DISPLAY_SH1107;
+    extern void sh1107_hw_init_direct(uint8_t spi, uint8_t mosi,
+                                       uint8_t sck, uint8_t cs,
+                                       uint8_t dc, uint8_t rst);
+    sh1107_hw_init_direct(spi_inst, mosi, sck, cs, dc, rst);
+}
+
+/* ================================================================
+ * Framebuffer operations
+ * ================================================================ */
 
 void display_clear(void) {
     memset(framebuffer, 0, sizeof(framebuffer));
 }
 
 void display_flush(void) {
-    if (!display_connected) return;
-
-#ifdef PICO_BUILD
-    /* Set column address 0-127 */
-    ssd1306_cmd(0x21);
-    ssd1306_cmd(0x00);
-    ssd1306_cmd(0x7F);
-    /* Set page address 0-7 */
-    ssd1306_cmd(0x22);
-    ssd1306_cmd(0x00);
-    ssd1306_cmd(0x07);
-
-    /* Send framebuffer in chunks (I2C has limited buffer) */
-    for (int i = 0; i < DISPLAY_BUF_SIZE; i += 16) {
-        uint8_t buf[17];
-        buf[0] = 0x40; /* Co=0, D/C#=1 (data) */
-        int chunk = DISPLAY_BUF_SIZE - i;
-        if (chunk > 16) chunk = 16;
-        memcpy(&buf[1], &framebuffer[i], (size_t)chunk);
-        i2c_write_blocking(display_i2c, display_addr, buf, (size_t)(chunk + 1), false);
-    }
-#endif
+    if (!disp_connected || !active_drv || !active_drv->hw_flush) return;
+    active_drv->hw_flush(framebuffer, disp_width, disp_height);
 }
 
+/* ================================================================
+ * Drawing primitives (work on framebuffer)
+ * ================================================================ */
+
 void display_pixel(int x, int y, bool on) {
-    if (x < 0 || x >= DISPLAY_WIDTH || y < 0 || y >= DISPLAY_HEIGHT) return;
+    if (x < 0 || x >= disp_width || y < 0 || y >= disp_height) return;
     int page = y / 8;
     int bit  = y % 8;
-    int idx  = page * DISPLAY_WIDTH + x;
+    int idx  = page * disp_width + x;
     if (on)
         framebuffer[idx] |=  (uint8_t)(1 << bit);
     else
@@ -203,7 +199,6 @@ void display_pixel(int x, int y, bool on) {
 }
 
 void display_line(int x0, int y0, int x1, int y1) {
-    /* Bresenham's line algorithm */
     int dx = x1 - x0;
     int dy = y1 - y0;
     int sx = (dx > 0) ? 1 : -1;
@@ -223,16 +218,43 @@ void display_line(int x0, int y0, int x1, int y1) {
 
 void display_rect(int x, int y, int w, int h, bool fill) {
     if (fill) {
-        for (int j = y; j < y + h; j++) {
-            for (int i = x; i < x + w; i++) {
+        for (int j = y; j < y + h; j++)
+            for (int i = x; i < x + w; i++)
                 display_pixel(i, j, true);
-            }
-        }
     } else {
         display_line(x, y, x + w - 1, y);
         display_line(x + w - 1, y, x + w - 1, y + h - 1);
         display_line(x + w - 1, y + h - 1, x, y + h - 1);
         display_line(x, y + h - 1, x, y);
+    }
+}
+
+void display_circle(int cx, int cy, int r, bool fill) {
+    int x = r, y = 0, err = 1 - r;
+
+    while (x >= y) {
+        if (fill) {
+            display_line(cx - x, cy + y, cx + x, cy + y);
+            display_line(cx - x, cy - y, cx + x, cy - y);
+            display_line(cx - y, cy + x, cx + y, cy + x);
+            display_line(cx - y, cy - x, cx + y, cy - x);
+        } else {
+            display_pixel(cx + x, cy + y, true);
+            display_pixel(cx - x, cy + y, true);
+            display_pixel(cx + x, cy - y, true);
+            display_pixel(cx - x, cy - y, true);
+            display_pixel(cx + y, cy + x, true);
+            display_pixel(cx - y, cy + x, true);
+            display_pixel(cx + y, cy - x, true);
+            display_pixel(cx - y, cy - x, true);
+        }
+        y++;
+        if (err < 0) {
+            err += 2 * y + 1;
+        } else {
+            x--;
+            err += 2 * (y - x) + 1;
+        }
     }
 }
 
@@ -245,18 +267,17 @@ void display_text(int x, int y, const char *text) {
         for (int col = 0; col < 5; col++) {
             uint8_t column = font5x7[idx][col];
             for (int row = 0; row < 7; row++) {
-                if (column & (1 << row)) {
+                if (column & (1 << row))
                     display_pixel(cx + col, y + row, true);
-                }
             }
         }
-        cx += 6; /* 5 pixel char + 1 pixel spacing */
-        if (cx + 5 > DISPLAY_WIDTH) break; /* stop at edge */
+        cx += 6;
+        if (cx + 5 > disp_width) break;
     }
 }
 
 void display_printf(int x, int y, const char *fmt, ...) {
-    char buf[64];
+    char buf[128];
     va_list ap;
     va_start(ap, fmt);
     vsnprintf(buf, sizeof(buf), fmt, ap);
@@ -264,23 +285,66 @@ void display_printf(int x, int y, const char *fmt, ...) {
     display_text(x, y, buf);
 }
 
+void display_bitmap(int x, int y, int w, int h, const uint8_t *data) {
+    for (int row = 0; row < h; row++) {
+        for (int col = 0; col < w; col++) {
+            int byte_idx = (row * w + col) / 8;
+            int bit_idx  = 7 - ((row * w + col) % 8);
+            if (data[byte_idx] & (1 << bit_idx))
+                display_pixel(x + col, y + row, true);
+        }
+    }
+}
+
+void display_scroll_up(int lines) {
+    if (lines <= 0 || lines >= disp_height) {
+        display_clear();
+        return;
+    }
+    for (int y = 0; y < disp_height - lines; y++) {
+        for (int x = 0; x < disp_width; x++) {
+            int src_y = y + lines;
+            int page = src_y / 8;
+            int bit  = src_y % 8;
+            int idx  = page * disp_width + x;
+            bool px = (framebuffer[idx] >> bit) & 1;
+            display_pixel(x, y, px);
+        }
+    }
+    for (int y = disp_height - lines; y < disp_height; y++)
+        for (int x = 0; x < disp_width; x++)
+            display_pixel(x, y, false);
+}
+
+/* ================================================================
+ * Control / query
+ * ================================================================ */
+
 bool display_is_connected(void) {
-    return display_connected;
+    if (active_drv && active_drv->hw_is_connected)
+        return active_drv->hw_is_connected();
+    return disp_connected;
+}
+
+display_type_t display_get_type(void) {
+    return disp_type;
+}
+
+int display_get_width(void) {
+    return disp_width;
+}
+
+int display_get_height(void) {
+    return disp_height;
 }
 
 void display_set_contrast(uint8_t contrast) {
-#ifdef PICO_BUILD
-    if (!display_connected) return;
-    ssd1306_cmd2(0x81, contrast);
-#else
-    (void)contrast;
-#endif
+    if (active_drv && active_drv->hw_set_contrast)
+        active_drv->hw_set_contrast(contrast);
 }
 
 void display_invert(bool invert) {
-    display_inverted = invert;
-#ifdef PICO_BUILD
-    if (!display_connected) return;
-    ssd1306_cmd(invert ? 0xA7 : 0xA6);
-#endif
+    disp_inverted = invert;
+    if (active_drv && active_drv->hw_invert)
+        active_drv->hw_invert(invert);
 }
