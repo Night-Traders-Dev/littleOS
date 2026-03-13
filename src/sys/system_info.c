@@ -1,6 +1,7 @@
 // src/system_info.c
-// System Information Implementation for RP2040
+// System Information Implementation
 #include "system_info.h"
+#include "board/board_config.h"
 #include "pico/stdlib.h"
 #include "pico/unique_id.h"
 #include "hardware/clocks.h"
@@ -11,13 +12,8 @@
 #include <string.h>
 
 // Version information
-#define LITTLEOS_VERSION "0.4.0"
+#define LITTLEOS_VERSION "0.6.0"
 #define LITTLEOS_BUILD_DATE __DATE__ " " __TIME__
-
-// RP2040 specifications
-#define RP2040_RAM_SIZE (264 * 1024)      // 264KB SRAM
-#define RP2040_FLASH_SIZE (2 * 1024 * 1024) // 2MB Flash (typical)
-#define RP2040_CORE_COUNT 2
 
 // External symbols for heap tracking (defined by linker)
 extern char __HeapLimit;
@@ -31,9 +27,13 @@ bool system_get_cpu_info(cpu_info_t* info) {
     if (!info) return false;
     
     info->clock_speed_hz = clock_get_hz(clk_sys);
-    info->core_count = RP2040_CORE_COUNT;
-    info->chip_model = "RP2040";
+    info->core_count = CHIP_CORE_COUNT;
+    info->chip_model = CHIP_MODEL_STR;
+#if PICO_RP2350
+    info->chip_revision = rp2350_chip_version();
+#else
     info->chip_revision = rp2040_chip_version();
+#endif
     
     return true;
 }
@@ -60,8 +60,8 @@ static uint32_t get_free_ram(void) {
 bool system_get_memory_info(memory_info_t* info) {
     if (!info) return false;
     
-    info->total_ram = RP2040_RAM_SIZE;
-    info->flash_size = RP2040_FLASH_SIZE;
+    info->total_ram = CHIP_RAM_SIZE;
+    info->flash_size = CHIP_FLASH_SIZE;
     info->free_ram = get_free_ram();
     info->used_ram = info->total_ram - info->free_ram;
     

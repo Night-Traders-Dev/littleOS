@@ -5,14 +5,15 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include "hardware/platform_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* RP2040 has 2 PIO blocks, each with 4 state machines */
-#define PIO_NUM_BLOCKS      2
-#define PIO_NUM_SM           4
+/* PIO block/SM counts from SDK (RP2040: 2 blocks, RP2350: 3 blocks) */
+#define PIO_NUM_BLOCKS      NUM_PIOS
+#define PIO_NUM_SM           NUM_PIO_STATE_MACHINES
 #define PIO_MAX_PROGRAM_LEN  32  /* Max instructions per program */
 
 /* PIO program descriptor */

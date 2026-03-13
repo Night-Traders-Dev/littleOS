@@ -12,6 +12,7 @@
 #include "pico/bootrom.h"
 #endif
 
+#include "board/board_config.h"
 #include "memory_segmented.h"
 #include "scheduler.h"
 #include "littlefetch.h"
@@ -42,16 +43,16 @@
 
 
 
-// ASCII art for littleOS (RP2040 themed)
+// ASCII art for littleOS
 static const char *logo[] = {
     " ___ ___            ",
     " / \\___/ \\           ",
-    " | RP2040 OS |       ",
+    " | " CHIP_MODEL_STR " OS |       ",
     " \\___________/       ",
     " | | | | | |         ",
     " |_|_|_|_|_|         ",
     "                     ",
-    " littleOS v0.4.0       "
+    " littleOS v0.6.0       "
 };
 
 #define LOGO_LINES (sizeof(logo) / sizeof(logo[0]))
@@ -126,10 +127,10 @@ void littlefetch(void) {
     print_info(line++, NULL, NULL, NULL);
 
     // OS
-    print_info(line++, "OS", "littleOS RP2040", COLOR_CYAN);
+    print_info(line++, "OS", "littleOS " CHIP_MODEL_STR, COLOR_CYAN);
 
     // Host (chip info)
-    snprintf(buf, sizeof(buf), "Raspberry Pi RP2040");
+    snprintf(buf, sizeof(buf), "%s", BOARD_NAME);
     print_info(line++, "Host", buf, COLOR_CYAN);
 
     // Kernel version
@@ -151,9 +152,9 @@ void littlefetch(void) {
     // CPU
     uint32_t freq = get_cpu_freq_mhz();
     if (freq > 0) {
-        snprintf(buf, sizeof(buf), "ARM Cortex-M0+ (Dual Core) @ %u MHz", freq);
+        snprintf(buf, sizeof(buf), "%s @ %u MHz", CHIP_CORE_STR, freq);
     } else {
-        snprintf(buf, sizeof(buf), "ARM Cortex-M0+ (Dual Core)");
+        snprintf(buf, sizeof(buf), "%s", CHIP_CORE_STR);
     }
     print_info(line++, "CPU", buf, COLOR_RED);
 
@@ -165,7 +166,7 @@ void littlefetch(void) {
     print_info(line++, "Memory", buf, COLOR_MAGENTA);
 
     // Flash size
-    snprintf(buf, sizeof(buf), "2 MB");
+    snprintf(buf, sizeof(buf), "%u MB", (unsigned)(CHIP_FLASH_SIZE / (1024 * 1024)));
     print_info(line++, "Flash", buf, COLOR_WHITE);
 
     // Voltage

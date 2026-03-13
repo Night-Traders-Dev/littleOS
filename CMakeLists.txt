@@ -1,31 +1,67 @@
 cmake_minimum_required(VERSION 3.13)
 
-option(LITTLEOS_PICO_W "Build for Pico W with WiFi support" OFF)
+# =============================================================================
+# Board Selection
+# =============================================================================
+# Usage: cmake -DLITTLEOS_BOARD=<board> ..
+#   pico                           - Raspberry Pi Pico (RP2040, default)
+#   pico_w                         - Raspberry Pi Pico W (RP2040 + WiFi)
+#   pico2                          - Raspberry Pi Pico 2 (RP2350, ARM Cortex-M33)
+#   pico2_riscv                    - Raspberry Pi Pico 2 (RP2350, RISC-V Hazard3)
+#   pico2_w                        - Raspberry Pi Pico 2 W (RP2350 + WiFi, ARM)
+#   pico2_w_riscv                  - Raspberry Pi Pico 2 W (RP2350 + WiFi, RISC-V)
+#   adafruit_feather_rp2350        - Adafruit Feather RP2350 (ARM Cortex-M33)
+#   adafruit_feather_rp2350_riscv  - Adafruit Feather RP2350 (RISC-V Hazard3)
 
-if(LITTLEOS_PICO_W)
-    set(PICO_BOARD pico_w)
-else()
+set(LITTLEOS_BOARD "pico" CACHE STRING "Target board")
+set(LITTLEOS_PICO_W OFF)
+
+if(LITTLEOS_BOARD STREQUAL "pico")
     set(PICO_BOARD pico)
+    set(PICO_PLATFORM rp2040)
+elseif(LITTLEOS_BOARD STREQUAL "pico_w")
+    set(PICO_BOARD pico_w)
+    set(PICO_PLATFORM rp2040)
+    set(LITTLEOS_PICO_W ON)
+elseif(LITTLEOS_BOARD STREQUAL "pico2")
+    set(PICO_BOARD pico2)
+    set(PICO_PLATFORM rp2350-arm-s)
+elseif(LITTLEOS_BOARD STREQUAL "pico2_riscv")
+    set(PICO_BOARD pico2)
+    set(PICO_PLATFORM rp2350-riscv)
+elseif(LITTLEOS_BOARD STREQUAL "pico2_w")
+    set(PICO_BOARD pico2_w)
+    set(PICO_PLATFORM rp2350-arm-s)
+    set(LITTLEOS_PICO_W ON)
+elseif(LITTLEOS_BOARD STREQUAL "pico2_w_riscv")
+    set(PICO_BOARD pico2_w)
+    set(PICO_PLATFORM rp2350-riscv)
+    set(LITTLEOS_PICO_W ON)
+elseif(LITTLEOS_BOARD STREQUAL "adafruit_feather_rp2350")
+    set(PICO_BOARD adafruit_feather_rp2350)
+    set(PICO_PLATFORM rp2350-arm-s)
+elseif(LITTLEOS_BOARD STREQUAL "adafruit_feather_rp2350_riscv")
+    set(PICO_BOARD adafruit_feather_rp2350)
+    set(PICO_PLATFORM rp2350-riscv)
+else()
+    message(FATAL_ERROR "Unknown board: ${LITTLEOS_BOARD}. Valid boards: pico, pico_w, pico2, pico2_riscv, pico2_w, pico2_w_riscv, adafruit_feather_rp2350, adafruit_feather_rp2350_riscv")
 endif()
-set(PICO_PLATFORM rp2040)
 
 # PICO_SDK_PATH must be set before configuring
 include(pico_sdk_import.cmake)
 
 project(littleOS C CXX ASM)
 
-# Let the SDK choose the right boot2 for Pico; no override needed.
+# Let the SDK choose the right boot stage and CPU flags for the platform.
 pico_sdk_init()
 
-
-set(CPU_FLAGS "-mcpu=cortex-m0plus -mthumb -ffreestanding -fno-builtin")
+# Generic compiler flags (SDK handles -mcpu and -mthumb per platform)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-free-nonheap-object")
-
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${CPU_FLAGS} -O2 -g")
-set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} ${CPU_FLAGS} -O2 -g")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffreestanding -fno-builtin -O2 -g")
+set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -O2 -g")
 
 message(STATUS "Using PICO_SDK_PATH=${PICO_SDK_PATH}")
 
@@ -34,7 +70,7 @@ if(LITTLEOS_PICO_W)
     add_compile_definitions(PICO_W=1)
     message(STATUS "WiFi: Pico W support ENABLED (cyw43 + lwIP)")
 else()
-    message(STATUS "WiFi: Disabled (standard Pico)")
+    message(STATUS "WiFi: Disabled")
 endif()
 
 # =============================================================================
@@ -292,6 +328,16 @@ if(LITTLEOS_PICO_W)
     )
 endif()
 
+# RP2350-specific: HSTX DVI output
+if(PICO_PLATFORM MATCHES "rp2350")
+    target_sources(littleos_core PRIVATE
+        src/hal/hstx_dvi.c
+        src/shell/cmd_display_dvi.c
+    )
+    target_compile_definitions(littleos_core PUBLIC LITTLEOS_HAS_HSTX=1)
+    message(STATUS "HSTX: DVI output ENABLED (RP2350)")
+endif()
+
 # Add SageLang embedding if available
 if(SAGELANG_AVAILABLE)
     target_sources(littleos_core PRIVATE
@@ -366,10 +412,12 @@ pico_add_extra_outputs(littleos)
 # Print build summary
 message(STATUS "")
 message(STATUS "=== Build Configuration ===")
-message(STATUS "Board: ${PICO_BOARD}")
+message(STATUS "Board: ${LITTLEOS_BOARD} (${PICO_BOARD})")
 message(STATUS "Platform: ${PICO_PLATFORM}")
+message(STATUS "WiFi: ${LITTLEOS_PICO_W}")
 message(STATUS "SageLang: ${SAGELANG_AVAILABLE}")
-message(STATUS "Supervisor: Core 1 health monitoring")
-message(STATUS "Kernel Messages: dmesg ring buffer")
+if(PICO_PLATFORM MATCHES "rp2350")
+    message(STATUS "HSTX DVI: YES")
+endif()
 message(STATUS "===========================")
 message(STATUS "")

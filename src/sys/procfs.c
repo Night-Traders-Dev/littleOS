@@ -296,14 +296,16 @@ static int procfs_gen_gpio(char *buf, size_t buflen) {
     pos = buf_append(buf, buflen, pos, "PIN  DIR  VAL  FUNC\r\n");
 
 #ifdef PICO_BUILD
-    for (int pin = 0; pin < 30; pin++) {
+    for (int pin = 0; pin < (int)NUM_BANK0_GPIOS; pin++) {
         bool dir = gpio_get_dir(pin);       /* true = out */
         bool val = gpio_get(pin);
         uint gpio_func = gpio_get_function(pin);
 
         const char *func_name;
         switch (gpio_func) {
+#if !PICO_RP2350
             case GPIO_FUNC_XIP:  func_name = "XIP";  break;
+#endif
             case GPIO_FUNC_SPI:  func_name = "SPI";  break;
             case GPIO_FUNC_UART: func_name = "UART"; break;
             case GPIO_FUNC_I2C:  func_name = "I2C";  break;
@@ -311,6 +313,10 @@ static int procfs_gen_gpio(char *buf, size_t buflen) {
             case GPIO_FUNC_SIO:  func_name = "SIO";  break;
             case GPIO_FUNC_PIO0: func_name = "PIO0"; break;
             case GPIO_FUNC_PIO1: func_name = "PIO1"; break;
+#if PICO_RP2350
+            case GPIO_FUNC_PIO2: func_name = "PIO2"; break;
+            case GPIO_FUNC_HSTX: func_name = "HSTX"; break;
+#endif
             case GPIO_FUNC_NULL: func_name = "NULL"; break;
             default:             func_name = "???";  break;
         }

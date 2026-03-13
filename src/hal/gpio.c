@@ -1,13 +1,13 @@
 // src/hal/gpio.c
-// GPIO Hardware Abstraction Layer Implementation for RP2040
+// GPIO Hardware Abstraction Layer Implementation
 #include "hal/gpio.h"
+#include "board/board_config.h"
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include <stdio.h>
 
-// RP2040 has GPIO 0-29 available
-#define GPIO_MIN_PIN 0
-#define GPIO_MAX_PIN 29
+#define GPIO_MIN_PIN BOARD_GPIO_MIN
+#define GPIO_MAX_PIN BOARD_GPIO_MAX
 
 // Debug flag - set to 1 to enable verbose GPIO debug output
 #define GPIO_DEBUG 1

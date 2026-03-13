@@ -5,13 +5,15 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include "hardware/platform_defs.h"
+#include "hardware/regs/dreq.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* RP2040 has 12 DMA channels */
-#define DMA_NUM_CHANNELS    12
+/* DMA channel count from SDK (RP2040: 12, RP2350: 16) */
+#define DMA_NUM_CHANNELS    NUM_DMA_CHANNELS
 
 /* Transfer data sizes */
 typedef enum {
@@ -20,35 +22,11 @@ typedef enum {
     DMA_XFER_SIZE_32 = 2,    /* Word transfer */
 } dma_transfer_size_t;
 
-/* DMA DREQ (Data Request) sources */
-typedef enum {
-    DMA_DREQ_PIO0_TX0 = 0,
-    DMA_DREQ_PIO0_TX1 = 1,
-    DMA_DREQ_PIO0_TX2 = 2,
-    DMA_DREQ_PIO0_TX3 = 3,
-    DMA_DREQ_PIO0_RX0 = 4,
-    DMA_DREQ_PIO0_RX1 = 5,
-    DMA_DREQ_PIO0_RX2 = 6,
-    DMA_DREQ_PIO0_RX3 = 7,
-    DMA_DREQ_PIO1_TX0 = 8,
-    DMA_DREQ_PIO1_TX1 = 9,
-    DMA_DREQ_PIO1_TX2 = 10,
-    DMA_DREQ_PIO1_TX3 = 11,
-    DMA_DREQ_PIO1_RX0 = 12,
-    DMA_DREQ_PIO1_RX1 = 13,
-    DMA_DREQ_PIO1_RX2 = 14,
-    DMA_DREQ_PIO1_RX3 = 15,
-    DMA_DREQ_SPI0_TX  = 16,
-    DMA_DREQ_SPI0_RX  = 17,
-    DMA_DREQ_SPI1_TX  = 18,
-    DMA_DREQ_SPI1_RX  = 19,
-    DMA_DREQ_UART0_TX = 20,
-    DMA_DREQ_UART0_RX = 21,
-    DMA_DREQ_UART1_TX = 22,
-    DMA_DREQ_UART1_RX = 23,
-    DMA_DREQ_ADC      = 36,
-    DMA_DREQ_FORCE    = 0x3F,  /* Unpaced / immediate */
-} dma_dreq_t;
+/* DREQ sources: use SDK's DREQ_* defines from hardware/regs/dreq.h.
+ * These are chip-correct for both RP2040 and RP2350.
+ * Common values: DREQ_SPI0_TX, DREQ_UART0_TX, DREQ_ADC, DREQ_FORCE, etc.
+ * Legacy aliases for compatibility: */
+#define DMA_DREQ_FORCE    DREQ_FORCE
 
 /* DMA channel status */
 typedef struct {
@@ -65,7 +43,7 @@ typedef struct {
     volatile void *write_addr;  /* Destination address */
     uint32_t transfer_count;    /* Number of transfers */
     dma_transfer_size_t size;   /* Transfer size */
-    dma_dreq_t dreq;            /* Data request source */
+    uint8_t dreq;               /* DREQ source (use SDK DREQ_* defines) */
     bool read_increment;        /* Increment read address */
     bool write_increment;       /* Increment write address */
     bool ring_read;             /* Ring buffer on read side */

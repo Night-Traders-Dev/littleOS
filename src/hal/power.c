@@ -1,5 +1,6 @@
-/* power.c - Power Management HAL Implementation for RP2040 */
+/* power.c - Power Management HAL Implementation */
 #include "hal/power.h"
+#include "board/board_config.h"
 #include "dmesg.h"
 #include <string.h>
 #include <stdio.h>
@@ -31,15 +32,14 @@
 #define HAS_PICO_SLEEP 0
 #endif
 
-/* RP2040 register addresses for direct dormant access */
-#define XOSC_BASE       0x40024000
-#define XOSC_DORMANT    (*(volatile uint32_t *)(XOSC_BASE + 0x08))
-#define XOSC_STATUS     (*(volatile uint32_t *)(XOSC_BASE + 0x04))
+/* Register access for direct dormant mode (SDK provides base addresses) */
+#include "hardware/regs/addressmap.h"
+#define XOSC_DORMANT_REG    (*(volatile uint32_t *)(XOSC_BASE + 0x08))
+#define XOSC_STATUS_REG     (*(volatile uint32_t *)(XOSC_BASE + 0x04))
 #define XOSC_DORMANT_VALUE  0x636f6d61  /* "coma" in ASCII */
 #define XOSC_WAKE_VALUE     0x77616b65  /* "wake" in ASCII */
 
-#define ROSC_BASE       0x40060000
-#define ROSC_DORMANT    (*(volatile uint32_t *)(ROSC_BASE + 0x0c))
+#define ROSC_DORMANT_REG    (*(volatile uint32_t *)(ROSC_BASE + 0x0c))
 #define ROSC_DORMANT_VALUE  0x636f6d61  /* "coma" */
 
 /* VREG voltage enum mapping (from SDK) */
@@ -180,10 +180,18 @@ int power_sleep(power_mode_t mode) {
     case POWER_MODE_DEEP_SLEEP: {
         dmesg_info("power: entering deep sleep");
         /* Set SLEEPDEEP bit in SCB for deeper sleep on WFI */
+#if PICO_RP2350 && !PICO_RISCV
+        scb_hw->scr |= M33_SCR_SLEEPDEEP_BITS;
+        __wfi();
+        scb_hw->scr &= ~M33_SCR_SLEEPDEEP_BITS;
+#elif !PICO_RP2350
         scb_hw->scr |= M0PLUS_SCR_SLEEPDEEP_BITS;
         __wfi();
-        /* Clear SLEEPDEEP on wake */
         scb_hw->scr &= ~M0PLUS_SCR_SLEEPDEEP_BITS;
+#else
+        /* RISC-V: WFI is the best we can do */
+        __wfi();
+#endif
         break;
     }
 
@@ -208,7 +216,7 @@ int power_sleep(power_mode_t mode) {
                         6500 * 1000, 6500 * 1000);
 
         /* Put XOSC into dormant mode */
-        XOSC_DORMANT = XOSC_DORMANT_VALUE;
+        XOSC_DORMANT_REG = XOSC_DORMANT_VALUE;
 
         /* Execution resumes here after wake event */
         /* Restart XOSC */
@@ -309,8 +317,8 @@ int power_sleep_until_gpio(uint8_t gpio_pin, wake_edge_t edge) {
     }
 
 #ifdef PICO_BUILD
-    if (gpio_pin > 29) {
-        dmesg_err("power: invalid GPIO pin %u", gpio_pin);
+    if (gpio_pin >= NUM_BANK0_GPIOS) {
+        dmesg_err("power: invalid GPIO pin %u (max %u)", gpio_pin, NUM_BANK0_GPIOS - 1);
         return -1;
     }
 
@@ -378,9 +386,15 @@ int power_set_clock(uint32_t freq_khz) {
         return -1;
     }
 
-    if (freq_khz == 0 || freq_khz > 133000) {
-        dmesg_err("power: invalid clock frequency %lu kHz (range: 1-133000)",
-                  (unsigned long)freq_khz);
+    /* RP2040 max ~133 MHz, RP2350 max ~150 MHz */
+#if PICO_RP2350
+    #define POWER_MAX_CLOCK_KHZ 150000
+#else
+    #define POWER_MAX_CLOCK_KHZ 133000
+#endif
+    if (freq_khz == 0 || freq_khz > POWER_MAX_CLOCK_KHZ) {
+        dmesg_err("power: invalid clock frequency %lu kHz (range: 1-%lu)",
+                  (unsigned long)freq_khz, (unsigned long)POWER_MAX_CLOCK_KHZ);
         return -1;
     }
 

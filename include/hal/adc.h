@@ -4,19 +4,17 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "hardware/platform_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* RP2040 ADC: 12-bit, 500 ksps, 5 channels
- * Channel 0: GPIO26
- * Channel 1: GPIO27
- * Channel 2: GPIO28
- * Channel 3: GPIO29 (on Pico, used for VSYS/3)
- * Channel 4: Internal temperature sensor */
+/* ADC: 12-bit SAR
+ * RP2040:  5 channels (GPIO26-29 + temp sensor on ch4)
+ * RP2350:  5 channels (GPIO26-29 + temp sensor on ch4) */
 
-#define ADC_NUM_CHANNELS    5
+#define ADC_NUM_CHANNELS    NUM_ADC_CHANNELS
 #define ADC_MAX_VALUE       4095    /* 12-bit */
 #define ADC_VREF            3.3f   /* Reference voltage */
 #define ADC_TEMP_CHANNEL    4
