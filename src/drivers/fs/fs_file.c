@@ -371,9 +371,224 @@ int fs_readdir(struct fs *fs, struct fs_file *fd, struct fs_dirent *entry) {
     return FS_ERR_NOT_FOUND;
 }
 
+/* Remove a dirent from a directory block.
+ * Zeroes the name_len to mark the slot as deleted; the entry_size is
+ * preserved so the linked-list of variable-length entries stays intact. */
+static int fs_dir_remove(struct fs *fs, struct fs_inode *dir_ino,
+                         const char *name, uint32_t target_ino) {
+    uint32_t hash = 0;
+    {
+        const char *p = name;
+        uint32_t h = 5381u;
+        unsigned char c;
+        while ((c = (unsigned char)*p++) != 0)
+            h = ((h << 5) + h) + c;
+        hash = h;
+    }
+
+    uint32_t blocks = (dir_ino->size + FS_BLOCK_SIZE - 1) / FS_BLOCK_SIZE;
+    uint8_t buf[FS_BLOCK_SIZE];
+
+    for (uint32_t lb = 0; lb < blocks; lb++) {
+        uint32_t phys;
+        int r = fs_bmap(fs, dir_ino, lb, false, &phys);
+        if (r != FS_OK) return r;
+        if (phys == FS_INVALID_BLOCK) continue;
+
+        r = fs_read_block_i(fs, phys, buf);
+        if (r != FS_OK) return r;
+
+        uint32_t off = 0;
+        while (off + sizeof(struct fs_dirent) <= FS_BLOCK_SIZE) {
+            struct fs_dirent *de = (struct fs_dirent *)(buf + off);
+            if (de->entry_size == 0) break;
+            if (de->name_len != 0 && de->inode_num == target_ino &&
+                de->hash == hash) {
+                /* Mark entry as deleted */
+                de->name_len  = 0;
+                de->inode_num = 0;
+                de->type      = 0;
+                de->hash      = 0;
+                return fs_write_block_i(fs, phys, buf);
+            }
+            off += de->entry_size;
+        }
+    }
+
+    return FS_ERR_NOT_FOUND;
+}
+
+/* Free all data blocks owned by an inode (direct + indirect + double indirect).
+ * Decrements SIT valid_count and increments free_blocks_count for each freed
+ * block, then invalidates the inode's NAT entry. */
+static void fs_free_inode_blocks(struct fs *fs, struct fs_inode *ino) {
+    /* Direct blocks */
+    for (uint32_t i = 0; i < FS_DIRECT_BLOCKS; i++) {
+        uint32_t blk = ino->direct[i];
+        if (blk != FS_INVALID_BLOCK && blk != 0) {
+            uint32_t seg = blk / FS_BLOCKS_PER_SEGMENT;
+            if (seg < fs->sb.total_segments && fs->sit[seg].valid_count > 0) {
+                fs->sit[seg].valid_count--;
+                fs->sit_dirty = true;
+            }
+            fs->free_blocks_count++;
+            ino->direct[i] = FS_INVALID_BLOCK;
+        }
+    }
+
+    /* Single indirect */
+    if (ino->indirect != FS_INVALID_BLOCK) {
+        struct fs_indirect_node node;
+        uint8_t nbuf[FS_BLOCK_SIZE];
+        if (fs_read_block_i(fs, ino->indirect, nbuf) == FS_OK) {
+            memcpy(&node, nbuf, sizeof(node));
+            for (uint32_t i = 0; i < FS_INDIRECT_PTRS; i++) {
+                uint32_t blk = node.ptrs[i];
+                if (blk != FS_INVALID_BLOCK && blk != 0) {
+                    uint32_t seg = blk / FS_BLOCKS_PER_SEGMENT;
+                    if (seg < fs->sb.total_segments && fs->sit[seg].valid_count > 0) {
+                        fs->sit[seg].valid_count--;
+                        fs->sit_dirty = true;
+                    }
+                    fs->free_blocks_count++;
+                }
+            }
+        }
+        /* Free the indirect node block itself */
+        uint32_t seg = ino->indirect / FS_BLOCKS_PER_SEGMENT;
+        if (seg < fs->sb.total_segments && fs->sit[seg].valid_count > 0) {
+            fs->sit[seg].valid_count--;
+            fs->sit_dirty = true;
+        }
+        fs->free_blocks_count++;
+        ino->indirect = FS_INVALID_BLOCK;
+    }
+
+    /* Double indirect — free leaf data blocks + L2 nodes + L1 node */
+    if (ino->double_indirect != FS_INVALID_BLOCK) {
+        struct fs_indirect_node l1;
+        uint8_t l1buf[FS_BLOCK_SIZE];
+        if (fs_read_block_i(fs, ino->double_indirect, l1buf) == FS_OK) {
+            memcpy(&l1, l1buf, sizeof(l1));
+            for (uint32_t i = 0; i < FS_INDIRECT_PTRS; i++) {
+                if (l1.ptrs[i] == FS_INVALID_BLOCK) continue;
+
+                struct fs_indirect_node l2;
+                uint8_t l2buf[FS_BLOCK_SIZE];
+                if (fs_read_block_i(fs, l1.ptrs[i], l2buf) == FS_OK) {
+                    memcpy(&l2, l2buf, sizeof(l2));
+                    for (uint32_t j = 0; j < FS_INDIRECT_PTRS; j++) {
+                        uint32_t blk = l2.ptrs[j];
+                        if (blk != FS_INVALID_BLOCK && blk != 0) {
+                            uint32_t seg = blk / FS_BLOCKS_PER_SEGMENT;
+                            if (seg < fs->sb.total_segments && fs->sit[seg].valid_count > 0) {
+                                fs->sit[seg].valid_count--;
+                                fs->sit_dirty = true;
+                            }
+                            fs->free_blocks_count++;
+                        }
+                    }
+                }
+                /* Free the L2 node */
+                uint32_t seg = l1.ptrs[i] / FS_BLOCKS_PER_SEGMENT;
+                if (seg < fs->sb.total_segments && fs->sit[seg].valid_count > 0) {
+                    fs->sit[seg].valid_count--;
+                    fs->sit_dirty = true;
+                }
+                fs->free_blocks_count++;
+            }
+        }
+        /* Free the L1 (double-indirect root) node */
+        uint32_t seg = ino->double_indirect / FS_BLOCKS_PER_SEGMENT;
+        if (seg < fs->sb.total_segments && fs->sit[seg].valid_count > 0) {
+            fs->sit[seg].valid_count--;
+            fs->sit_dirty = true;
+        }
+        fs->free_blocks_count++;
+        ino->double_indirect = FS_INVALID_BLOCK;
+    }
+
+    /* Invalidate the inode's own block in NAT */
+    uint32_t ino_num = ino->inode_num;
+    if (ino_num > 0 && ino_num < fs->sb.total_inodes) {
+        uint32_t iblk = fs->nat[ino_num].block_addr;
+        if (iblk != FS_INVALID_BLOCK) {
+            uint32_t seg = iblk / FS_BLOCKS_PER_SEGMENT;
+            if (seg < fs->sb.total_segments && fs->sit[seg].valid_count > 0) {
+                fs->sit[seg].valid_count--;
+                fs->sit_dirty = true;
+            }
+            fs->free_blocks_count++;
+        }
+        fs->nat[ino_num].block_addr = FS_INVALID_BLOCK;
+        fs->nat[ino_num].type       = 0;
+        fs->nat_dirty = true;
+    }
+}
+
 int fs_unlink(struct fs *fs, const char *path) {
-    (void)fs;
-    (void)path;
-    /* TODO: walk parent dir, zero dirent, dec link, possibly free blocks */
-    return FS_ERR_UNSUPPORTED;
+    if (!fs || !path) return FS_ERR_INVALID_ARG;
+
+    /* Resolve the target and its parent */
+    uint32_t ino;
+    uint32_t parent;
+    char name[64];
+    int r = fs_resolve_path(fs, path, &ino, &parent, name, sizeof(name));
+    if (r != FS_OK) return r;
+
+    /* Can't unlink root */
+    if (ino == FS_ROOT_INODE) return FS_ERR_PERMISSION;
+
+    /* Load the target inode */
+    struct fs_inode target;
+    r = fs_load_inode(fs, ino, &target);
+    if (r != FS_OK) return r;
+
+    /* Don't unlink non-empty directories */
+    if ((target.mode & FS_MODE_DIR) && target.size > 0)
+        return FS_ERR_PERMISSION;
+
+    /* Load parent and remove the directory entry */
+    struct fs_inode parent_ino;
+    r = fs_load_inode(fs, parent, &parent_ino);
+    if (r != FS_OK) return r;
+
+    /* Resolve the last component name for removal */
+    /* If name is empty (exact match), re-derive from path */
+    char rm_name[64];
+    if (name[0] == '\0') {
+        /* Extract last component from path */
+        const char *p = path + strlen(path) - 1;
+        while (p > path && *p == '/') p--;
+        const char *end = p + 1;
+        while (p > path && *(p - 1) != '/') p--;
+        size_t len = (size_t)(end - p);
+        if (len >= sizeof(rm_name)) len = sizeof(rm_name) - 1;
+        memcpy(rm_name, p, len);
+        rm_name[len] = '\0';
+    } else {
+        strncpy(rm_name, name, sizeof(rm_name) - 1);
+        rm_name[sizeof(rm_name) - 1] = '\0';
+    }
+
+    r = fs_dir_remove(fs, &parent_ino, rm_name, ino);
+    if (r != FS_OK) return r;
+
+    /* Decrement link count */
+    if (target.link_count > 0) target.link_count--;
+
+    if (target.link_count == 0) {
+        /* No more references — free all blocks */
+        fs_free_inode_blocks(fs, &target);
+    } else {
+        /* Still has links — just update the inode */
+        r = fs_store_inode(fs, &target);
+        if (r != FS_OK) return r;
+    }
+
+    /* Update parent timestamps */
+    parent_ino.mtime = parent_ino.ctime = (uint32_t)0;
+    r = fs_store_inode(fs, &parent_ino);
+
+    return r;
 }

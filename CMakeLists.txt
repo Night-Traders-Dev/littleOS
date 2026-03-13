@@ -238,6 +238,8 @@ add_library(littleos_core STATIC
     src/hal/dma.c
     src/hal/usb_device.c
     src/hal/power.c
+    src/hal/rtc.c
+    src/hal/timer.c
 #
     src/shell/cmd_ipc.c
     src/shell/cmd_hw.c
@@ -275,6 +277,8 @@ add_library(littleos_core STATIC
     src/shell/cmd_gpiowatch.c
     src/shell/cmd_neopixel.c
     src/shell/cmd_display.c
+    src/shell/cmd_rtc.c
+    src/shell/cmd_timer.c
 #
     src/sys/system_info.c
     src/sys/permissions.c

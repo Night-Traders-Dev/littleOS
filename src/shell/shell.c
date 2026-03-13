@@ -79,6 +79,8 @@ extern int  cmd_adcstream(int argc, char *argv[]);
 extern int  cmd_gpiowatch(int argc, char *argv[]);
 extern int  cmd_neopixel(int argc, char *argv[]);
 extern int  cmd_display(int argc, char *argv[]);
+extern int  cmd_rtc(int argc, char *argv[]);
+extern int  cmd_timer(int argc, char *argv[]);
 #if LITTLEOS_HAS_HSTX
 extern int  cmd_display_dvi(int argc, char *argv[]);
 #endif
@@ -170,6 +172,8 @@ static const shell_cmd_t cmd_table[] = {
     { "gpiowatch",  cmd_gpiowatch,   "GPIO state monitor" },
     { "neopixel",   cmd_neopixel,    "WS2812 NeoPixel control" },
     { "display",    cmd_display,     "SSD1306 OLED display" },
+    { "rtc",        cmd_rtc,         "External RTC (DS3231/PCF8563)" },
+    { "timer",      cmd_timer,       "General-purpose timers" },
 #if LITTLEOS_HAS_HSTX
     { "dvi",        cmd_display_dvi, "DVI display (HSTX output)" },
 #endif
