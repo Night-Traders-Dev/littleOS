@@ -337,24 +337,6 @@ void kernel_main(void) {
     // Initialize module subsystem (registers built-in driver modules)
     module_subsys_init();
 
-    // Auto-load DVI console and USB keyboard on RP2350 boards
-#if LITTLEOS_HAS_HSTX
-    printf("Loading DVI text console...\r\n");
-    if (module_load("dvi_console") == 0) {
-        dmesg_info("DVI text console loaded (default TTY output)");
-    } else {
-        dmesg_warn("DVI text console failed to load");
-    }
-#endif
-#ifdef LITTLEOS_USB_HOST
-    printf("Loading USB HID keyboard...\r\n");
-    if (module_load("usb_keyboard") == 0) {
-        dmesg_info("USB HID keyboard loaded (host mode)");
-    } else {
-        dmesg_warn("USB HID keyboard failed to load");
-    }
-#endif
-
     // Initialize shell environment (env vars, aliases, prompt)
     shell_env_init();
     dmesg_info("Shell environment initialized");
@@ -400,6 +382,25 @@ void kernel_main(void) {
     syslog_init();
     dmesg_info("Debug subsystems initialized (logcat, trace, coredump, syslog)");
 
+    // Auto-load DVI console on RP2350 boards (HSTX → DVI TTY output)
+#if LITTLEOS_HAS_HSTX
+    printf("Loading DVI console...\r\n");
+    if (module_load("dvi_console") == 0) {
+        dmesg_info("DVI console loaded (HSTX → 640x480 TTY)");
+    } else {
+        dmesg_warn("DVI console failed to load");
+    }
+#endif
+
+#ifdef LITTLEOS_USB_HOST
+    printf("Loading USB HID keyboard...\r\n");
+    if (module_load("usb_keyboard") == 0) {
+        dmesg_info("USB HID keyboard loaded (host mode)");
+    } else {
+        dmesg_warn("USB HID keyboard failed to load");
+    }
+#endif
+
     // Enable watchdog AFTER all init is done - start monitoring for hangs
     wdt_enable(8000);  // 8 second timeout
     printf("✓ Watchdog: Active (8s timeout - auto-recovery enabled)\r\n");
@@ -409,11 +410,6 @@ void kernel_main(void) {
     supervisor_init();
     printf("✓ Supervisor: Core 1 monitoring system health\r\n");
     dmesg_info("Supervisor launched on Core 1");
-
-    // Display boot log for 2 seconds
-    printf("\r\n");
-    printf("Boot sequence complete. Starting shell in 2 seconds...\r\n");
-    sleep_ms(2000);
 
     // Clear screen (ANSI escape code)
     printf("\033[2J\033[H");

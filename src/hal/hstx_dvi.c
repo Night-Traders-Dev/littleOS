@@ -27,6 +27,7 @@
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
+#include "hardware/resets.h"
 #include "hardware/structs/bus_ctrl.h"
 #include "hardware/structs/hstx_ctrl.h"
 #include "hardware/structs/hstx_fifo.h"
@@ -127,36 +128,49 @@ static struct {
     bool            active;
     dvi_mode_t      mode;
     dvi_pixel_format_t format;
-    uint16_t        width;          /* Framebuffer width */
-    uint16_t        height;         /* Framebuffer height */
+    uint16_t        width;          /* Framebuffer width (always 640 for DVI) */
+    uint16_t        height;         /* Framebuffer height (240 or 480) */
     uint8_t         bpp;            /* Bytes per pixel */
+    uint8_t         vscale;         /* Vertical scale factor (1 or 2) */
     const uint8_t  *framebuffer;
     uint32_t        fb_size;
     int             dma_ping;       /* DMA channel A */
     int             dma_pong;       /* DMA channel B */
     volatile uint32_t frame_count;
-    bool            pixel_double;   /* 320x240 → 640x480 doubling */
 } s_dvi;
 
-/* Line buffer for 320x240 horizontal pixel doubling (640 bytes max) */
-static uint8_t s_line_buf[MODE_H_ACTIVE_PIXELS] __attribute__((aligned(4)));
-
 /* IRQ state — must survive across interrupts */
-static volatile bool     s_dma_pong = false;
-static volatile uint     s_v_scanline = 2;  /* Start at 2 (ping+pong pre-cued) */
+static volatile uint     s_v_scanline = 0;
 static volatile bool     s_vactive_cmdlist_posted = false;
 
 /* =========================================================================
  * DMA IRQ Handler (runs in RAM for speed)
+ *
+ * No chain_to: each channel is started manually by the ISR after
+ * reconfiguring it. The 8-entry HSTX FIFO absorbs the brief gap
+ * between one channel finishing and the next starting (~1 µs).
+ *
+ * chain_to was removed because at startup the FIFO can absorb both
+ * 7-word vblank transfers without DREQ stalling, causing both channels
+ * to complete before any ISR runs. The chained channel then has
+ * TRANS_COUNT=0 → zero-length completion → IRQ storm → CPU hang.
  * ========================================================================= */
 
 static void __not_in_flash_func(hstx_dma_irq_handler)(void) {
-    /* Determine which channel just finished and needs reconfiguration */
-    uint ch_num = s_dma_pong ? s_dvi.dma_pong : s_dvi.dma_ping;
-    dma_channel_hw_t *ch = &dma_hw->ch[ch_num];
-    dma_hw->intr = 1u << ch_num;
-    s_dma_pong = !s_dma_pong;
+    /* Determine which channel completed from hardware flags */
+    uint32_t ints = dma_hw->ints1;
+    uint ch_next;
 
+    if (ints & (1u << s_dvi.dma_ping)) {
+        dma_hw->ints1 = 1u << s_dvi.dma_ping;
+        ch_next = s_dvi.dma_pong;
+    } else {
+        dma_hw->ints1 = 1u << s_dvi.dma_pong;
+        ch_next = s_dvi.dma_ping;
+    }
+
+    /* Configure the OTHER channel for the next scanline segment */
+    dma_channel_hw_t *ch = &dma_hw->ch[ch_next];
     uint v = s_v_scanline;
 
     if (v >= MODE_V_FRONT_PORCH &&
@@ -174,28 +188,22 @@ static void __not_in_flash_func(hstx_dma_irq_handler)(void) {
         ch->transfer_count = count_of(vactive_line);
         s_vactive_cmdlist_posted = true;
     } else {
-        /* Active region: second DMA for this line sends pixel data */
+        /* Active region: second DMA for this line sends pixel data.
+         * DMA reads directly from the framebuffer — no per-pixel loops
+         * in the ISR. Horizontal doubling is done at render time;
+         * vertical doubling is just an index division here. */
         uint active_line = v - (MODE_V_TOTAL_LINES - MODE_V_ACTIVE_LINES);
+        uint fb_row = (s_dvi.vscale > 1) ? active_line / s_dvi.vscale
+                                         : active_line;
 
-        if (s_dvi.pixel_double) {
-            /* 320x240 mode: pixel-double horizontally into line buffer */
-            uint fb_row = active_line / 2;
-            const uint8_t *src = &s_dvi.framebuffer[fb_row * s_dvi.width];
-            uint8_t *dst = s_line_buf;
-            for (uint i = 0; i < s_dvi.width; i++) {
-                dst[i * 2]     = src[i];
-                dst[i * 2 + 1] = src[i];
-            }
-            ch->read_addr = (uintptr_t)s_line_buf;
-        } else {
-            /* 640x480 mode: DMA directly from framebuffer */
-            ch->read_addr = (uintptr_t)&s_dvi.framebuffer[
-                active_line * MODE_H_ACTIVE_PIXELS];
-        }
-
+        ch->read_addr = (uintptr_t)&s_dvi.framebuffer[
+            fb_row * s_dvi.width * s_dvi.bpp];
         ch->transfer_count = MODE_H_ACTIVE_PIXELS / sizeof(uint32_t);
         s_vactive_cmdlist_posted = false;
     }
+
+    /* Start the next channel */
+    dma_channel_start(ch_next);
 
     /* Advance scanline only after both command list and pixels are posted */
     if (!s_vactive_cmdlist_posted) {
@@ -268,7 +276,8 @@ static void hstx_configure(dvi_pixel_format_t format) {
      * N_SHIFTS=5: Pop from expander every 5 cycles
      * SHIFT=2: Right-rotate shift register by 2 bits each cycle (DDR)
      * EXPAND_EN: Command expander enabled
-     * EN: HSTX enabled
+     * EN is NOT set here — deferred to hstx_dvi_start() so DMA is
+     * ready before the HSTX begins consuming FIFO entries.
      *
      * At 125 MHz HSTX clock, 2 bits/cycle = 250 Mbps output rate.
      * This is within spec for 640x480@60Hz (needs 252 Mbps). */
@@ -277,8 +286,7 @@ static void hstx_configure(dvi_pixel_format_t format) {
         HSTX_CTRL_CSR_EXPAND_EN_BITS |
         5u << HSTX_CTRL_CSR_CLKDIV_LSB |
         5u << HSTX_CTRL_CSR_N_SHIFTS_LSB |
-        2u << HSTX_CTRL_CSR_SHIFT_LSB |
-        HSTX_CTRL_CSR_EN_BITS;
+        2u << HSTX_CTRL_CSR_SHIFT_LSB;
 
     /* Configure HSTX output pin mapping.
      *
@@ -328,16 +336,23 @@ int hstx_dvi_init(dvi_mode_t mode, dvi_pixel_format_t format) {
 
     memset((void *)&s_dvi, 0, sizeof(s_dvi));
 
+    /* Hardware reset HSTX to ensure clean state */
+    reset_block(RESETS_RESET_HSTX_BITS);
+    unreset_block_wait(RESETS_RESET_HSTX_BITS);
+
     switch (mode) {
     case DVI_MODE_640x480_60HZ:
         s_dvi.width = 640;
         s_dvi.height = 480;
-        s_dvi.pixel_double = false;
+        s_dvi.vscale = 1;
         break;
     case DVI_MODE_320x240_60HZ:
-        s_dvi.width = 320;
+        /* Framebuffer is 640×240 — horizontal doubling is done at render
+         * time, vertical doubling via row repetition (active_line / 2).
+         * This keeps the ISR loop-free so DMA chain_to is safe. */
+        s_dvi.width = 640;
         s_dvi.height = 240;
-        s_dvi.pixel_double = true;
+        s_dvi.vscale = 2;
         break;
     default:
         dmesg_err("hstx_dvi: invalid mode %d", mode);
@@ -350,8 +365,10 @@ int hstx_dvi_init(dvi_mode_t mode, dvi_pixel_format_t format) {
         break;
     case DVI_PIXEL_RGB565:
         s_dvi.bpp = 2;
-        if (mode == DVI_MODE_640x480_60HZ) {
-            dmesg_err("hstx_dvi: RGB565 at 640x480 requires 614KB — exceeds SRAM");
+        if (s_dvi.width * s_dvi.height * 2 > 256 * 1024) {
+            dmesg_err("hstx_dvi: RGB565 at %ux%u requires %uKB — exceeds budget",
+                      s_dvi.width, s_dvi.height,
+                      (s_dvi.width * s_dvi.height * 2) / 1024);
             return -1;
         }
         break;
@@ -422,19 +439,20 @@ int hstx_dvi_start(void) {
     }
 
     /* Reset scanline state */
-    s_dma_pong = false;
-    s_v_scanline = 2;
+    s_v_scanline = 0;
     s_vactive_cmdlist_posted = false;
     s_dvi.frame_count = 0;
 
-    /* Configure DMA ping-pong channels.
-     * Both channels write to the HSTX FIFO and chain to each other.
-     * When one finishes, the IRQ handler reconfigures it while the
-     * other channel continues outputting data. */
+    /* Configure DMA channels (NO chain_to — ISR starts each manually).
+     *
+     * chain_to was removed because the 8-entry HSTX FIFO can absorb
+     * both initial 7-word vblank transfers without DREQ stalling.
+     * Both channels would complete before any ISR runs, and the
+     * chained channel (with TRANS_COUNT=0) fires a zero-length
+     * transfer → immediate completion → IRQ storm → CPU hang. */
     dma_channel_config c;
 
     c = dma_channel_get_default_config(s_dvi.dma_ping);
-    channel_config_set_chain_to(&c, s_dvi.dma_pong);
     channel_config_set_dreq(&c, DREQ_HSTX);
     dma_channel_configure(
         s_dvi.dma_ping,
@@ -446,7 +464,6 @@ int hstx_dvi_start(void) {
     );
 
     c = dma_channel_get_default_config(s_dvi.dma_pong);
-    channel_config_set_chain_to(&c, s_dvi.dma_ping);
     channel_config_set_dreq(&c, DREQ_HSTX);
     dma_channel_configure(
         s_dvi.dma_pong,
@@ -457,20 +474,37 @@ int hstx_dvi_start(void) {
         false
     );
 
-    /* Enable DMA completion IRQs for both channels */
-    dma_hw->ints0 = (1u << s_dvi.dma_ping) | (1u << s_dvi.dma_pong);
-    dma_hw->inte0 = (1u << s_dvi.dma_ping) | (1u << s_dvi.dma_pong);
-    irq_set_exclusive_handler(DMA_IRQ_0, hstx_dma_irq_handler);
-    irq_set_enabled(DMA_IRQ_0, true);
+    /* Enable DMA completion IRQs for both channels BEFORE starting.
+     * Use DMA_IRQ_1 to avoid conflict with dma_hal (which uses DMA_IRQ_0).
+     * Set LOWEST priority so a misbehaving ISR can't starve USB/SysTick. */
+    dma_hw->ints1 = (1u << s_dvi.dma_ping) | (1u << s_dvi.dma_pong);
+    dma_hw->inte1 = (1u << s_dvi.dma_ping) | (1u << s_dvi.dma_pong);
+    irq_set_exclusive_handler(DMA_IRQ_1, hstx_dma_irq_handler);
+    irq_set_priority(DMA_IRQ_1, PICO_LOWEST_IRQ_PRIORITY);
+    irq_set_enabled(DMA_IRQ_1, true);
 
-    /* Give DMA highest bus priority for consistent video output */
-    bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_DMA_W_BITS |
-                            BUSCTRL_BUS_PRIORITY_DMA_R_BITS;
-
-    /* Start the ping channel — it chains to pong automatically */
+    /* Start DMA ping first (DREQ-paced, won't transfer until HSTX runs) */
     dma_channel_start(s_dvi.dma_ping);
 
+    /* Enable HSTX — begins clocking and generating DREQ.
+     * DMA is already started and waiting, so data flows immediately. */
+    hstx_ctrl_hw->csr |= HSTX_CTRL_CSR_EN_BITS;
+
     s_dvi.active = true;
+
+    /* Verify DVI is actually producing frames (timeout 200ms).
+     * If the ISR is broken (e.g. IRQ storm), frame_count won't advance
+     * normally. At 60fps we expect ~12 frames in 200ms. */
+    uint64_t deadline = time_us_64() + 200000;
+    while (s_dvi.frame_count < 2) {
+        if (time_us_64() > deadline) {
+            dmesg_err("hstx_dvi: no frames produced in 200ms, aborting");
+            hstx_dvi_stop();
+            return -1;
+        }
+        tight_loop_contents();
+    }
+
     dmesg_info("hstx_dvi: output started (%ux%u → 640x480)",
                s_dvi.width, s_dvi.height);
 
@@ -483,9 +517,9 @@ int hstx_dvi_stop(void) {
     }
 
     if (s_dvi.active) {
-        /* Disable IRQs first */
-        irq_set_enabled(DMA_IRQ_0, false);
-        dma_hw->inte0 &= ~((1u << s_dvi.dma_ping) | (1u << s_dvi.dma_pong));
+        /* Disable IRQs first (using DMA_IRQ_1) */
+        irq_set_enabled(DMA_IRQ_1, false);
+        dma_hw->inte1 &= ~((1u << s_dvi.dma_ping) | (1u << s_dvi.dma_pong));
 
         /* Abort both DMA channels */
         dma_channel_abort(s_dvi.dma_ping);
@@ -493,9 +527,6 @@ int hstx_dvi_stop(void) {
 
         /* Disable HSTX */
         hstx_ctrl_hw->csr &= ~HSTX_CTRL_CSR_EN_BITS;
-
-        /* Restore default bus priority */
-        bus_ctrl_hw->priority = 0;
 
         s_dvi.active = false;
         dmesg_info("hstx_dvi: output stopped");

@@ -156,7 +156,10 @@ static const uint8_t ansi_fg_bright[8] = {
  * Console State
  * ================================================================ */
 
-#define FB_W 320
+/* Framebuffer is 640×240. Horizontal doubling is done here at render time
+ * (each font pixel becomes 2 FB pixels wide). Vertical doubling is handled
+ * by the HSTX DVI driver (each FB row displayed twice → 640×480 output). */
+#define FB_W 640
 #define FB_H 240
 
 /* Character cell: stores character + attributes */
@@ -168,7 +171,7 @@ typedef struct {
 
 static struct {
     bool        active;
-    uint8_t     *framebuffer;   /* Points to DVI framebuffer (320*240 bytes) */
+    uint8_t     *framebuffer;   /* Points to DVI framebuffer (640*240 bytes) */
 
     /* Text grid */
     cell_t      cells[DVI_CONSOLE_ROWS][DVI_CONSOLE_COLS];
@@ -196,12 +199,14 @@ static struct {
  * Framebuffer Rendering
  * ================================================================ */
 
-/* Render a single character cell to the framebuffer */
+/* Render a single character cell to the framebuffer.
+ * Each 4-pixel-wide font glyph is rendered 2× wide (8 FB pixels per char)
+ * so that 80 columns × 8 = 640 pixels fills the 640-wide framebuffer. */
 static void render_cell(int col, int row) {
     if (!s_con.framebuffer) return;
 
     cell_t *cell = &s_con.cells[row][col];
-    int px = col * DVI_CONSOLE_FONT_W;
+    int px = col * DVI_CONSOLE_FONT_W * 2;  /* 8 FB pixels per column */
     int py = row * DVI_CONSOLE_FONT_H;
 
     char ch = cell->ch;
@@ -214,28 +219,26 @@ static void render_cell(int col, int row) {
         if (fb_y >= FB_H) break;
 
         for (int x = 0; x < DVI_CONSOLE_FONT_W; x++) {
-            int fb_x = px + x;
-            if (fb_x >= FB_W) break;
-
-            bool on = (bits >> (3 - x)) & 1;
-            s_con.framebuffer[fb_y * FB_W + fb_x] = on ? cell->fg : cell->bg;
+            int fb_x = px + x * 2;
+            uint8_t color = (bits >> (3 - x)) & 1 ? cell->fg : cell->bg;
+            s_con.framebuffer[fb_y * FB_W + fb_x]     = color;
+            s_con.framebuffer[fb_y * FB_W + fb_x + 1] = color;
         }
     }
 }
 
-/* Render the cursor (inverse block at cursor position) */
+/* Render the cursor (solid block at cursor position, 2× wide) */
 static void render_cursor(void) {
     if (!s_con.framebuffer) return;
     if (s_con.cursor_x >= DVI_CONSOLE_COLS || s_con.cursor_y >= DVI_CONSOLE_ROWS) return;
 
-    int px = s_con.cursor_x * DVI_CONSOLE_FONT_W;
+    int px = s_con.cursor_x * DVI_CONSOLE_FONT_W * 2;
     int py = s_con.cursor_y * DVI_CONSOLE_FONT_H;
 
-    /* Draw a solid block cursor in the fg color */
     for (int y = 0; y < DVI_CONSOLE_FONT_H; y++) {
         int fb_y = py + y;
         if (fb_y >= FB_H) break;
-        for (int x = 0; x < DVI_CONSOLE_FONT_W; x++) {
+        for (int x = 0; x < DVI_CONSOLE_FONT_W * 2; x++) {
             int fb_x = px + x;
             if (fb_x >= FB_W) break;
             s_con.framebuffer[fb_y * FB_W + fb_x] = s_con.fg_color;
@@ -568,7 +571,7 @@ int dvi_console_init(void) {
     s_con.active = true;
     render_all();
 
-    dmesg_info("DVI console active (80x30, 320x240 RGB332)");
+    dmesg_info("DVI console active (80x30, 640x240 RGB332 → 640x480 output)");
     return 0;
 }
 
@@ -635,7 +638,8 @@ static void dvi_console_mod_deinit(module_t *mod) {
 static void dvi_console_mod_status(module_t *mod) {
     (void)mod;
     printf("DVI Console: %s\r\n", s_con.active ? "active" : "inactive");
-    printf("  Resolution:  320x240 RGB332\r\n");
+    printf("  Framebuffer: 640x240 RGB332 (153KB)\r\n");
+    printf("  Output:      640x480 @ 60Hz (vertical 2x)\r\n");
     printf("  Text grid:   %dx%d\r\n", DVI_CONSOLE_COLS, DVI_CONSOLE_ROWS);
     printf("  Cursor:      (%d, %d)\r\n", s_con.cursor_x, s_con.cursor_y);
     printf("  GPIO:        12-19 (HSTX)\r\n");

@@ -42,10 +42,18 @@ setup_riscv_toolchain() {
         fi
     done
 
-    # No bare-metal RISC-V toolchain found
-    echo "  WARNING: No RISC-V bare-metal toolchain found."
-    echo "  The Pico SDK requires riscv32-unknown-elf-gcc (bare-metal)."
+    # Not found automatically — prompt the user for the path
+    echo "  RISC-V bare-metal toolchain (riscv32-unknown-elf-gcc) not found in PATH."
     echo "  Note: riscv32-unknown-linux-gnu-gcc (Linux target) will NOT work."
+    read -rp "  Enter path to RISC-V toolchain bin/ directory (or leave empty to skip): " riscv_path
+    if [[ -n "$riscv_path" && -x "$riscv_path/riscv32-unknown-elf-gcc" ]]; then
+        export PATH="$riscv_path:$PATH"
+        RISCV_AVAILABLE=true
+        return 0
+    elif [[ -n "$riscv_path" ]]; then
+        echo "  ERROR: riscv32-unknown-elf-gcc not found in $riscv_path"
+    fi
+
     echo "  Install: https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack"
     return 1
 }
@@ -246,7 +254,8 @@ fi
 
 # USB stdio option
 echo
-read -rp "Enable USB stdio (shell over USB, no UART adapter needed)? [y/N] " usb_stdio
+read -rp "Enable USB stdio (shell over USB, no UART adapter needed)? [Y/n] " usb_stdio
+usb_stdio=${usb_stdio:-Y}
 USB_CMAKE_OPTS=()
 if [[ "$usb_stdio" =~ ^[Yy]$ ]]; then
     USB_CMAKE_OPTS=("-DLITTLEOS_USB_STDIO=ON")

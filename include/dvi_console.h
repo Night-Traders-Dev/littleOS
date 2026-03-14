@@ -4,7 +4,7 @@
  * Supports ANSI escape codes for colors, cursor movement, and clearing.
  * Auto-enabled on RP2350 boards with HSTX during boot.
  *
- * Resolution: 320x240 RGB332 → 80x30 characters (4x8 font)
+ * Framebuffer: 640x240 RGB332 → 640x480 output → 80x30 characters (4x8 font, 2x scaled)
  */
 #ifndef LITTLEOS_DVI_CONSOLE_H
 #define LITTLEOS_DVI_CONSOLE_H
