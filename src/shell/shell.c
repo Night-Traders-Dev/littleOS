@@ -312,6 +312,18 @@ bool shell_authorize_command(const task_sec_ctx_t *task_ctx,
     static const char *const read_only_dev_subcommands[] = {
         "list", "read", "info", NULL
     };
+    static const char *const read_only_trace_subcommands[] = {
+        "status", "dump", NULL
+    };
+    static const char *const read_only_logcat_subcommands[] = {
+        "tail", "all", "filter", "count", "help", "-h", NULL
+    };
+    static const char *const read_only_profile_subcommands[] = {
+        "status", "report", "tasks", "system", "benchmark", "help", "-h", NULL
+    };
+    static const char *const read_only_syslog_subcommands[] = {
+        "show", "boot", NULL
+    };
 
     if (!task_ctx || argc <= 0 || !argv || !argv[0]) {
         if (reason) *reason = "invalid command context";
@@ -350,6 +362,10 @@ bool shell_authorize_command(const task_sec_ctx_t *task_ctx,
     }
 
     if (strcmp(argv[0], "dmesg") == 0) {
+        if (shell_subcommand_is(argc, argv, "-c") || shell_subcommand_is(argc, argv, "--clear")) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_DMESG,
+                                        PERM_WRITE, CAP_SYS_ADMIN, reason);
+        }
         return shell_require_access(task_ctx, PERM_RESOURCE_DMESG,
                                     PERM_READ, 0, reason);
     }
@@ -381,12 +397,55 @@ bool shell_authorize_command(const task_sec_ctx_t *task_ctx,
         }
     }
 
-    if (strcmp(argv[0], "top") == 0 || strcmp(argv[0], "profile") == 0 ||
-        strcmp(argv[0], "logcat") == 0 || strcmp(argv[0], "trace") == 0 ||
-        strcmp(argv[0], "benchmark") == 0 || strcmp(argv[0], "coredump") == 0 ||
-        strcmp(argv[0], "syslog") == 0) {
+    if (strcmp(argv[0], "top") == 0 || strcmp(argv[0], "benchmark") == 0) {
         return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
                                     PERM_READ, 0, reason);
+    }
+
+    if (strcmp(argv[0], "trace") == 0) {
+        if (argc < 2 || shell_subcommand_in(argc, argv, read_only_trace_subcommands)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
+                                    PERM_WRITE, CAP_SYS_ADMIN, reason);
+    }
+
+    if (strcmp(argv[0], "logcat") == 0) {
+        if (argc < 2 || shell_subcommand_in(argc, argv, read_only_logcat_subcommands) ||
+            (shell_subcommand_is(argc, argv, "level") && argc < 3)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
+                                    PERM_WRITE, CAP_SYS_ADMIN, reason);
+    }
+
+    if (strcmp(argv[0], "profile") == 0) {
+        if (argc < 2 || shell_subcommand_in(argc, argv, read_only_profile_subcommands)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
+                                    PERM_WRITE, CAP_SYS_ADMIN, reason);
+    }
+
+    if (strcmp(argv[0], "coredump") == 0) {
+        if (argc < 2 || shell_subcommand_is(argc, argv, "show")) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
+                                    PERM_WRITE, CAP_SYS_ADMIN, reason);
+    }
+
+    if (strcmp(argv[0], "syslog") == 0) {
+        if (argc < 2 || shell_subcommand_in(argc, argv, read_only_syslog_subcommands)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
+                                    PERM_WRITE, CAP_SYS_ADMIN, reason);
     }
 
     if (strcmp(argv[0], "watchpoint") == 0 || strcmp(argv[0], "selftest") == 0) {
@@ -429,8 +488,21 @@ bool shell_authorize_command(const task_sec_ctx_t *task_ctx,
                                     PERM_WRITE, CAP_GPIO_WRITE, reason);
     }
 
+    if (strcmp(argv[0], "dma") == 0) {
+        if (shell_subcommand_is(argc, argv, "status")) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_UART0,
+                                        PERM_READ, 0, reason);
+        }
+        if (shell_subcommand_is(argc, argv, "memcpy")) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
+                                        PERM_WRITE, CAP_SYS_ADMIN, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_UART0,
+                                    PERM_WRITE, CAP_GPIO_WRITE, reason);
+    }
+
     if (strcmp(argv[0], "hw") == 0 || strcmp(argv[0], "pio") == 0 ||
-        strcmp(argv[0], "dma") == 0 || strcmp(argv[0], "usb") == 0 ||
+        strcmp(argv[0], "usb") == 0 ||
         strcmp(argv[0], "wire") == 0 || strcmp(argv[0], "pwmtune") == 0 ||
         strcmp(argv[0], "adc") == 0 || strcmp(argv[0], "gpiowatch") == 0 ||
         strcmp(argv[0], "neopixel") == 0 || strcmp(argv[0], "display") == 0 ||
@@ -562,13 +634,35 @@ static char history[HISTORY_SIZE][MAX_CMD_LEN];
 static int  history_count = 0;
 static int  history_pos   = 0;
 
+static const char *history_sanitize_command(const char *cmd, char *buf, size_t buflen) {
+    if (!cmd || !buf || buflen == 0) {
+        return cmd;
+    }
+
+    if (strncmp(cmd, "remote token set ", 17) == 0) {
+        snprintf(buf, buflen, "remote token set [redacted]");
+        return buf;
+    }
+
+    if (strncmp(cmd, "ota key set ", 12) == 0) {
+        snprintf(buf, buflen, "ota key set [redacted]");
+        return buf;
+    }
+
+    return cmd;
+}
+
 static void add_to_history(const char* cmd) {
+    char sanitized[MAX_CMD_LEN];
+    const char *to_store;
+
     if (cmd[0] == '\0') return;
+    to_store = history_sanitize_command(cmd, sanitized, sizeof(sanitized));
     if (history_count > 0 &&
-        strcmp(history[(history_count - 1) % HISTORY_SIZE], cmd) == 0) {
+        strcmp(history[(history_count - 1) % HISTORY_SIZE], to_store) == 0) {
         return;
     }
-    strncpy(history[history_count % HISTORY_SIZE], cmd, MAX_CMD_LEN - 1);
+    strncpy(history[history_count % HISTORY_SIZE], to_store, MAX_CMD_LEN - 1);
     history[history_count % HISTORY_SIZE][MAX_CMD_LEN - 1] = '\0';
     history_count++;
     history_pos = history_count;

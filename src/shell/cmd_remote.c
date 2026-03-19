@@ -15,7 +15,7 @@ static void cmd_remote_usage(void) {
     printf("  remote stop            - Stop listener and disconnect all clients\r\n");
     printf("  remote kick <id>       - Disconnect a specific client\r\n");
     printf("  remote send <text>     - Broadcast text to all connected clients\r\n");
-    printf("  remote token set <t>   - Configure authentication token\r\n");
+    printf("  remote token set <t>   - Configure challenge-response token\r\n");
     printf("  remote token clear     - Remove authentication token\r\n");
 }
 
@@ -61,12 +61,12 @@ static void cmd_remote_status(void) {
             uint32_t mins = uptime_s / 60;
             uint32_t secs = uptime_s % 60;
 
-            printf("  [%d] %d.%d.%d.%d:%u  up %lum%lus  rx:%lu tx:%lu\r\n",
+            printf("  [%d] %u.%u.%u.%u:%u  up %lum%lus  rx:%lu tx:%lu\r\n",
                    i,
-                   (ip >>  0) & 0xFF,
-                   (ip >>  8) & 0xFF,
-                   (ip >> 16) & 0xFF,
-                   (ip >> 24) & 0xFF,
+                   (unsigned)((ip >>  0) & 0xFFu),
+                   (unsigned)((ip >>  8) & 0xFFu),
+                   (unsigned)((ip >> 16) & 0xFFu),
+                   (unsigned)((ip >> 24) & 0xFFu),
                    status.clients[i].client_port,
                    (unsigned long)mins, (unsigned long)secs,
                    (unsigned long)status.clients[i].bytes_rx,

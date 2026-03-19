@@ -3,6 +3,7 @@
 #include "ota.h"
 #include "config_storage.h"
 #include "dmesg.h"
+#include "hal/flash.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -316,22 +317,37 @@ static uint32_t         bytes_received      = 0;
 static uint32_t         total_expected      = 0;
 static ota_progress_fn  progress_callback   = NULL;
 static bool             ota_initialized     = false;
+static bool             ota_flash_session_active = false;
 
 /* ---------- Flash helpers (must run from RAM) ---------- */
 
-static void __not_in_flash_func(ota_flash_erase_sector)(uint32_t offset) {
-    uint32_t ints = save_and_disable_interrupts();
-    flash_range_erase(offset, FLASH_SECTOR_SIZE);
-    restore_interrupts(ints);
+static void ota_end_flash_session(void) {
+    if (ota_flash_session_active) {
+        flash_safe_session_end();
+        ota_flash_session_active = false;
+    }
 }
 
-static void __not_in_flash_func(ota_flash_program)(uint32_t offset,
-                                                    const uint8_t *data,
-                                                    uint32_t len)
-{
-    uint32_t ints = save_and_disable_interrupts();
-    flash_range_program(offset, data, len);
-    restore_interrupts(ints);
+static int ota_begin_flash_session(void) {
+    if (ota_flash_session_active) {
+        return OTA_OK;
+    }
+
+    if (flash_safe_session_begin() != 0) {
+        dmesg_err("ota: Core 1 is busy; cannot safely write flash");
+        return OTA_ERR_BUSY;
+    }
+
+    ota_flash_session_active = true;
+    return OTA_OK;
+}
+
+static int ota_flash_erase_sector(uint32_t offset) {
+    return flash_safe_erase_range(offset, FLASH_SECTOR_SIZE) == 0 ? OTA_OK : OTA_ERR_FLASH;
+}
+
+static int ota_flash_program(uint32_t offset, const uint8_t *data, uint32_t len) {
+    return flash_safe_program_range(offset, data, len) == 0 ? OTA_OK : OTA_ERR_FLASH;
 }
 
 /* ---------- Metadata I/O ---------- */
@@ -341,16 +357,23 @@ static void ota_read_metadata(void) {
     memcpy(&metadata, flash_ptr, sizeof(metadata));
 }
 
-static int __not_in_flash_func(ota_write_metadata)(void) {
+static int ota_write_metadata(void) {
+    uint8_t metadata_page[OTA_CHUNK_SIZE];
+
     /* Compute metadata CRC (zero out CRC field first) */
     ota_metadata_t tmp = metadata;
     tmp.metadata_crc32 = 0;
     metadata.metadata_crc32 = ota_crc32((const uint8_t *)&tmp, sizeof(tmp));
 
-    uint32_t ints = save_and_disable_interrupts();
-    flash_range_erase(OTA_METADATA_OFFSET, FLASH_SECTOR_SIZE);
-    flash_range_program(OTA_METADATA_OFFSET, (const uint8_t *)&metadata, sizeof(metadata));
-    restore_interrupts(ints);
+    memset(metadata_page, 0xFF, sizeof(metadata_page));
+    memcpy(metadata_page, &metadata, sizeof(metadata));
+
+    if (flash_safe_erase_and_program(OTA_METADATA_OFFSET,
+                                     FLASH_SECTOR_SIZE,
+                                     metadata_page,
+                                     sizeof(metadata_page)) != 0) {
+        return OTA_ERR_FLASH;
+    }
 
     return OTA_OK;
 }
@@ -418,6 +441,8 @@ int ota_begin_uart(ota_progress_fn progress_cb) {
     if (!ota_initialized) return OTA_ERR_INIT;
     if (current_state == OTA_STATE_RECEIVING) return OTA_ERR_BUSY;
     if (!ota_has_auth_key()) return OTA_ERR_AUTH;
+    int flash_err = ota_begin_flash_session();
+    if (flash_err != OTA_OK) return flash_err;
 
     current_state = OTA_STATE_RECEIVING;
     bytes_received = 0;
@@ -432,6 +457,8 @@ int ota_begin_tcp(uint16_t port, ota_progress_fn progress_cb) {
     if (!ota_initialized) return OTA_ERR_INIT;
     if (current_state == OTA_STATE_RECEIVING) return OTA_ERR_BUSY;
     if (!ota_has_auth_key()) return OTA_ERR_AUTH;
+    int flash_err = ota_begin_flash_session();
+    if (flash_err != OTA_OK) return flash_err;
 
     current_state = OTA_STATE_RECEIVING;
     bytes_received = 0;
@@ -451,6 +478,7 @@ int ota_write_chunk(const uint8_t *data, uint32_t offset, uint32_t len) {
         dmesg_err("ota: chunk exceeds slot B bounds (offset=0x%08X, len=%u)",
                   offset, len);
         current_state = OTA_STATE_ERROR;
+        ota_end_flash_session();
         return OTA_ERR_SIZE;
     }
 
@@ -465,7 +493,11 @@ int ota_write_chunk(const uint8_t *data, uint32_t offset, uint32_t len) {
          * Simplified: erase if offset aligns to sector boundary,
          * or if this is the first chunk. */
         if ((flash_addr & (FLASH_SECTOR_SIZE - 1)) == 0 || offset == 0) {
-            ota_flash_erase_sector(s);
+            if (ota_flash_erase_sector(s) != OTA_OK) {
+                current_state = OTA_STATE_ERROR;
+                ota_end_flash_session();
+                return OTA_ERR_FLASH;
+            }
         }
     }
 
@@ -484,7 +516,11 @@ int ota_write_chunk(const uint8_t *data, uint32_t offset, uint32_t len) {
         memcpy(page_buf + page_offset, data + src_offset, chunk);
 
         uint32_t aligned_addr = (flash_addr + src_offset) & ~(OTA_CHUNK_SIZE - 1);
-        ota_flash_program(aligned_addr, page_buf, OTA_CHUNK_SIZE);
+        if (ota_flash_program(aligned_addr, page_buf, OTA_CHUNK_SIZE) != OTA_OK) {
+            current_state = OTA_STATE_ERROR;
+            ota_end_flash_session();
+            return OTA_ERR_FLASH;
+        }
 
         src_offset += chunk;
         remaining  -= chunk;
@@ -504,7 +540,11 @@ int ota_verify(void) {
     uint8_t expected_hmac[OTA_HMAC_SIZE];
 
     if (!ota_initialized) return OTA_ERR_INIT;
-    if (!ota_load_auth_key(auth_key)) return OTA_ERR_AUTH;
+    if (!ota_load_auth_key(auth_key)) {
+        ota_end_flash_session();
+        return OTA_ERR_AUTH;
+    }
+    ota_end_flash_session();
 
     current_state = OTA_STATE_VERIFYING;
     dmesg_info("ota: verifying slot B image...");
@@ -672,6 +712,7 @@ int ota_cancel(void) {
     if (current_state == OTA_STATE_IDLE) return OTA_OK;
 
     dmesg_info("ota: update cancelled");
+    ota_end_flash_session();
     current_state = OTA_STATE_IDLE;
     bytes_received = 0;
     total_expected = 0;

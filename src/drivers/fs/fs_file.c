@@ -18,6 +18,39 @@ static const char *next_component(const char *p, char *out, size_t out_sz) {
     return p;
 }
 
+static uint32_t *fs_active_next_node_id(struct fs *fs) {
+    if (!fs) return NULL;
+    return (fs->active_cp == 0) ? &fs->cp0.next_node_id : &fs->cp1.next_node_id;
+}
+
+static uint32_t fs_find_free_inode_hint(struct fs *fs) {
+    uint32_t *hint = fs_active_next_node_id(fs);
+    uint32_t start;
+
+    if (!fs || !hint || fs->sb.total_inodes <= (FS_ROOT_INODE + 1u)) {
+        return FS_INVALID_INODE;
+    }
+
+    start = *hint;
+    if (start < (FS_ROOT_INODE + 1u) || start >= fs->sb.total_inodes) {
+        start = FS_ROOT_INODE + 1u;
+    }
+
+    for (int pass = 0; pass < 2; pass++) {
+        uint32_t limit = (pass == 0) ? fs->sb.total_inodes : start;
+        for (uint32_t ino = start; ino < limit; ino++) {
+            if (fs->nat[ino].block_addr == FS_INVALID_BLOCK) {
+                *hint = (ino + 1u < fs->sb.total_inodes) ? (ino + 1u) : (FS_ROOT_INODE + 1u);
+                fs->cp_dirty = true;
+                return ino;
+            }
+        }
+        start = FS_ROOT_INODE + 1u;
+    }
+
+    return FS_INVALID_INODE;
+}
+
 /* resolve absolute path; currently only from root */
 static int fs_resolve_path(struct fs *fs,
                            const char *path,
@@ -96,14 +129,7 @@ int fs_open(struct fs *fs, const char *path, uint16_t flags, struct fs_file *fd)
         if (r != FS_OK) return r;
         if (!(parent_ino.mode & FS_MODE_DIR)) return FS_ERR_NOT_DIRECTORY;
 
-        /* find free inode number: naive scan */
-        uint32_t new_ino = FS_INVALID_INODE;
-        for (uint32_t i = 1; i < fs->sb.total_inodes; i++) {
-            if (fs->nat[i].block_addr == FS_INVALID_BLOCK) {
-                new_ino = i;
-                break;
-            }
-        }
+        uint32_t new_ino = fs_find_free_inode_hint(fs);
         if (new_ino == FS_INVALID_INODE) return FS_ERR_NO_SPACE;
 
         struct fs_inode newi;
@@ -273,14 +299,7 @@ int fs_mkdir(struct fs *fs, const char *path) {
     if (r != FS_OK) return r;
     if (!(parent_ino.mode & FS_MODE_DIR)) return FS_ERR_NOT_DIRECTORY;
 
-    /* find free inode */
-    uint32_t new_ino = FS_INVALID_INODE;
-    for (uint32_t i = 1; i < fs->sb.total_inodes; i++) {
-        if (fs->nat[i].block_addr == FS_INVALID_BLOCK) {
-            new_ino = i;
-            break;
-        }
-    }
+    uint32_t new_ino = fs_find_free_inode_hint(fs);
     if (new_ino == FS_INVALID_INODE) return FS_ERR_NO_SPACE;
 
     struct fs_inode dir;

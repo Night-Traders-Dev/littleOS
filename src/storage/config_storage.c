@@ -1,11 +1,11 @@
 // src/config_storage.c
 // Persistent Configuration Storage Implementation
 #include "config_storage.h"
+#include "hal/flash.h"
 #include <stdio.h>
 #include <string.h>
 #include "pico/stdlib.h"
 #include "hardware/flash.h"
-#include "hardware/sync.h"
 
 // Flash storage configuration
 // Use last sector of flash (2MB Pico = 0x200000 bytes)
@@ -40,6 +40,13 @@ static bool config_dirty = false;  // Needs saving
 
 // Buffer for flash writes (must be in RAM, not flash)
 static uint8_t __attribute__((aligned(4))) write_buffer[FLASH_SECTOR_SIZE];
+
+static bool config_key_is_secret(const char *key) {
+    return key &&
+           (strcmp(key, "remote_token") == 0 ||
+            strcmp(key, "remote_token_enc") == 0 ||
+            strcmp(key, "ota_hmac_key") == 0);
+}
 
 // Calculate simple checksum
 static uint32_t calculate_checksum(const config_storage_t* cfg) {
@@ -94,18 +101,6 @@ static void init_defaults(void) {
 }
 
 /**
- * @brief Flash write function that runs from RAM
- * CRITICAL: This function must NOT be in flash (XIP) because it modifies flash
- */
-static void __not_in_flash_func(flash_write_config)(uint32_t offset, const uint8_t* data, size_t len) {
-    // Erase flash sector (4KB)
-    flash_range_erase(offset, FLASH_SECTOR_SIZE);
-    
-    // Write data to flash (must be 256-byte aligned)
-    flash_range_program(offset, data, len);
-}
-
-/**
  * @brief Initialize configuration storage
  */
 bool config_init(void) {
@@ -117,7 +112,8 @@ bool config_init(void) {
     
     // Try to load from flash
     if (config_load()) {
-        printf("Config: Loaded %d entries from flash\r\n", config_data.entry_count);
+        printf("Config: Loaded %u entries from flash\r\n",
+               (unsigned)config_data.entry_count);
         config_initialized = true;
         return true;
     }
@@ -174,14 +170,13 @@ bool config_save(void) {
     // Copy config data to buffer
     memcpy(write_buffer, &config_data, sizeof(config_storage_t));
     
-    // Disable interrupts during flash operation
-    uint32_t ints = save_and_disable_interrupts();
-    
-    // Call RAM-based flash write function
-    flash_write_config(FLASH_TARGET_OFFSET, write_buffer, write_size);
-    
-    // Re-enable interrupts
-    restore_interrupts(ints);
+    if (flash_safe_erase_and_program(FLASH_TARGET_OFFSET,
+                                     FLASH_SECTOR_SIZE,
+                                     write_buffer,
+                                     write_size) != 0) {
+        printf("Config: Flash write failed\r\n");
+        return false;
+    }
     
     config_dirty = false;
     printf("Config: Saved successfully\r\n");
@@ -401,7 +396,9 @@ void config_print_all(void) {
     }
     
     printf("\r\n=== Configuration ===\r\n");
-    printf("Entries: %d / %d\r\n", config_data.entry_count, CONFIG_MAX_ENTRIES);
+    printf("Entries: %u / %u\r\n",
+           (unsigned)config_data.entry_count,
+           (unsigned)CONFIG_MAX_ENTRIES);
     printf("Autoboot: %s\r\n\r\n", config_data.autoboot_enabled ? "enabled" : "disabled");
     
     if (config_data.entry_count == 0) {
@@ -409,9 +406,11 @@ void config_print_all(void) {
     } else {
         for (int i = 0; i < CONFIG_MAX_ENTRIES; i++) {
             if (config_data.entries[i].used) {
-                printf("  %s = %s\r\n", 
-                       config_data.entries[i].key, 
-                       config_data.entries[i].value);
+                printf("  %s = %s\r\n",
+                       config_data.entries[i].key,
+                       config_key_is_secret(config_data.entries[i].key) ?
+                           "[redacted]" :
+                           config_data.entries[i].value);
             }
         }
     }

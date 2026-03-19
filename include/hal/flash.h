@@ -53,6 +53,16 @@ uint32_t flash_backend_get_partition_size(void);
 /* Erase entire filesystem partition */
 int flash_backend_erase_all(void);
 
+/* Safe raw flash helpers for non-filesystem users */
+int flash_safe_session_begin(void);
+void flash_safe_session_end(void);
+int flash_safe_erase_range(uint32_t flash_offset, size_t erase_len);
+int flash_safe_program_range(uint32_t flash_offset, const uint8_t *data, size_t len);
+int flash_safe_erase_and_program(uint32_t flash_offset,
+                                 size_t erase_len,
+                                 const uint8_t *data,
+                                 size_t program_len);
+
 #ifdef __cplusplus
 }
 #endif

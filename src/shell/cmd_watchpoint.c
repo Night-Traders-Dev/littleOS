@@ -60,7 +60,7 @@ static int cmd_watchpoint_add(int argc, char *argv[])
 
     int slot = watchpoint_add(addr, size, WP_TYPE_VALUE, label);
     if (slot < 0) {
-        printf("Failed to add watchpoint (table full or invalid params).\r\n");
+        printf("Failed to add watchpoint (table full, unaligned address, or outside SRAM).\r\n");
         return -1;
     }
 

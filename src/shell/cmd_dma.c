@@ -2,9 +2,30 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include "board/board_config.h"
 #include "hal/dma.h"
 
 #define DMA_TEST_BUF_SIZE 256
+
+static bool dma_addr_in_sram(const void *ptr, size_t len) {
+    uintptr_t start = (uintptr_t)ptr;
+    uintptr_t ram_base = 0x20000000u;
+    uintptr_t ram_end = ram_base + (uintptr_t)CHIP_RAM_SIZE;
+
+    if (len == 0) {
+        return false;
+    }
+    if (start < ram_base) {
+        return false;
+    }
+    if (start > UINTPTR_MAX - len) {
+        return false;
+    }
+
+    return (start + len) <= ram_end;
+}
 
 static void cmd_dma_usage(void) {
     printf("DMA engine commands:\r\n");
@@ -86,6 +107,10 @@ static int cmd_dma_memcpy(int argc, char *argv[]) {
 
     if (len == 0) {
         printf("Length must be > 0\r\n");
+        return -1;
+    }
+    if (!dma_addr_in_sram(dst, len) || !dma_addr_in_sram(src, len)) {
+        printf("DMA memcpy is limited to SRAM addresses for safety\r\n");
         return -1;
     }
 

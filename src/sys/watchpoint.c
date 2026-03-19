@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "board/board_config.h"
 #include "watchpoint.h"
 
 #ifdef PICO_BUILD
@@ -48,6 +49,27 @@ static uint32_t wp_read_value(uint32_t addr, uint32_t size)
 #endif
 }
 
+static bool wp_valid_address(uint32_t addr, uint32_t size)
+{
+    const uint32_t ram_base = 0x20000000u;
+    const uint32_t ram_end = ram_base + (uint32_t)CHIP_RAM_SIZE;
+
+    if (size != 1 && size != 2 && size != 4) {
+        return false;
+    }
+    if ((addr & (size - 1u)) != 0) {
+        return false;
+    }
+    if (addr < ram_base) {
+        return false;
+    }
+    if (addr > UINT32_MAX - size) {
+        return false;
+    }
+
+    return (addr + size) <= ram_end;
+}
+
 /* ============================================================================
  * Public API
  * ========================================================================== */
@@ -61,7 +83,7 @@ int watchpoint_add(uint32_t addr, uint32_t size, watchpoint_type_t type,
                    const char *label)
 {
     /* Validate size */
-    if (size != 1 && size != 2 && size != 4)
+    if (!wp_valid_address(addr, size))
         return -1;
 
     /* Find a free slot */

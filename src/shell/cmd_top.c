@@ -6,7 +6,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "permissions.h"
 #include "scheduler.h"
+#include "shell.h"
 #include "profiler.h"
 #include "memory_segmented.h"
 #include "watchdog.h"
@@ -106,6 +108,17 @@ static uint32_t top_now_ms(void) {
     static uint32_t fake = 0;
     return fake += 1000;
 #endif
+}
+
+static bool top_can_kill_tasks(void) {
+    const task_sec_ctx_t *ctx = shell_get_security_context();
+
+    if (!ctx) {
+        return false;
+    }
+
+    return perm_has_capability(ctx, CAP_TASK_KILL) &&
+           perm_resource_check(ctx, PERM_RESOURCE_SCHEDULER, PERM_EXEC);
 }
 
 /* ============================================================================
@@ -233,9 +246,15 @@ static void top_render(uint32_t uptime_ms) {
     }
 
     /* ---------- bottom bar ---------- */
-    printf("\r\n" ANSI_REVERSE
-           " Press 'q' quit | 'k' kill task | 's' sort | 'r' reverse "
-           ANSI_RESET "\r\n");
+    if (top_can_kill_tasks()) {
+        printf("\r\n" ANSI_REVERSE
+               " Press 'q' quit | 'k' kill task | 's' sort | 'r' reverse "
+               ANSI_RESET "\r\n");
+    } else {
+        printf("\r\n" ANSI_REVERSE
+               " Press 'q' quit | 's' sort | 'r' reverse "
+               ANSI_RESET "\r\n");
+    }
 }
 
 /* ============================================================================
@@ -332,7 +351,14 @@ int cmd_top(int argc, char *argv[]) {
                 printf(ANSI_CLEAR);
                 return 0;
             } else if (ch == 'k' || ch == 'K') {
-                top_kill_prompt();
+                if (top_can_kill_tasks()) {
+                    top_kill_prompt();
+                } else {
+                    printf("\r\nKill requires scheduler execute permission and CAP_TASK_KILL.\r\n");
+#ifdef PICO_BUILD
+                    sleep_ms(800);
+#endif
+                }
                 break;  /* re-render immediately */
             }
             /* 's' and 'r' are placeholders for future sort toggling */

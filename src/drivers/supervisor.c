@@ -33,6 +33,22 @@ static spin_lock_t *metrics_lock = NULL;
 // FIXED: Define heap size as constant
 #define HEAP_SIZE_BYTES 65536
 
+static void supervisor_copy_metrics(system_metrics_t *out) {
+    if (!out) {
+        return;
+    }
+
+#ifdef PICO_BUILD
+    if (metrics_lock) {
+        uint32_t save = spin_lock_blocking(metrics_lock);
+        memcpy(out, (const void *)&metrics, sizeof(*out));
+        spin_unlock(metrics_lock, save);
+        return;
+    }
+#endif
+    memcpy(out, (const void *)&metrics, sizeof(*out));
+}
+
 /**
  * @brief Read RP2040 die temperature
  */
@@ -54,84 +70,92 @@ static float read_temperature(void) {
  * @brief Check system health and update flags
  */
 static void check_system_health(void) {
+    system_metrics_t snapshot;
     uint32_t now = to_ms_since_boot(get_absolute_time());
     uint32_t flags = 0;
     system_health_t health = HEALTH_OK;
+    bool core0_responsive = true;
+    uint32_t corrected_heartbeat = 0;
+    float temp_celsius;
+    float temp_peak;
 
-    uint32_t time_since_feed = now - metrics.last_feed_time_ms;
+    supervisor_copy_metrics(&snapshot);
+
+    uint32_t time_since_feed = now - snapshot.last_feed_time_ms;
     if (time_since_feed > (SUPERVISOR_WATCHDOG_TIMEOUT_MS / 2)) {
         flags |= HEALTH_FLAG_WATCHDOG;
         health = HEALTH_WARNING;
         if (alerts_enabled) {
-            printf("[SUPERVISOR] WARNING: Watchdog not fed for %lu ms\r\n", time_since_feed);
+            printf("[SUPERVISOR] WARNING: Watchdog not fed for %u ms\r\n",
+                   (unsigned)time_since_feed);
         }
     }
 
-    uint32_t time_since_heartbeat = now - metrics.core0_last_heartbeat;
+    corrected_heartbeat = snapshot.core0_last_heartbeat;
+    uint32_t time_since_heartbeat = now - snapshot.core0_last_heartbeat;
 
     /* Detect uint32_t wraparound: if elapsed time seems impossibly large
      * (> 10 minutes), it's likely a timer wrap, not an actual hang */
     if (time_since_heartbeat > 600000) {
-        metrics.core0_last_heartbeat = now;
+        corrected_heartbeat = now;
         time_since_heartbeat = 0;
     }
 
     if (time_since_heartbeat > 5000) {
         flags |= HEALTH_FLAG_CORE0_HUNG;
         health = HEALTH_CRITICAL;
-        metrics.core0_responsive = false;
+        core0_responsive = false;
         if (alerts_enabled) {
-            printf("[SUPERVISOR] CRITICAL: Core 0 not responding! (last heartbeat %lu ms ago)\r\n",
-                time_since_heartbeat);
+            printf("[SUPERVISOR] CRITICAL: Core 0 not responding! (last heartbeat %u ms ago)\r\n",
+                   (unsigned)time_since_heartbeat);
         }
-    } else {
-        metrics.core0_responsive = true;
     }
 
-    if (metrics.memory_usage_percent > SUPERVISOR_MEMORY_WARN_PERCENT) {
+    if (snapshot.memory_usage_percent > SUPERVISOR_MEMORY_WARN_PERCENT) {
         flags |= HEALTH_FLAG_MEMORY_HIGH;
         if (health < HEALTH_WARNING) health = HEALTH_WARNING;
-        if (alerts_enabled && (metrics.warning_count % 100 == 0)) {
+        if (alerts_enabled && (snapshot.warning_count % 100 == 0)) {
             printf("[SUPERVISOR] WARNING: Memory usage high: %.1f%%\r\n",
-                metrics.memory_usage_percent);
+                snapshot.memory_usage_percent);
         }
     }
 
-    if (metrics.heap_used_bytes > last_heap_used) {
+    if (snapshot.heap_used_bytes > last_heap_used) {
         memory_stable_count = 0;
-    } else if (metrics.heap_used_bytes == last_heap_used) {
+    } else if (snapshot.heap_used_bytes == last_heap_used) {
         memory_stable_count++;
     } else {
         memory_stable_count = 0;
     }
 
-    if (memory_stable_count == 0 && metrics.heap_used_bytes > (last_heap_used + 1024)) {
-        if (metrics.heap_used_bytes > 50000) {
+    if (memory_stable_count == 0 && snapshot.heap_used_bytes > (last_heap_used + 1024)) {
+        if (snapshot.heap_used_bytes > 50000) {
             flags |= HEALTH_FLAG_MEMORY_LEAK;
             if (health < HEALTH_WARNING) health = HEALTH_WARNING;
         }
     }
 
-    last_heap_used = metrics.heap_used_bytes;
+    last_heap_used = snapshot.heap_used_bytes;
 
-    metrics.temp_celsius = read_temperature();
-    if (metrics.temp_celsius > metrics.temp_peak_celsius) {
-        metrics.temp_peak_celsius = metrics.temp_celsius;
+    temp_celsius = read_temperature();
+    temp_peak = snapshot.temp_peak_celsius;
+    if (temp_celsius > temp_peak) {
+        temp_peak = temp_celsius;
     }
 
-    if (metrics.temp_celsius > SUPERVISOR_TEMP_CRITICAL_C) {
+    if (temp_celsius > SUPERVISOR_TEMP_CRITICAL_C) {
         flags |= HEALTH_FLAG_TEMP_CRITICAL;
         health = HEALTH_EMERGENCY;
         if (alerts_enabled) {
             printf("[SUPERVISOR] EMERGENCY: Temperature critical! %.1f°C\r\n",
-                metrics.temp_celsius);
+                temp_celsius);
         }
-    } else if (metrics.temp_celsius > SUPERVISOR_TEMP_WARN_C) {
+    } else if (temp_celsius > SUPERVISOR_TEMP_WARN_C) {
         flags |= HEALTH_FLAG_TEMP_HIGH;
         if (health < HEALTH_WARNING) health = HEALTH_WARNING;
-        if (alerts_enabled && (metrics.warning_count % 100 == 0)) {
+        if (alerts_enabled && (snapshot.warning_count % 100 == 0)) {
             printf("[SUPERVISOR] WARNING: Temperature high: %.1f°C\r\n",
-                metrics.temp_celsius);
+                temp_celsius);
         }
     }
 
@@ -139,6 +163,10 @@ static void check_system_health(void) {
 #ifdef PICO_BUILD
     if (metrics_lock) {
         uint32_t save = spin_lock_blocking(metrics_lock);
+        metrics.core0_last_heartbeat = corrected_heartbeat;
+        metrics.core0_responsive = core0_responsive;
+        metrics.temp_celsius = temp_celsius;
+        metrics.temp_peak_celsius = temp_peak;
         metrics.health_flags = flags;
         metrics.health_status = health;
         if (health >= HEALTH_WARNING) metrics.warning_count++;
@@ -147,6 +175,10 @@ static void check_system_health(void) {
     } else
 #endif
     {
+        metrics.core0_last_heartbeat = corrected_heartbeat;
+        metrics.core0_responsive = core0_responsive;
+        metrics.temp_celsius = temp_celsius;
+        metrics.temp_peak_celsius = temp_peak;
         metrics.health_flags = flags;
         metrics.health_status = health;
         if (health >= HEALTH_WARNING) metrics.warning_count++;
@@ -180,7 +212,16 @@ static void supervisor_loop(void) {
 
     while (supervisor_running) {
         now = to_ms_since_boot(get_absolute_time());
-        metrics.uptime_ms = now;
+#ifdef PICO_BUILD
+        if (metrics_lock) {
+            uint32_t save = spin_lock_blocking(metrics_lock);
+            metrics.uptime_ms = now;
+            spin_unlock(metrics_lock, save);
+        } else
+#endif
+        {
+            metrics.uptime_ms = now;
+        }
 
         if (now - last_check_time >= SUPERVISOR_CHECK_INTERVAL_MS) {
             check_system_health();
@@ -235,28 +276,43 @@ bool supervisor_is_running(void) {
     return supervisor_running;
 }
 
+bool supervisor_pause_for_flash(void) {
+#ifdef PICO_BUILD
+    if (!supervisor_running) {
+        return false;
+    }
+
+    supervisor_running = false;
+    sleep_ms(200);
+    multicore_reset_core1();
+    return true;
+#else
+    return false;
+#endif
+}
+
+void supervisor_resume_after_flash(bool paused) {
+#ifdef PICO_BUILD
+    if (paused) {
+        supervisor_init();
+    }
+#else
+    (void)paused;
+#endif
+}
+
 bool supervisor_get_metrics(system_metrics_t* out_metrics) {
     if (!out_metrics) {
         return false;
     }
-
-#ifdef PICO_BUILD
-    // Use spinlock for atomic cross-core copy to prevent torn reads
-    if (metrics_lock) {
-        uint32_t save = spin_lock_blocking(metrics_lock);
-        memcpy(out_metrics, (void*)&metrics, sizeof(system_metrics_t));
-        spin_unlock(metrics_lock, save);
-    } else {
-        memcpy(out_metrics, (void*)&metrics, sizeof(system_metrics_t));
-    }
-#else
-    memcpy(out_metrics, (void*)&metrics, sizeof(system_metrics_t));
-#endif
+    supervisor_copy_metrics(out_metrics);
     return true;
 }
 
 system_health_t supervisor_get_health(void) {
-    return metrics.health_status;
+    system_metrics_t snapshot;
+    supervisor_copy_metrics(&snapshot);
+    return snapshot.health_status;
 }
 
 void supervisor_heartbeat(void) {
@@ -266,16 +322,56 @@ void supervisor_heartbeat(void) {
 
     if (now - last_feed_ms >= 2000) {
         last_feed_ms = now;
-        metrics.core0_last_heartbeat = now;
-        metrics.last_feed_time_ms = now;
-        metrics.watchdog_feeds++;
-        dmesg_info("supervisor heartbeat");
+#ifdef PICO_BUILD
+        if (metrics_lock) {
+            uint32_t save = spin_lock_blocking(metrics_lock);
+            metrics.core0_last_heartbeat = now;
+            metrics.last_feed_time_ms = now;
+            metrics.watchdog_feeds++;
+            spin_unlock(metrics_lock, save);
+        } else
+#endif
+        {
+            metrics.core0_last_heartbeat = now;
+            metrics.last_feed_time_ms = now;
+            metrics.watchdog_feeds++;
+        }
         wdt_feed();
     }
 #endif
 }
 
 void supervisor_report_memory(int allocated) {
+#ifdef PICO_BUILD
+    if (metrics_lock) {
+        uint32_t save = spin_lock_blocking(metrics_lock);
+        if (allocated > 0) {
+            metrics.heap_used_bytes += (uint32_t)allocated;
+            metrics.heap_allocations++;
+            if (metrics.heap_used_bytes > metrics.heap_peak_bytes) {
+                metrics.heap_peak_bytes = metrics.heap_used_bytes;
+            }
+        } else if (allocated < 0) {
+            uint32_t freed = (uint32_t)(-allocated);
+            if (metrics.heap_used_bytes >= freed) {
+                metrics.heap_used_bytes -= freed;
+            } else {
+                metrics.heap_used_bytes = 0;
+            }
+            metrics.heap_frees++;
+        }
+
+        if (metrics.heap_used_bytes <= HEAP_SIZE_BYTES) {
+            metrics.heap_free_bytes = HEAP_SIZE_BYTES - metrics.heap_used_bytes;
+        } else {
+            metrics.heap_free_bytes = 0;
+        }
+        metrics.memory_usage_percent = (float)(metrics.heap_used_bytes * 100) / HEAP_SIZE_BYTES;
+        spin_unlock(metrics_lock, save);
+        return;
+    }
+#endif
+
     if (allocated > 0) {
         metrics.heap_used_bytes += (uint32_t)allocated;
         metrics.heap_allocations++;

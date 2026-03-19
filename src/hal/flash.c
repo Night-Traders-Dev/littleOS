@@ -2,6 +2,7 @@
 
 #include "hal/flash.h"
 #include "dmesg.h"
+#include "supervisor.h"
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -16,6 +17,32 @@
 
 static flash_backend_t flash_ctx;
 static uint8_t sector_buf[FLASH_FS_SECTOR_SIZE];
+
+#ifdef PICO_BUILD
+typedef struct {
+    uint32_t flash_offset;
+    size_t erase_len;
+    const uint8_t *data;
+    size_t program_len;
+} flash_raw_op_t;
+
+static uint32_t flash_session_depth = 0;
+static bool flash_session_resume_supervisor = false;
+
+static void __not_in_flash_func(flash_run_raw_op)(void *param) {
+    flash_raw_op_t *op = (flash_raw_op_t *)param;
+    uint32_t ints = save_and_disable_interrupts();
+
+    if (op->erase_len > 0) {
+        flash_range_erase(op->flash_offset, op->erase_len);
+    }
+    if (op->program_len > 0 && op->data) {
+        flash_range_program(op->flash_offset, op->data, op->program_len);
+    }
+
+    restore_interrupts(ints);
+}
+#endif
 
 /* ------------------------------------------------------------------ */
 /*  Init                                                               */
@@ -62,16 +89,74 @@ int flash_fs_read_block(void *ctx, uint32_t block_addr, uint8_t *buf) {
 /*  Write  (read-modify-write at sector granularity)                   */
 /* ------------------------------------------------------------------ */
 
+int flash_safe_session_begin(void) {
 #ifdef PICO_BUILD
-static void __not_in_flash_func(flash_do_program)(uint32_t flash_offset,
-                                                   const uint8_t *data,
-                                                   size_t len) {
-    uint32_t ints = save_and_disable_interrupts();
-    flash_range_erase(flash_offset, FLASH_FS_SECTOR_SIZE);
-    flash_range_program(flash_offset, data, len);
-    restore_interrupts(ints);
-}
+    if (flash_session_depth > 0) {
+        flash_session_depth++;
+        return 0;
+    }
+
+    flash_session_resume_supervisor = supervisor_pause_for_flash();
+    flash_session_depth = 1;
+    return 0;
+#else
+    return 0;
 #endif
+}
+
+void flash_safe_session_end(void) {
+#ifdef PICO_BUILD
+    if (flash_session_depth == 0) {
+        return;
+    }
+
+    flash_session_depth--;
+    if (flash_session_depth == 0) {
+        bool resume_supervisor = flash_session_resume_supervisor;
+        flash_session_resume_supervisor = false;
+        supervisor_resume_after_flash(resume_supervisor);
+    }
+#endif
+}
+
+int flash_safe_erase_and_program(uint32_t flash_offset,
+                                 size_t erase_len,
+                                 const uint8_t *data,
+                                 size_t program_len) {
+#ifdef PICO_BUILD
+    if (erase_len == 0 && (program_len == 0 || !data)) {
+        return -1;
+    }
+
+    if (flash_safe_session_begin() != 0) {
+        return -1;
+    }
+
+    flash_raw_op_t op = {
+        .flash_offset = flash_offset,
+        .erase_len = erase_len,
+        .data = data,
+        .program_len = program_len,
+    };
+    flash_run_raw_op(&op);
+    flash_safe_session_end();
+    return 0;
+#else
+    (void)flash_offset;
+    (void)erase_len;
+    (void)data;
+    (void)program_len;
+    return 0;
+#endif
+}
+
+int flash_safe_erase_range(uint32_t flash_offset, size_t erase_len) {
+    return flash_safe_erase_and_program(flash_offset, erase_len, NULL, 0);
+}
+
+int flash_safe_program_range(uint32_t flash_offset, const uint8_t *data, size_t len) {
+    return flash_safe_erase_and_program(flash_offset, 0, data, len);
+}
 
 #ifdef PICO_BUILD
 int __not_in_flash_func(flash_fs_write_block)(void *ctx,
@@ -106,7 +191,12 @@ int flash_fs_write_block(void *ctx, uint32_t block_addr, const uint8_t *buf) {
     memcpy(sector_buf + offset_in_sector, buf, FS_BLOCK_SIZE);
 
     /* Erase + reprogram the full sector */
-    flash_do_program(flash_sector_addr, sector_buf, FLASH_FS_SECTOR_SIZE);
+    if (flash_safe_erase_and_program(flash_sector_addr,
+                                     FLASH_FS_SECTOR_SIZE,
+                                     sector_buf,
+                                     FLASH_FS_SECTOR_SIZE) != 0) {
+        return -1;
+    }
 #else
     (void)buf;
 #endif
@@ -129,10 +219,9 @@ int flash_fs_erase_sector(void *ctx, uint32_t sector_addr) {
 
 #ifdef PICO_BUILD
     uint32_t flash_offset = fb->partition_offset + byte_offset;
-
-    uint32_t ints = save_and_disable_interrupts();
-    flash_range_erase(flash_offset, FLASH_FS_SECTOR_SIZE);
-    restore_interrupts(ints);
+    if (flash_safe_erase_range(flash_offset, FLASH_FS_SECTOR_SIZE) != 0) {
+        return -1;
+    }
 #endif
 
     return 0;
@@ -147,9 +236,9 @@ int flash_backend_erase_all(void) {
     if (!fb->initialized) return -1;
 
 #ifdef PICO_BUILD
-    uint32_t ints = save_and_disable_interrupts();
-    flash_range_erase(fb->partition_offset, fb->partition_size);
-    restore_interrupts(ints);
+    if (flash_safe_erase_range(fb->partition_offset, fb->partition_size) != 0) {
+        return -1;
+    }
 #endif
 
     dmesg_info("flash: erased entire partition");

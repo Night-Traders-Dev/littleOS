@@ -102,6 +102,21 @@ void supervisor_stop(void);
 bool supervisor_is_running(void);
 
 /**
+ * @brief Pause the supervisor core for a flash operation.
+ *
+ * Returns true if the supervisor was running and was paused, false otherwise.
+ * Call supervisor_resume_after_flash() with the returned value once the flash
+ * operation completes.
+ */
+bool supervisor_pause_for_flash(void);
+
+/**
+ * @brief Resume the supervisor after a flash operation if it was paused.
+ * @param paused Value previously returned by supervisor_pause_for_flash()
+ */
+void supervisor_resume_after_flash(bool paused);
+
+/**
  * @brief Get current system metrics
  * @param metrics Pointer to metrics structure to fill
  * @return true if metrics retrieved successfully

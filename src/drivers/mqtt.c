@@ -99,54 +99,134 @@ static int mqtt_build_disconnect(uint8_t *buf, size_t buflen) {
     return 2;
 }
 
+static bool mqtt_copy_bytes(const struct pbuf *p, size_t offset, void *dst, size_t len) {
+    return p && dst && pbuf_copy_partial((struct pbuf *)p, dst, (u16_t)len, (u16_t)offset) == len;
+}
+
+static bool mqtt_decode_remaining_length(const struct pbuf *p,
+                                         size_t *payload_offset,
+                                         uint32_t *remaining_len) {
+    uint32_t multiplier = 1;
+    uint32_t value = 0;
+    uint8_t encoded = 0;
+    size_t offset = 1;
+    int bytes = 0;
+
+    do {
+        if (!mqtt_copy_bytes(p, offset, &encoded, 1)) {
+            return false;
+        }
+        value += (uint32_t)(encoded & 0x7F) * multiplier;
+        multiplier *= 128u;
+        offset++;
+        bytes++;
+    } while ((encoded & 0x80u) != 0u && bytes < 4);
+
+    if ((encoded & 0x80u) != 0u) {
+        return false;
+    }
+
+    *payload_offset = offset;
+    *remaining_len = value;
+    return true;
+}
+
 /* TCP receive callback */
 static err_t mqtt_recv_cb(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err) {
-    (void)arg; (void)err;
+    (void)arg;
     if (!p) {
         mqtt_client.state = MQTT_DISCONNECTED;
         return ERR_OK;
     }
-    uint8_t *data = (uint8_t *)p->payload;
-    uint8_t pkt_type = data[0] & 0xF0;
+    if (err != ERR_OK || p->tot_len < 2) {
+        pbuf_free(p);
+        mqtt_client.state = MQTT_ERROR;
+        return ERR_VAL;
+    }
+
+    uint8_t fixed_header = 0;
+    uint8_t pkt_type;
+    size_t payload_offset = 0;
+    uint32_t remaining_len = 0;
+
+    if (!mqtt_copy_bytes(p, 0, &fixed_header, 1) ||
+        !mqtt_decode_remaining_length(p, &payload_offset, &remaining_len) ||
+        payload_offset + remaining_len > p->tot_len) {
+        pbuf_free(p);
+        mqtt_client.state = MQTT_ERROR;
+        return ERR_VAL;
+    }
+
+    pkt_type = fixed_header & 0xF0;
 
     switch (pkt_type) {
-        case 0x20: /* CONNACK */
-            if (p->len >= 4 && data[3] == 0) {
+        case 0x20: { /* CONNACK */
+            uint8_t connack[2];
+            if (remaining_len == 2 &&
+                mqtt_copy_bytes(p, payload_offset, connack, sizeof(connack)) &&
+                connack[1] == 0) {
                 mqtt_client.state = MQTT_CONNECTED;
             } else {
                 mqtt_client.state = MQTT_ERROR;
             }
             break;
+        }
         case 0x30: { /* PUBLISH - incoming message */
-            if (p->len > 4) {
-                uint16_t tlen = (data[2] << 8) | data[3];
-                int hdr_len = 4 + tlen;
-                /* Decode remaining length */
-                uint8_t rl = data[1];
-                int rl_bytes = 1;
-                uint16_t remaining = rl & 0x7F;
-                if (rl & 0x80) { remaining |= (data[2] & 0x7F) << 7; rl_bytes++; hdr_len++; }
-                (void)remaining; (void)rl_bytes;
-                if (hdr_len < (int)p->len) {
-                    char topic_buf[MQTT_TOPIC_MAX_LEN];
-                    if (tlen < MQTT_TOPIC_MAX_LEN) {
-                        memcpy(topic_buf, &data[4], tlen);
-                        topic_buf[tlen] = '\0';
-                        uint16_t plen = (uint16_t)(p->len - hdr_len);
-                        /* Dispatch to subscribers */
-                        for (int i = 0; i < MQTT_MAX_SUBSCRIPTIONS; i++) {
-                            if (mqtt_client.subs[i].active &&
-                                strcmp(mqtt_client.subs[i].topic, topic_buf) == 0) {
-                                if (mqtt_client.subs[i].callback) {
-                                    mqtt_client.subs[i].callback(topic_buf,
-                                        &data[hdr_len], plen, mqtt_client.subs[i].user_data);
-                                }
-                            }
-                        }
-                        mqtt_client.msgs_received++;
-                    }
+            uint8_t topic_len_buf[2];
+            char topic_buf[MQTT_TOPIC_MAX_LEN];
+            uint8_t payload_buf[MQTT_PAYLOAD_MAX_LEN];
+            size_t pos = payload_offset;
+            size_t payload_end = payload_offset + remaining_len;
+            uint8_t qos = (fixed_header >> 1) & 0x03u;
+            uint16_t topic_len;
+            uint16_t payload_len;
+
+            if (remaining_len < 2 ||
+                !mqtt_copy_bytes(p, pos, topic_len_buf, sizeof(topic_len_buf))) {
+                break;
+            }
+
+            topic_len = (uint16_t)((topic_len_buf[0] << 8) | topic_len_buf[1]);
+            pos += 2;
+            if (topic_len == 0 || topic_len >= MQTT_TOPIC_MAX_LEN || pos + topic_len > payload_end) {
+                break;
+            }
+            if (!mqtt_copy_bytes(p, pos, topic_buf, topic_len)) {
+                break;
+            }
+            topic_buf[topic_len] = '\0';
+            pos += topic_len;
+
+            if (qos > 0) {
+                if (pos + 2 > payload_end) {
+                    break;
+                }
+                pos += 2; /* Packet ID */
+            }
+
+            if (pos > payload_end) {
+                break;
+            }
+
+            payload_len = (uint16_t)(payload_end - pos);
+            if (payload_len > MQTT_PAYLOAD_MAX_LEN) {
+                break;
+            }
+            if (payload_len > 0 && !mqtt_copy_bytes(p, pos, payload_buf, payload_len)) {
+                break;
+            }
+
+            for (int i = 0; i < MQTT_MAX_SUBSCRIPTIONS; i++) {
+                if (mqtt_client.subs[i].active &&
+                    strcmp(mqtt_client.subs[i].topic, topic_buf) == 0 &&
+                    mqtt_client.subs[i].callback) {
+                    mqtt_client.subs[i].callback(topic_buf,
+                                                 payload_buf,
+                                                 payload_len,
+                                                 mqtt_client.subs[i].user_data);
                 }
             }
+            mqtt_client.msgs_received++;
             break;
         }
         case 0x90: /* SUBACK */
