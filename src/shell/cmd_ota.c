@@ -24,6 +24,9 @@ static void cmd_ota_usage(void) {
     printf("  ota confirm       - Confirm current boot is good\r\n");
     printf("  ota rollback      - Rollback to previous firmware\r\n");
     printf("  ota cancel        - Cancel in-progress update\r\n");
+    printf("  ota key status    - Show whether OTA auth key is configured\r\n");
+    printf("  ota key set <hex> - Set 32-byte HMAC key as 64 hex chars\r\n");
+    printf("  ota key clear     - Remove OTA authentication key\r\n");
 }
 
 int cmd_ota(int argc, char *argv[]) {
@@ -47,7 +50,8 @@ int cmd_ota(int argc, char *argv[]) {
             if (r == OTA_OK) {
                 printf("OTA: Waiting for XMODEM data on UART...\r\n");
             } else {
-                printf("OTA begin failed: %d\r\n", r);
+                printf("OTA begin failed: %d%s\r\n", r,
+                       r == OTA_ERR_AUTH ? " (set OTA key first)" : "");
             }
             return r;
         }
@@ -57,7 +61,8 @@ int cmd_ota(int argc, char *argv[]) {
             if (r == OTA_OK) {
                 printf("OTA: Listening on TCP port %d...\r\n", port);
             } else {
-                printf("OTA begin failed: %d\r\n", r);
+                printf("OTA begin failed: %d%s\r\n", r,
+                       r == OTA_ERR_AUTH ? " (set OTA key first)" : "");
             }
             return r;
         }
@@ -68,7 +73,9 @@ int cmd_ota(int argc, char *argv[]) {
     if (strcmp(argv[1], "verify") == 0) {
         printf("Verifying firmware image...\r\n");
         int r = ota_verify();
-        printf("OTA verify: %s\r\n", r == OTA_OK ? "OK" : "FAILED");
+        printf("OTA verify: %s%s\r\n",
+               r == OTA_OK ? "OK" : "FAILED",
+               r == OTA_ERR_AUTH ? " (authentication failed or key missing)" : "");
         return r;
     }
 
@@ -97,6 +104,37 @@ int cmd_ota(int argc, char *argv[]) {
         int r = ota_cancel();
         printf("OTA %s\r\n", r == OTA_OK ? "cancelled" : "cancel failed");
         return r;
+    }
+
+    if (strcmp(argv[1], "key") == 0) {
+        if (argc < 3) {
+            printf("Usage: ota key <status|set|clear> [hex]\r\n");
+            return -1;
+        }
+
+        if (strcmp(argv[2], "status") == 0) {
+            printf("OTA auth key: %s\r\n", ota_has_auth_key() ? "configured" : "missing");
+            return 0;
+        }
+
+        if (strcmp(argv[2], "set") == 0) {
+            if (argc < 4) {
+                printf("Usage: ota key set <64-hex-char-key>\r\n");
+                return -1;
+            }
+            int r = ota_set_auth_key_hex(argv[3]);
+            printf("OTA auth key %s\r\n", r == OTA_OK ? "saved" : "save failed");
+            return r;
+        }
+
+        if (strcmp(argv[2], "clear") == 0) {
+            int r = ota_clear_auth_key();
+            printf("OTA auth key %s\r\n", r == OTA_OK ? "cleared" : "clear failed");
+            return r;
+        }
+
+        printf("Usage: ota key <status|set|clear> [hex]\r\n");
+        return -1;
     }
 
     cmd_ota_usage();

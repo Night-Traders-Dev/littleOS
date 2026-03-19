@@ -118,6 +118,44 @@ static uint32_t get_timestamp_ms(void) {
 #endif
 }
 
+static uint16_t scheduler_select_next(task_queue_t *queue) {
+    int best_priority = -1;
+    uint16_t selected_task = 0;
+    uint16_t selected_index = 0;
+
+    if (!queue || queue->count == 0) {
+        return 0;
+    }
+
+    uint16_t start = (queue->count > 0) ? (queue->current_index % queue->count) : 0;
+
+    for (uint16_t offset = 0; offset < queue->count; offset++) {
+        uint16_t idx = (uint16_t)((start + offset) % queue->count);
+        uint16_t task_id = queue->tasks[idx];
+        task_descriptor_t *task = find_task(task_id);
+
+        if (!task) {
+            continue;
+        }
+
+        if (task->state != TASK_STATE_READY && task->state != TASK_STATE_RUNNING) {
+            continue;
+        }
+
+        if ((int)task->priority > best_priority) {
+            best_priority = (int)task->priority;
+            selected_task = task_id;
+            selected_index = idx;
+        }
+    }
+
+    if (selected_task != 0 && queue->count > 0) {
+        queue->current_index = (uint16_t)((selected_index + 1) % queue->count);
+    }
+
+    return selected_task;
+}
+
 /* ============================================================================
  * Public API
  * ========================================================================== */
@@ -435,25 +473,7 @@ int task_get_stats(uint16_t task_id, char *buffer, size_t size) {
  * ========================================================================== */
 
 uint16_t scheduler_next_task_core0(void) {
-    if (core0_queue.count == 0) {
-        return 0;
-    }
-
-    task_priority_t max_priority  = (task_priority_t)-1;
-    uint16_t        selected_task = 0;
-
-    for (uint16_t i = 0; i < core0_queue.count; i++) {
-        uint16_t task_id = core0_queue.tasks[i];
-        task_descriptor_t *task = find_task(task_id);
-
-        if (task && (task->state == TASK_STATE_READY ||
-                     task->state == TASK_STATE_RUNNING)) {
-            if (task->priority > max_priority) {
-                max_priority  = task->priority;
-                selected_task = task_id;
-            }
-        }
-    }
+    uint16_t selected_task = scheduler_select_next(&core0_queue);
 
     if (selected_task) {
         current_task_id = selected_task;
@@ -463,25 +483,7 @@ uint16_t scheduler_next_task_core0(void) {
 }
 
 uint16_t scheduler_next_task_core1(void) {
-    if (core1_queue.count == 0) {
-        return 0;
-    }
-
-    task_priority_t max_priority  = (task_priority_t)-1;
-    uint16_t        selected_task = 0;
-
-    for (uint16_t i = 0; i < core1_queue.count; i++) {
-        uint16_t task_id = core1_queue.tasks[i];
-        task_descriptor_t *task = find_task(task_id);
-
-        if (task && (task->state == TASK_STATE_READY ||
-                     task->state == TASK_STATE_RUNNING)) {
-            if (task->priority > max_priority) {
-                max_priority  = task->priority;
-                selected_task = task_id;
-            }
-        }
-    }
+    uint16_t selected_task = scheduler_select_next(&core1_queue);
 
     if (selected_task) {
         current_task_id = selected_task;

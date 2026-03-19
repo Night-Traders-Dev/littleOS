@@ -15,6 +15,8 @@ static void cmd_remote_usage(void) {
     printf("  remote stop            - Stop listener and disconnect all clients\r\n");
     printf("  remote kick <id>       - Disconnect a specific client\r\n");
     printf("  remote send <text>     - Broadcast text to all connected clients\r\n");
+    printf("  remote token set <t>   - Configure authentication token\r\n");
+    printf("  remote token clear     - Remove authentication token\r\n");
 }
 
 static void cmd_remote_status(void) {
@@ -28,6 +30,7 @@ static void cmd_remote_status(void) {
 
     printf("Remote Shell Status:\r\n");
     printf("  Listener:     %s\r\n", status.listening ? "ACTIVE" : "STOPPED");
+    printf("  Token:        %s\r\n", status.token_configured ? "CONFIGURED" : "MISSING");
 
     if (status.listening) {
         printf("  Port:         %u\r\n", status.port);
@@ -68,6 +71,9 @@ static void cmd_remote_status(void) {
                    (unsigned long)mins, (unsigned long)secs,
                    (unsigned long)status.clients[i].bytes_rx,
                    (unsigned long)status.clients[i].bytes_tx);
+            printf("      auth=%s failures=%u\r\n",
+                   status.clients[i].authenticated ? "yes" : "no",
+                   (unsigned)status.clients[i].auth_failures);
         }
     }
 }
@@ -100,7 +106,7 @@ int cmd_remote(int argc, char *argv[]) {
         if (r == 0) {
             printf("Remote shell listening on port %u\r\n", port);
         } else {
-            printf("Failed to start remote shell\r\n");
+            printf("Failed to start remote shell (set a token first)\r\n");
         }
         return r;
     }
@@ -170,6 +176,32 @@ int cmd_remote(int argc, char *argv[]) {
             printf("Failed to broadcast\r\n");
         }
         return (sent >= 0) ? 0 : -1;
+    }
+
+    if (strcmp(argv[1], "token") == 0) {
+        if (argc < 3) {
+            printf("Usage: remote token <set|clear> [value]\r\n");
+            return -1;
+        }
+
+        if (strcmp(argv[2], "set") == 0) {
+            if (argc < 4) {
+                printf("Usage: remote token set <token>\r\n");
+                return -1;
+            }
+            int r = remote_shell_set_token(argv[3]);
+            printf("Remote token %s\r\n", r == 0 ? "saved" : "save failed");
+            return r;
+        }
+
+        if (strcmp(argv[2], "clear") == 0) {
+            int r = remote_shell_clear_token();
+            printf("Remote token %s\r\n", r == 0 ? "cleared" : "clear failed");
+            return r;
+        }
+
+        printf("Usage: remote token <set|clear> [value]\r\n");
+        return -1;
     }
 
     cmd_remote_usage();

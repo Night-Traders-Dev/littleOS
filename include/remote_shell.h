@@ -13,6 +13,7 @@ extern "C" {
 #define REMOTE_SHELL_DEFAULT_PORT   2323
 #define REMOTE_SHELL_MAX_CLIENTS    2
 #define REMOTE_SHELL_BUF_SIZE       512
+#define REMOTE_SHELL_TOKEN_MAX      64
 
 /* Client connection info */
 typedef struct {
@@ -21,12 +22,15 @@ typedef struct {
     uint32_t connected_at_ms;
     uint32_t bytes_rx;
     uint32_t bytes_tx;
+    uint8_t  auth_failures;
     bool     active;
+    bool     authenticated;
 } remote_shell_client_t;
 
 /* Remote shell status */
 typedef struct {
     bool     listening;
+    bool     token_configured;
     uint16_t port;
     uint8_t  active_clients;
     uint32_t total_connections;
@@ -44,6 +48,11 @@ void remote_shell_task(void);
 
 /* Get remote shell status */
 int remote_shell_get_status(remote_shell_status_t *status);
+
+/* Configure authentication token */
+int remote_shell_set_token(const char *token);
+int remote_shell_clear_token(void);
+bool remote_shell_has_token(void);
 
 /* Send output to all connected remote clients (mirrors printf) */
 int remote_shell_broadcast(const char *data, size_t len);

@@ -7,6 +7,7 @@
 
 #include "ipc.h"
 #include "dmesg.h"
+#include "permissions.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -337,10 +338,35 @@ int ipc_shmem_destroy(int shm_id)
     return IPC_OK;
 }
 
-void *ipc_shmem_attach(int shm_id)
+static bool ipc_shmem_is_privileged(const ipc_shmem_t *shm, uint16_t caller_id)
+{
+    return caller_id == UID_ROOT || caller_id == shm->owner_task;
+}
+
+static bool ipc_shmem_can_access(const ipc_shmem_t *shm,
+                                 uint16_t caller_id,
+                                 bool write_access)
+{
+    if (!ipc_shmem_is_privileged(shm, caller_id)) {
+        return false;
+    }
+
+    if (!shm->locked) {
+        return true;
+    }
+
+    if (!write_access) {
+        return shm->lock_holder == caller_id || caller_id == UID_ROOT;
+    }
+
+    return shm->lock_holder == caller_id || caller_id == UID_ROOT;
+}
+
+void *ipc_shmem_attach(int shm_id, uint16_t caller_id)
 {
     if (shm_id < 0 || shm_id >= IPC_MAX_SHMEM_REGIONS) return NULL;
     if (!shmem_regions[shm_id].initialized) return NULL;
+    if (!ipc_shmem_can_access(&shmem_regions[shm_id], caller_id, false)) return NULL;
 
     return (void *)shmem_regions[shm_id].data;
 }
@@ -382,13 +408,15 @@ int ipc_shmem_unlock(int shm_id, uint16_t task_id)
     return IPC_OK;
 }
 
-int ipc_shmem_write(int shm_id, uint32_t offset, const void *data, uint32_t len)
+int ipc_shmem_write(int shm_id, uint16_t caller_id, uint32_t offset,
+                    const void *data, uint32_t len)
 {
     if (shm_id < 0 || shm_id >= IPC_MAX_SHMEM_REGIONS) return IPC_ERR_INVALID;
     if (!data) return IPC_ERR_INVALID;
 
     ipc_shmem_t *shm = &shmem_regions[shm_id];
     if (!shm->initialized) return IPC_ERR_NOT_FOUND;
+    if (!ipc_shmem_can_access(shm, caller_id, true)) return IPC_ERR_PERMISSION;
 
     if (offset + len > shm->size) return IPC_ERR_INVALID;
 
@@ -396,13 +424,15 @@ int ipc_shmem_write(int shm_id, uint32_t offset, const void *data, uint32_t len)
     return IPC_OK;
 }
 
-int ipc_shmem_read(int shm_id, uint32_t offset, void *data, uint32_t len)
+int ipc_shmem_read(int shm_id, uint16_t caller_id, uint32_t offset,
+                   void *data, uint32_t len)
 {
     if (shm_id < 0 || shm_id >= IPC_MAX_SHMEM_REGIONS) return IPC_ERR_INVALID;
     if (!data) return IPC_ERR_INVALID;
 
     ipc_shmem_t *shm = &shmem_regions[shm_id];
     if (!shm->initialized) return IPC_ERR_NOT_FOUND;
+    if (!ipc_shmem_can_access(shm, caller_id, false)) return IPC_ERR_PERMISSION;
 
     if (offset + len > shm->size) return IPC_ERR_INVALID;
 

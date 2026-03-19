@@ -3,6 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ipc.h"
+#include "shell.h"
+
+static uint16_t ipc_current_caller_id(void) {
+    return (uint16_t)perm_geteuid(shell_get_security_context());
+}
 
 static void cmd_ipc_usage(void) {
     printf("Usage:\r\n");
@@ -89,7 +94,8 @@ int cmd_ipc(int argc, char *argv[]) {
         }
         int ch = atoi(argv[2]);
         const char *msg = argv[3];
-        int r = ipc_send(ch, 0, 1, msg, (uint16_t)strlen(msg), IPC_PRIORITY_NORMAL);
+        int r = ipc_send(ch, ipc_current_caller_id(), 1,
+                         msg, (uint16_t)strlen(msg), IPC_PRIORITY_NORMAL);
         if (r != IPC_OK) {
             printf("ipc: send failed: %d\r\n", r);
             return r;
@@ -164,7 +170,7 @@ int cmd_ipc(int argc, char *argv[]) {
         if (strcmp(argv[2], "wait") == 0) {
             if (argc < 4) { printf("Usage: ipc sem wait <id>\r\n"); return -1; }
             int id = atoi(argv[3]);
-            int r = ipc_sem_trywait(id, 0);
+            int r = ipc_sem_trywait(id, ipc_current_caller_id());
             if (r == IPC_OK) {
                 printf("ipc: sem wait %d -> acquired (value=%d)\r\n", id, ipc_sem_getvalue(id));
             } else {
@@ -191,7 +197,7 @@ int cmd_ipc(int argc, char *argv[]) {
                 return -1;
             }
             uint32_t size = (uint32_t)strtoul(argv[4], NULL, 0);
-            int id = ipc_shmem_create(argv[3], size, 0);
+            int id = ipc_shmem_create(argv[3], size, ipc_current_caller_id());
             if (id < 0) {
                 printf("ipc: failed to create shared memory: %d\r\n", id);
                 return id;
@@ -207,7 +213,8 @@ int cmd_ipc(int argc, char *argv[]) {
             }
             int id = atoi(argv[3]);
             const char *data = argv[4];
-            int r = ipc_shmem_write(id, 0, data, (uint32_t)strlen(data));
+            int r = ipc_shmem_write(id, ipc_current_caller_id(), 0,
+                                    data, (uint32_t)strlen(data));
             if (r != IPC_OK) {
                 printf("ipc: shm write failed: %d\r\n", r);
                 return r;
@@ -223,7 +230,8 @@ int cmd_ipc(int argc, char *argv[]) {
             int id = atoi(argv[3]);
             char buf[128];
             memset(buf, 0, sizeof(buf));
-            int r = ipc_shmem_read(id, 0, buf, sizeof(buf) - 1);
+            int r = ipc_shmem_read(id, ipc_current_caller_id(), 0,
+                                   buf, sizeof(buf) - 1);
             if (r != IPC_OK) {
                 printf("ipc: shm read failed: %d\r\n", r);
                 return r;

@@ -1,5 +1,26 @@
 #include "permissions.h"
 #include <string.h>
+#include <stdio.h>
+
+static resource_perm_t resource_registry[PERM_RESOURCE_COUNT];
+static const char *const resource_names[PERM_RESOURCE_COUNT] = {
+    [PERM_RESOURCE_UART0] = "uart0",
+    [PERM_RESOURCE_WATCHDOG] = "watchdog",
+    [PERM_RESOURCE_SCHEDULER] = "scheduler",
+    [PERM_RESOURCE_MEMORY] = "memory",
+    [PERM_RESOURCE_CONFIG] = "config",
+    [PERM_RESOURCE_SAGELANG] = "sagelang",
+    [PERM_RESOURCE_SCRIPTS] = "scripts",
+    [PERM_RESOURCE_SUPERVISOR] = "supervisor",
+    [PERM_RESOURCE_DMESG] = "dmesg",
+    [PERM_RESOURCE_FILESYSTEM] = "filesystem",
+    [PERM_RESOURCE_NETWORK] = "network",
+    [PERM_RESOURCE_IPC] = "ipc",
+    [PERM_RESOURCE_OTA] = "ota",
+    [PERM_RESOURCE_REMOTE_SHELL] = "remote-shell",
+    [PERM_RESOURCE_DEBUG] = "debug",
+    [PERM_RESOURCE_POWER] = "power",
+};
 
 /*
  * littleOS Permissions System Implementation
@@ -166,6 +187,89 @@ bool perm_chmod(const task_sec_ctx_t *task_ctx,
     }
     
     return false;
+}
+
+/* ============================================================================
+ * Resource Registry
+ * ============================================================================
+ */
+
+void perm_resources_init_defaults(void)
+{
+    memset(resource_registry, 0, sizeof(resource_registry));
+
+    resource_registry[PERM_RESOURCE_UART0] =
+        perm_resource_create(UID_ROOT, GID_USERS, PERM_0660, RESOURCE_DEVICE);
+    resource_registry[PERM_RESOURCE_WATCHDOG] =
+        perm_resource_create(UID_ROOT, GID_SYSTEM, PERM_0640, RESOURCE_DEVICE);
+    resource_registry[PERM_RESOURCE_SCHEDULER] =
+        perm_resource_create(UID_ROOT, GID_USERS, PERM_0660, RESOURCE_TASK);
+    resource_registry[PERM_RESOURCE_MEMORY] =
+        perm_resource_create(UID_ROOT, GID_USERS, PERM_0640, RESOURCE_MEMORY);
+    resource_registry[PERM_RESOURCE_CONFIG] =
+        perm_resource_create(UID_ROOT, GID_SYSTEM, PERM_0640, RESOURCE_IPC);
+    resource_registry[PERM_RESOURCE_SAGELANG] =
+        perm_resource_create(UID_ROOT, GID_USERS, PERM_0750, RESOURCE_SYSCALL);
+    resource_registry[PERM_RESOURCE_SCRIPTS] =
+        perm_resource_create(UID_ROOT, GID_USERS, PERM_0770, RESOURCE_IPC);
+    resource_registry[PERM_RESOURCE_SUPERVISOR] =
+        perm_resource_create(UID_ROOT, GID_SYSTEM, PERM_0640, RESOURCE_SYSCALL);
+    resource_registry[PERM_RESOURCE_DMESG] =
+        perm_resource_create(UID_ROOT, GID_USERS, PERM_0644, RESOURCE_IPC);
+    resource_registry[PERM_RESOURCE_FILESYSTEM] =
+        perm_resource_create(UID_ROOT, GID_USERS, PERM_0660, RESOURCE_MEMORY);
+    resource_registry[PERM_RESOURCE_NETWORK] =
+        perm_resource_create(UID_ROOT, GID_USERS, PERM_0660, RESOURCE_DEVICE);
+    resource_registry[PERM_RESOURCE_IPC] =
+        perm_resource_create(UID_ROOT, GID_USERS, PERM_0660, RESOURCE_IPC);
+    resource_registry[PERM_RESOURCE_OTA] =
+        perm_resource_create(UID_ROOT, GID_SYSTEM, PERM_0600, RESOURCE_SYSCALL);
+    resource_registry[PERM_RESOURCE_REMOTE_SHELL] =
+        perm_resource_create(UID_ROOT, GID_SYSTEM, PERM_0600, RESOURCE_SYSCALL);
+    resource_registry[PERM_RESOURCE_DEBUG] =
+        perm_resource_create(UID_ROOT, GID_USERS, PERM_0640, RESOURCE_SYSCALL);
+    resource_registry[PERM_RESOURCE_POWER] =
+        perm_resource_create(UID_ROOT, GID_SYSTEM, PERM_0640, RESOURCE_SYSCALL);
+}
+
+bool perm_resource_set(perm_resource_id_t id, const resource_perm_t *resource)
+{
+    if (id < 0 || id >= PERM_RESOURCE_COUNT || !resource) {
+        return false;
+    }
+
+    resource_registry[id] = *resource;
+    return true;
+}
+
+const resource_perm_t *perm_resource_get(perm_resource_id_t id)
+{
+    if (id < 0 || id >= PERM_RESOURCE_COUNT) {
+        return NULL;
+    }
+
+    return &resource_registry[id];
+}
+
+const char *perm_resource_name(perm_resource_id_t id)
+{
+    if (id < 0 || id >= PERM_RESOURCE_COUNT || !resource_names[id]) {
+        return "unknown";
+    }
+
+    return resource_names[id];
+}
+
+bool perm_resource_check(const task_sec_ctx_t *task_ctx,
+                         perm_resource_id_t id,
+                         uint8_t required_perm)
+{
+    const resource_perm_t *resource = perm_resource_get(id);
+    if (!resource) {
+        return false;
+    }
+
+    return perm_task_can_access(task_ctx, resource, required_perm);
 }
 
 /* ============================================================================

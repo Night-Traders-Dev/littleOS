@@ -159,30 +159,42 @@ set(SAGELANG_DIR ${CMAKE_SOURCE_DIR}/third_party/sagelang)
 
 if(EXISTS ${SAGELANG_DIR})
     message(STATUS "Found SageLang at ${SAGELANG_DIR}")
-    
-    # SageLang library (C sources in src/c/, self-hosting build in src/sage/)
+
+    # littleOS embeds the current AST interpreter plus the VM runtime pieces
+    # required by the GC. Keep the source list explicit so we avoid desktop-only
+    # modules like graphics/networking in the firmware build.
     add_library(sagelang STATIC
-        ${SAGELANG_DIR}/src/c/lexer.c
-        ${SAGELANG_DIR}/src/c/parser.c
         ${SAGELANG_DIR}/src/c/ast.c
-        ${SAGELANG_DIR}/src/c/interpreter.c
-        ${SAGELANG_DIR}/src/c/value.c
+        ${SAGELANG_DIR}/src/c/diagnostic.c
         ${SAGELANG_DIR}/src/c/env.c
         ${SAGELANG_DIR}/src/c/gc.c
+        ${SAGELANG_DIR}/src/c/interpreter.c
+        ${SAGELANG_DIR}/src/c/lexer.c
         ${SAGELANG_DIR}/src/c/module.c
+        ${SAGELANG_DIR}/src/c/parser.c
         ${SAGELANG_DIR}/src/c/sage_thread.c
+        ${SAGELANG_DIR}/src/c/stdlib.c
+        ${SAGELANG_DIR}/src/c/value.c
+        ${SAGELANG_DIR}/src/vm/vm.c
+        ${CMAKE_SOURCE_DIR}/src/sage/sage_compat.c
+        ${CMAKE_SOURCE_DIR}/src/sage/sage_module_stubs.c
     )
-    
+
     target_include_directories(sagelang PUBLIC
         ${SAGELANG_DIR}/include
+        ${SAGELANG_DIR}/src/c
+        ${SAGELANG_DIR}/src/vm
     )
-    
+
     # Define PICO_BUILD for platform detection
     target_compile_definitions(sagelang PUBLIC PICO_BUILD=1 SAGE_NO_FFI=1)
-    
-    # Link against pico_stdlib for embedded functions
-    target_link_libraries(sagelang PUBLIC pico_stdlib)
-    
+    target_compile_options(sagelang PRIVATE
+        $<$<COMPILE_LANGUAGE:C>:-include${CMAKE_SOURCE_DIR}/src/sage/sage_compat.h>
+    )
+
+    # Link against Pico stdlib for platform shims and libm for stdlib math.
+    target_link_libraries(sagelang PUBLIC pico_stdlib m)
+
     set(SAGELANG_AVAILABLE TRUE)
 else()
     message(WARNING "SageLang not found at ${SAGELANG_DIR}")

@@ -6,20 +6,21 @@
 #include <string.h>
 
 // Include SageLang headers
-#include "lexer.h"
 #include "ast.h"
-#include "interpreter.h"
 #include "env.h"
 #include "gc.h"
+#include "interpreter.h"
+#include "lexer.h"
+#include "parser.h"
 
 #ifdef PICO_BUILD
 #include "pico/stdlib.h"
 #endif
 
-// Forward declarations for SageLang functions
-extern Stmt* parse();
-extern void parser_init();
-extern void init_stdlib(Env* env);
+extern Environment* g_global_env;
+extern Environment* g_gc_root_env;
+extern void init_module_system(void);
+extern void cleanup_module_system(void);
 
 // Heartbeat tracking
 static uint32_t last_heartbeat_ms = 0;
@@ -33,11 +34,47 @@ static bool heartbeat_enabled = true;
  */
 struct sage_context {
     Env* global_env;
+    Stmt* program_ast;
+    Stmt* program_ast_tail;
     char error_msg[256];
     bool initialized;
     uint32_t execution_start_time;
     uint32_t max_execution_time_ms;  // Maximum execution time before warning
 };
+
+static void sage_retain_stmt(sage_context_t* ctx, Stmt* stmt) {
+    if (!ctx || !stmt) {
+        return;
+    }
+
+    stmt->next = NULL;
+    if (ctx->program_ast == NULL) {
+        ctx->program_ast = stmt;
+    } else {
+        ctx->program_ast_tail->next = stmt;
+    }
+    ctx->program_ast_tail = stmt;
+}
+
+static void sage_set_error_value(sage_context_t* ctx, Value value, const char* fallback) {
+    if (!ctx) {
+        return;
+    }
+
+    if (IS_EXCEPTION(value) && AS_EXCEPTION(value) != NULL &&
+        AS_EXCEPTION(value)->message != NULL) {
+        snprintf(ctx->error_msg, sizeof(ctx->error_msg), "%s",
+                 AS_EXCEPTION(value)->message);
+        return;
+    }
+
+    if (IS_STRING(value) && AS_STRING(value) != NULL) {
+        snprintf(ctx->error_msg, sizeof(ctx->error_msg), "%s", AS_STRING(value));
+        return;
+    }
+
+    snprintf(ctx->error_msg, sizeof(ctx->error_msg), "%s", fallback);
+}
 
 /**
  * @brief Send heartbeat if enough time has passed
@@ -120,6 +157,10 @@ sage_context_t* sage_init(void) {
         free(ctx);
         return NULL;
     }
+
+    g_global_env = ctx->global_env;
+    g_gc_root_env = ctx->global_env;
+    init_module_system();
     
     sage_force_heartbeat();  // Heartbeat after env creation
     
@@ -150,13 +191,20 @@ void sage_cleanup(sage_context_t* ctx) {
     if (!ctx) return;
     
     sage_force_heartbeat();  // Heartbeat before cleanup
-    
-    if (ctx->global_env) {
-        ctx->global_env = NULL;
+
+    cleanup_module_system();
+    g_gc_root_env = NULL;
+    g_global_env = NULL;
+
+    if (ctx->program_ast) {
+        free_stmt(ctx->program_ast);
+        ctx->program_ast = NULL;
+        ctx->program_ast_tail = NULL;
     }
-    
-    // Run final GC sweep
-    gc_collect();
+
+    env_cleanup_all();
+    gc_shutdown();
+    ctx->global_env = NULL;
     
     sage_force_heartbeat();  // Heartbeat after cleanup
     
@@ -205,9 +253,11 @@ sage_result_t sage_eval_string(sage_context_t* ctx, const char* source, size_t s
     
     // Force heartbeat before starting execution
     sage_force_heartbeat();
+
+    ctx->error_msg[0] = '\0';
     
     // Initialize lexer with source
-    init_lexer(source);
+    init_lexer(source, "<embedded>");
     parser_init();
     
     sage_try_heartbeat();  // Heartbeat after lexer init
@@ -229,6 +279,7 @@ sage_result_t sage_eval_string(sage_context_t* ctx, const char* source, size_t s
         }
         
         statement_count++;
+        sage_retain_stmt(ctx, stmt);
         
         // Send heartbeat after parsing (AST construction can be expensive)
         sage_try_heartbeat();
@@ -241,7 +292,11 @@ sage_result_t sage_eval_string(sage_context_t* ctx, const char* source, size_t s
 #endif
         
         // Interpret the statement
-        interpret(stmt, ctx->global_env);
+        ExecResult result = interpret(stmt, ctx->global_env);
+        if (result.is_throwing) {
+            sage_set_error_value(ctx, result.exception_value, "Unhandled SageLang exception");
+            return SAGE_ERROR_RUNTIME;
+        }
         
         // Force heartbeat after each statement interpretation
         sage_force_heartbeat();

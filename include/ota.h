@@ -22,7 +22,7 @@ extern "C" {
  * Update process:
  *   1. Receive firmware image (via UART XMODEM or TCP)
  *   2. Write to staging slot (B)
- *   3. Verify CRC32 and magic
+ *   3. Verify header CRC, image CRC32, and HMAC-SHA256 authenticity
  *   4. Mark slot B as pending boot
  *   5. Reboot into slot B
  *   6. If boot succeeds, mark slot B as active
@@ -37,10 +37,14 @@ extern "C" {
 #define OTA_METADATA_SIZE       0x001000u   /* 4 KB */
 
 #define OTA_MAGIC               0x4F544155u /* "OTAU" */
-#define OTA_VERSION             1u
+#define OTA_VERSION             2u
 
 #define OTA_CHUNK_SIZE          256u        /* Flash program page size */
 #define OTA_MAX_IMAGE_SIZE      OTA_SLOT_B_SIZE
+#define OTA_HMAC_SIZE           32u
+
+#define OTA_AUTH_NONE           0u
+#define OTA_AUTH_HMAC_SHA256    1u
 
 /* OTA state */
 typedef enum {
@@ -67,6 +71,9 @@ typedef struct {
     uint32_t    image_crc32;        /* CRC32 of image data */
     uint32_t    build_timestamp;    /* Build time */
     char        build_version[32];  /* Version string */
+    uint8_t     auth_type;          /* OTA_AUTH_* */
+    uint8_t     reserved[3];
+    uint8_t     image_hmac[OTA_HMAC_SIZE];
     uint32_t    header_crc32;       /* CRC32 of this header */
 } ota_image_header_t;
 
@@ -126,6 +133,11 @@ int ota_cancel(void);
 /* Get update progress */
 void ota_get_progress(uint32_t *received, uint32_t *total);
 
+/* Authentication key management */
+bool ota_has_auth_key(void);
+int ota_set_auth_key_hex(const char *hex_key);
+int ota_clear_auth_key(void);
+
 /* Print OTA status */
 void ota_print_status(void);
 
@@ -143,6 +155,7 @@ void ota_print_status(void);
 #define OTA_ERR_TRANSPORT   (-7)
 #define OTA_ERR_ROLLBACK    (-8)
 #define OTA_ERR_NO_IMAGE    (-9)
+#define OTA_ERR_AUTH        (-10)
 
 #ifdef __cplusplus
 }

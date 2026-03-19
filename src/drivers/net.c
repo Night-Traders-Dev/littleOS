@@ -2,6 +2,8 @@
 
 #include "net.h"
 #include "dmesg.h"
+#include "watchdog.h"
+#include "supervisor.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -86,6 +88,13 @@ static net_scan_result_t *scan_results_ptr = NULL;
 static int scan_max = 0;
 static volatile int scan_count = 0;
 static volatile bool scan_complete = false;
+
+static void net_wait_maintenance(uint32_t sleep_interval_ms) {
+    cyw43_arch_poll();
+    wdt_feed();
+    supervisor_heartbeat();
+    sleep_ms(sleep_interval_ms);
+}
 
 /* ---------- Ring buffer helpers ---------- */
 
@@ -281,8 +290,7 @@ int net_wifi_scan(net_scan_result_t *results, int max_results) {
     /* Poll until scan completes */
     uint32_t start = to_ms_since_boot(get_absolute_time());
     while (cyw43_wifi_scan_active(&cyw43_state)) {
-        cyw43_arch_poll();
-        sleep_ms(100);
+        net_wait_maintenance(100);
         uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - start;
         if (elapsed > 10000) {
             dmesg_warn("net: scan timed out");
@@ -448,8 +456,7 @@ int net_socket_connect(int sock_id, net_ip4_t ip, uint16_t port, uint32_t timeou
     /* Poll until connected or timeout */
     uint32_t start = to_ms_since_boot(get_absolute_time());
     while (!s->connect_done) {
-        cyw43_arch_poll();
-        sleep_ms(10);
+        net_wait_maintenance(10);
         uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - start;
         if (elapsed >= timeout_ms) {
             s->state = SOCK_ERROR;
@@ -588,8 +595,7 @@ int net_dns_lookup(const char *hostname, net_ip4_t *ip) {
     /* Wait for callback */
     uint32_t start = to_ms_since_boot(get_absolute_time());
     while (!dns_done) {
-        cyw43_arch_poll();
-        sleep_ms(10);
+        net_wait_maintenance(10);
         if (to_ms_since_boot(get_absolute_time()) - start > 5000) {
             return NET_ERR_TIMEOUT;
         }
@@ -679,8 +685,7 @@ int net_ping(net_ip4_t ip, uint32_t timeout_ms) {
 
     /* Wait for reply or timeout */
     while (!ping_reply_received) {
-        cyw43_arch_poll();
-        sleep_ms(1);
+        net_wait_maintenance(1);
         uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - start;
         if (elapsed >= timeout_ms) {
             raw_remove(pcb);
@@ -764,6 +769,8 @@ int net_http_get(const char *url, char *response_buf, size_t buf_size) {
 
     while (total < buf_size - 1) {
         cyw43_arch_poll();
+        wdt_feed();
+        supervisor_heartbeat();
         int n = net_socket_recv(sock, response_buf + total, buf_size - 1 - total);
         if (n > 0) {
             total += (size_t)n;

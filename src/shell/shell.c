@@ -12,6 +12,7 @@
 #include "dmesg.h"
 #include "littlefetch.h"
 #include "shell_env.h"
+#include "shell.h"
 #include "cron.h"
 #include "logcat.h"
 #include "syslog.h"
@@ -184,6 +185,371 @@ static const shell_cmd_t cmd_table[] = {
 };
 
 #define CMD_TABLE_SIZE (sizeof(cmd_table) / sizeof(cmd_table[0]) - 1)
+
+#define SHELL_USERNAME_MAX 32
+
+static task_sec_ctx_t shell_sec_ctx = {
+    .uid = UID_ROOT,
+    .gid = GID_ROOT,
+    .euid = UID_ROOT,
+    .egid = GID_ROOT,
+    .umask = 0022,
+    .capabilities = CAP_ALL
+};
+static char shell_username[SHELL_USERNAME_MAX] = "root";
+
+void shell_set_security_context(const task_sec_ctx_t *ctx, const char *username) {
+    if (ctx) {
+        shell_sec_ctx = *ctx;
+    }
+
+    if (username && username[0] != '\0') {
+        strncpy(shell_username, username, sizeof(shell_username) - 1);
+        shell_username[sizeof(shell_username) - 1] = '\0';
+        shell_env_set("USER", shell_username);
+    }
+}
+
+const task_sec_ctx_t *shell_get_security_context(void) {
+    return &shell_sec_ctx;
+}
+
+const char *shell_get_username(void) {
+    return shell_username;
+}
+
+static bool shell_subcommand_is(int argc, char *argv[], const char *subcommand) {
+    return argc >= 2 && argv[1] && strcmp(argv[1], subcommand) == 0;
+}
+
+static bool shell_subcommand_in(int argc, char *argv[], const char *const *subcommands) {
+    if (argc < 2 || !argv[1]) return false;
+
+    for (int i = 0; subcommands[i] != NULL; i++) {
+        if (strcmp(argv[1], subcommands[i]) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool shell_require_access(const task_sec_ctx_t *task_ctx,
+                                 perm_resource_id_t resource_id,
+                                 uint8_t required_perm,
+                                 uint32_t capability,
+                                 const char **reason)
+{
+    static char deny_reason[128];
+
+    if (!task_ctx) {
+        if (reason) *reason = "no security context";
+        return false;
+    }
+
+    if (capability != 0 && !perm_has_capability(task_ctx, capability)) {
+        snprintf(deny_reason, sizeof(deny_reason),
+                 "missing required capability for %s", perm_resource_name(resource_id));
+        if (reason) *reason = deny_reason;
+        return false;
+    }
+
+    if (!perm_resource_check(task_ctx, resource_id, required_perm)) {
+        snprintf(deny_reason, sizeof(deny_reason),
+                 "access denied to %s", perm_resource_name(resource_id));
+        if (reason) *reason = deny_reason;
+        return false;
+    }
+
+    return true;
+}
+
+bool shell_authorize_command(const task_sec_ctx_t *task_ctx,
+                             int argc,
+                             char *argv[],
+                             bool is_remote,
+                             const char **reason)
+{
+    static const char *const read_only_fs_subcommands[] = {
+        "cat", "ls", "info", "status", "stat", "find", NULL
+    };
+    static const char *const read_only_tasks_subcommands[] = {
+        "list", "info", "count", "stats", "status", NULL
+    };
+    static const char *const destructive_tasks_subcommands[] = {
+        "suspend", "resume", "kill", NULL
+    };
+    static const char *const read_only_memory_subcommands[] = {
+        "stats", "layout", "stack", "health", "validate", "collision", "remaining", NULL
+    };
+    static const char *const read_only_net_subcommands[] = {
+        "status", "scan", "ping", "dns", "http", NULL
+    };
+    static const char *const read_only_mqtt_subcommands[] = {
+        "status", NULL
+    };
+    static const char *const read_only_remote_subcommands[] = {
+        "status", NULL
+    };
+    static const char *const read_only_ota_subcommands[] = {
+        "status", NULL
+    };
+    static const char *const read_only_script_subcommands[] = {
+        "list", "show", NULL
+    };
+    static const char *const read_only_pkg_subcommands[] = {
+        "list", "installed", "info", "search", NULL
+    };
+    static const char *const read_only_cron_subcommands[] = {
+        "list", "status", NULL
+    };
+    static const char *const read_only_ipc_subcommands[] = {
+        "status", "recv", "peek", NULL
+    };
+    static const char *const read_only_mod_subcommands[] = {
+        "list", "ls", "info", "status", NULL
+    };
+    static const char *const read_only_dev_subcommands[] = {
+        "list", "read", "info", NULL
+    };
+
+    if (!task_ctx || argc <= 0 || !argv || !argv[0]) {
+        if (reason) *reason = "invalid command context";
+        return false;
+    }
+
+    if (is_remote) {
+        if (reason) *reason = "remote shell is restricted to authenticated management commands";
+        return false;
+    }
+
+    if (strcmp(argv[0], "help") == 0 || strcmp(argv[0], "version") == 0 ||
+        strcmp(argv[0], "clear") == 0 || strcmp(argv[0], "history") == 0 ||
+        strcmp(argv[0], "exit") == 0 || strcmp(argv[0], "echo") == 0 ||
+        strcmp(argv[0], "env") == 0 || strcmp(argv[0], "alias") == 0 ||
+        strcmp(argv[0], "export") == 0 || strcmp(argv[0], "screen") == 0 ||
+        strcmp(argv[0], "man") == 0 || strcmp(argv[0], "users") == 0 ||
+        strcmp(argv[0], "perms") == 0) {
+        return true;
+    }
+
+    if (strcmp(argv[0], "reboot") == 0) {
+        return shell_require_access(task_ctx, PERM_RESOURCE_SUPERVISOR,
+                                    PERM_WRITE, CAP_SYS_BOOT, reason);
+    }
+
+    if (strcmp(argv[0], "health") == 0 || strcmp(argv[0], "stats") == 0 ||
+        strcmp(argv[0], "fetch") == 0) {
+        return shell_require_access(task_ctx, PERM_RESOURCE_SUPERVISOR,
+                                    PERM_READ, 0, reason);
+    }
+
+    if (strcmp(argv[0], "supervisor") == 0) {
+        return shell_require_access(task_ctx, PERM_RESOURCE_SUPERVISOR,
+                                    PERM_WRITE, CAP_SYS_ADMIN, reason);
+    }
+
+    if (strcmp(argv[0], "dmesg") == 0) {
+        return shell_require_access(task_ctx, PERM_RESOURCE_DMESG,
+                                    PERM_READ, 0, reason);
+    }
+
+    if (strcmp(argv[0], "tasks") == 0) {
+        if (shell_subcommand_in(argc, argv, destructive_tasks_subcommands) ||
+            (argc >= 3 && strcmp(argv[1], "module") == 0 && strcmp(argv[2], "kill") == 0)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_SCHEDULER,
+                                        PERM_EXEC, CAP_TASK_KILL, reason);
+        }
+
+        if (shell_subcommand_in(argc, argv, read_only_tasks_subcommands) ||
+            (argc >= 3 && strcmp(argv[1], "module") == 0 && strcmp(argv[2], "list") == 0)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_SCHEDULER,
+                                        PERM_READ, 0, reason);
+        }
+    }
+
+    if (strcmp(argv[0], "memory") == 0) {
+        if (shell_subcommand_is(argc, argv, "test-kernel") ||
+            shell_subcommand_is(argc, argv, "test-interp")) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_MEMORY,
+                                        PERM_WRITE, CAP_SYS_ADMIN, reason);
+        }
+
+        if (shell_subcommand_in(argc, argv, read_only_memory_subcommands)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_MEMORY,
+                                        PERM_READ, 0, reason);
+        }
+    }
+
+    if (strcmp(argv[0], "top") == 0 || strcmp(argv[0], "profile") == 0 ||
+        strcmp(argv[0], "logcat") == 0 || strcmp(argv[0], "trace") == 0 ||
+        strcmp(argv[0], "benchmark") == 0 || strcmp(argv[0], "coredump") == 0 ||
+        strcmp(argv[0], "syslog") == 0) {
+        return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
+                                    PERM_READ, 0, reason);
+    }
+
+    if (strcmp(argv[0], "watchpoint") == 0 || strcmp(argv[0], "selftest") == 0) {
+        return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
+                                    PERM_WRITE, CAP_SYS_ADMIN, reason);
+    }
+
+    if (strcmp(argv[0], "fs") == 0) {
+        if (shell_subcommand_in(argc, argv, read_only_fs_subcommands)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_FILESYSTEM,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_FILESYSTEM,
+                                    PERM_WRITE, 0, reason);
+    }
+
+    if (strcmp(argv[0], "cat") == 0 || strcmp(argv[0], "head") == 0 ||
+        strcmp(argv[0], "tail") == 0 || strcmp(argv[0], "wc") == 0 ||
+        strcmp(argv[0], "grep") == 0 || strcmp(argv[0], "hexdump") == 0) {
+        return shell_require_access(task_ctx, PERM_RESOURCE_FILESYSTEM,
+                                    PERM_READ, 0, reason);
+    }
+
+    if (strcmp(argv[0], "tee") == 0) {
+        return shell_require_access(task_ctx, PERM_RESOURCE_FILESYSTEM,
+                                    PERM_WRITE, 0, reason);
+    }
+
+    if (strcmp(argv[0], "proc") == 0) {
+        return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
+                                    PERM_READ, 0, reason);
+    }
+
+    if (strcmp(argv[0], "dev") == 0) {
+        if (shell_subcommand_in(argc, argv, read_only_dev_subcommands)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_UART0,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_UART0,
+                                    PERM_WRITE, CAP_GPIO_WRITE, reason);
+    }
+
+    if (strcmp(argv[0], "hw") == 0 || strcmp(argv[0], "pio") == 0 ||
+        strcmp(argv[0], "dma") == 0 || strcmp(argv[0], "usb") == 0 ||
+        strcmp(argv[0], "wire") == 0 || strcmp(argv[0], "pwmtune") == 0 ||
+        strcmp(argv[0], "adc") == 0 || strcmp(argv[0], "gpiowatch") == 0 ||
+        strcmp(argv[0], "neopixel") == 0 || strcmp(argv[0], "display") == 0 ||
+        strcmp(argv[0], "rtc") == 0 || strcmp(argv[0], "timer") == 0) {
+        return shell_require_access(task_ctx, PERM_RESOURCE_UART0,
+                                    PERM_WRITE, CAP_GPIO_WRITE, reason);
+    }
+
+    if (strcmp(argv[0], "pinout") == 0 || strcmp(argv[0], "i2cscan") == 0) {
+        return shell_require_access(task_ctx, PERM_RESOURCE_UART0,
+                                    PERM_READ, 0, reason);
+    }
+
+    if (strcmp(argv[0], "net") == 0) {
+        if (shell_subcommand_in(argc, argv, read_only_net_subcommands)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_NETWORK,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_NETWORK,
+                                    PERM_WRITE, CAP_NET_ADMIN, reason);
+    }
+
+    if (strcmp(argv[0], "mqtt") == 0) {
+        if (shell_subcommand_in(argc, argv, read_only_mqtt_subcommands)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_NETWORK,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_NETWORK,
+                                    PERM_WRITE, CAP_NET_ADMIN, reason);
+    }
+
+    if (strcmp(argv[0], "remote") == 0) {
+        if (shell_subcommand_in(argc, argv, read_only_remote_subcommands)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_REMOTE_SHELL,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_REMOTE_SHELL,
+                                    PERM_WRITE, CAP_NET_ADMIN, reason);
+    }
+
+    if (strcmp(argv[0], "ota") == 0) {
+        if (shell_subcommand_in(argc, argv, read_only_ota_subcommands)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_OTA,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_OTA,
+                                    PERM_WRITE, CAP_SYS_BOOT, reason);
+    }
+
+    if (strcmp(argv[0], "sage") == 0) {
+        return shell_require_access(task_ctx, PERM_RESOURCE_SAGELANG,
+                                    PERM_EXEC, CAP_SYS_ADMIN, reason);
+    }
+
+    if (strcmp(argv[0], "script") == 0) {
+        if (shell_subcommand_in(argc, argv, read_only_script_subcommands)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_SCRIPTS,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_SCRIPTS,
+                                    PERM_WRITE, CAP_SYS_ADMIN, reason);
+    }
+
+    if (strcmp(argv[0], "pkg") == 0) {
+        if (shell_subcommand_in(argc, argv, read_only_pkg_subcommands)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_SCRIPTS,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_SCRIPTS,
+                                    PERM_EXEC, CAP_SYS_ADMIN, reason);
+    }
+
+    if (strcmp(argv[0], "sensor") == 0) {
+        if (shell_subcommand_is(argc, argv, "status") || shell_subcommand_is(argc, argv, "list")) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_UART0,
+                                    PERM_WRITE, CAP_GPIO_WRITE, reason);
+    }
+
+    if (strcmp(argv[0], "power") == 0) {
+        if (shell_subcommand_is(argc, argv, "status")) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_POWER,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_POWER,
+                                    PERM_WRITE, CAP_SYS_ADMIN, reason);
+    }
+
+    if (strcmp(argv[0], "cron") == 0) {
+        if (shell_subcommand_in(argc, argv, read_only_cron_subcommands)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_SCRIPTS,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_SCRIPTS,
+                                    PERM_WRITE, CAP_SYS_ADMIN, reason);
+    }
+
+    if (strcmp(argv[0], "ipc") == 0) {
+        if (shell_subcommand_in(argc, argv, read_only_ipc_subcommands)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_IPC,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_IPC,
+                                    PERM_WRITE, 0, reason);
+    }
+
+    if (strcmp(argv[0], "mod") == 0) {
+        if (shell_subcommand_in(argc, argv, read_only_mod_subcommands)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
+                                        PERM_READ, 0, reason);
+        }
+        return shell_require_access(task_ctx, PERM_RESOURCE_DEBUG,
+                                    PERM_WRITE, CAP_SYS_ADMIN, reason);
+    }
+
+    return true;
+}
 
 // ===========================================================================
 // Command history
@@ -478,6 +844,13 @@ static int parse_args(char* buffer, char* argv[], int max_args) {
 // Execute a single command (no pipes/redirects)
 static int execute_single(int argc, char *argv[]) {
     if (argc <= 0) return 0;
+
+    const char *deny_reason = NULL;
+    if (!shell_authorize_command(shell_get_security_context(), argc, argv, false, &deny_reason)) {
+        printf("Permission denied: %s\r\n",
+               deny_reason ? deny_reason : "command is not permitted");
+        return -1;
+    }
 
     // Built-in commands
     if (strcmp(argv[0], "help") == 0) {

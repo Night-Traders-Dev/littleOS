@@ -148,11 +148,13 @@ int  ipc_sem_getvalue(int sem_id);
 
 int  ipc_shmem_create(const char *name, uint32_t size, uint16_t owner_task);
 int  ipc_shmem_destroy(int shm_id);
-void *ipc_shmem_attach(int shm_id);
+void *ipc_shmem_attach(int shm_id, uint16_t caller_id);
 int  ipc_shmem_lock(int shm_id, uint16_t task_id);
 int  ipc_shmem_unlock(int shm_id, uint16_t task_id);
-int  ipc_shmem_write(int shm_id, uint32_t offset, const void *data, uint32_t len);
-int  ipc_shmem_read(int shm_id, uint32_t offset, void *data, uint32_t len);
+int  ipc_shmem_write(int shm_id, uint16_t caller_id, uint32_t offset,
+                     const void *data, uint32_t len);
+int  ipc_shmem_read(int shm_id, uint16_t caller_id, uint32_t offset,
+                    void *data, uint32_t len);
 
 /* ============================================================================
  * Error codes

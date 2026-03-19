@@ -72,6 +72,7 @@ typedef uint16_t perm_bits_t;
 #define PERM_0660  PERM_MAKE(PERM_READ|PERM_WRITE, PERM_READ|PERM_WRITE, 0)
 #define PERM_0600  PERM_MAKE(PERM_READ|PERM_WRITE, 0, 0)                  /* rw------- */
 #define PERM_0755  PERM_MAKE(7, 5, 5)                                      /* rwxr-xr-x */
+#define PERM_0750  PERM_MAKE(7, 5, 0)                                      /* rwxr-x--- */
 #define PERM_0700  PERM_MAKE(7, 0, 0)                                      /* rwx------ */
 #define PERM_0770  PERM_MAKE(7, 7, 0)                                      /* rwxrwx--- */
 
@@ -102,6 +103,26 @@ typedef struct {
     uint8_t type;           /* Resource type (device, memory, ipc, etc.) */
     uint16_t flags;         /* Resource-specific flags */
 } resource_perm_t;
+
+typedef enum {
+    PERM_RESOURCE_UART0 = 0,
+    PERM_RESOURCE_WATCHDOG,
+    PERM_RESOURCE_SCHEDULER,
+    PERM_RESOURCE_MEMORY,
+    PERM_RESOURCE_CONFIG,
+    PERM_RESOURCE_SAGELANG,
+    PERM_RESOURCE_SCRIPTS,
+    PERM_RESOURCE_SUPERVISOR,
+    PERM_RESOURCE_DMESG,
+    PERM_RESOURCE_FILESYSTEM,
+    PERM_RESOURCE_NETWORK,
+    PERM_RESOURCE_IPC,
+    PERM_RESOURCE_OTA,
+    PERM_RESOURCE_REMOTE_SHELL,
+    PERM_RESOURCE_DEBUG,
+    PERM_RESOURCE_POWER,
+    PERM_RESOURCE_COUNT
+} perm_resource_id_t;
 
 /* Resource types */
 #define RESOURCE_DEVICE     1   /* Peripheral (UART, GPIO, Timer, etc.) */
@@ -273,6 +294,29 @@ bool perm_chown(const task_sec_ctx_t *task_ctx,
 bool perm_chmod(const task_sec_ctx_t *task_ctx,
                 resource_perm_t *resource,
                 perm_bits_t new_perms);
+
+/* ============================================================================
+ * Resource Registry
+ * ============================================================================
+ */
+
+void perm_resources_init_defaults(void);
+bool perm_resource_set(perm_resource_id_t id, const resource_perm_t *resource);
+const resource_perm_t *perm_resource_get(perm_resource_id_t id);
+const char *perm_resource_name(perm_resource_id_t id);
+bool perm_resource_check(const task_sec_ctx_t *task_ctx,
+                         perm_resource_id_t id,
+                         uint8_t required_perm);
+
+/* ============================================================================
+ * Integration Helpers
+ * ============================================================================
+ */
+
+task_sec_ctx_t perm_init_context(uid_t uid, bool is_system);
+bool perm_task_can_access(const task_sec_ctx_t *task_ctx,
+                          const resource_perm_t *resource,
+                          uint8_t required_perm);
 
 /* ============================================================================
  * Audit Logging (Optional)

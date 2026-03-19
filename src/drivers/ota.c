@@ -1,9 +1,13 @@
 /* ota.c - Over-the-Air update mechanism for littleOS */
 
 #include "ota.h"
+#include "config_storage.h"
 #include "dmesg.h"
 #include <stdio.h>
 #include <string.h>
+
+#define OTA_AUTH_KEY_CONFIG "ota_hmac_key"
+#define SHA256_BLOCK_SIZE   64u
 
 #ifdef PICO_BUILD
 #include "hardware/flash.h"
@@ -25,6 +29,277 @@ static uint32_t ota_crc32(const uint8_t *data, size_t len) {
         }
     }
     return ~crc;
+}
+
+/* ============================================================================
+ * SHA-256 / HMAC-SHA256 helpers
+ * ============================================================================ */
+
+typedef struct {
+    uint32_t state[8];
+    uint64_t bitlen;
+    uint8_t  data[64];
+    size_t   datalen;
+} sha256_ctx_t;
+
+static const uint32_t sha256_k[64] = {
+    0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u,
+    0x3956c25bu, 0x59f111f1u, 0x923f82a4u, 0xab1c5ed5u,
+    0xd807aa98u, 0x12835b01u, 0x243185beu, 0x550c7dc3u,
+    0x72be5d74u, 0x80deb1feu, 0x9bdc06a7u, 0xc19bf174u,
+    0xe49b69c1u, 0xefbe4786u, 0x0fc19dc6u, 0x240ca1ccu,
+    0x2de92c6fu, 0x4a7484aau, 0x5cb0a9dcu, 0x76f988dau,
+    0x983e5152u, 0xa831c66du, 0xb00327c8u, 0xbf597fc7u,
+    0xc6e00bf3u, 0xd5a79147u, 0x06ca6351u, 0x14292967u,
+    0x27b70a85u, 0x2e1b2138u, 0x4d2c6dfcu, 0x53380d13u,
+    0x650a7354u, 0x766a0abbu, 0x81c2c92eu, 0x92722c85u,
+    0xa2bfe8a1u, 0xa81a664bu, 0xc24b8b70u, 0xc76c51a3u,
+    0xd192e819u, 0xd6990624u, 0xf40e3585u, 0x106aa070u,
+    0x19a4c116u, 0x1e376c08u, 0x2748774cu, 0x34b0bcb5u,
+    0x391c0cb3u, 0x4ed8aa4au, 0x5b9cca4fu, 0x682e6ff3u,
+    0x748f82eeu, 0x78a5636fu, 0x84c87814u, 0x8cc70208u,
+    0x90befffau, 0xa4506cebu, 0xbef9a3f7u, 0xc67178f2u
+};
+
+static uint32_t sha256_rotr(uint32_t value, uint32_t bits) {
+    return (value >> bits) | (value << (32u - bits));
+}
+
+static void sha256_transform(sha256_ctx_t *ctx, const uint8_t block[64]) {
+    uint32_t w[64];
+    uint32_t a, b, c, d, e, f, g, h;
+
+    for (int i = 0; i < 16; i++) {
+        w[i] = ((uint32_t)block[i * 4] << 24) |
+               ((uint32_t)block[i * 4 + 1] << 16) |
+               ((uint32_t)block[i * 4 + 2] << 8) |
+               (uint32_t)block[i * 4 + 3];
+    }
+
+    for (int i = 16; i < 64; i++) {
+        uint32_t s0 = sha256_rotr(w[i - 15], 7) ^
+                      sha256_rotr(w[i - 15], 18) ^
+                      (w[i - 15] >> 3);
+        uint32_t s1 = sha256_rotr(w[i - 2], 17) ^
+                      sha256_rotr(w[i - 2], 19) ^
+                      (w[i - 2] >> 10);
+        w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+    }
+
+    a = ctx->state[0];
+    b = ctx->state[1];
+    c = ctx->state[2];
+    d = ctx->state[3];
+    e = ctx->state[4];
+    f = ctx->state[5];
+    g = ctx->state[6];
+    h = ctx->state[7];
+
+    for (int i = 0; i < 64; i++) {
+        uint32_t s1 = sha256_rotr(e, 6) ^ sha256_rotr(e, 11) ^ sha256_rotr(e, 25);
+        uint32_t ch = (e & f) ^ ((~e) & g);
+        uint32_t temp1 = h + s1 + ch + sha256_k[i] + w[i];
+        uint32_t s0 = sha256_rotr(a, 2) ^ sha256_rotr(a, 13) ^ sha256_rotr(a, 22);
+        uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
+        uint32_t temp2 = s0 + maj;
+
+        h = g;
+        g = f;
+        f = e;
+        e = d + temp1;
+        d = c;
+        c = b;
+        b = a;
+        a = temp1 + temp2;
+    }
+
+    ctx->state[0] += a;
+    ctx->state[1] += b;
+    ctx->state[2] += c;
+    ctx->state[3] += d;
+    ctx->state[4] += e;
+    ctx->state[5] += f;
+    ctx->state[6] += g;
+    ctx->state[7] += h;
+}
+
+static void sha256_init(sha256_ctx_t *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->state[0] = 0x6a09e667u;
+    ctx->state[1] = 0xbb67ae85u;
+    ctx->state[2] = 0x3c6ef372u;
+    ctx->state[3] = 0xa54ff53au;
+    ctx->state[4] = 0x510e527fu;
+    ctx->state[5] = 0x9b05688cu;
+    ctx->state[6] = 0x1f83d9abu;
+    ctx->state[7] = 0x5be0cd19u;
+}
+
+static void sha256_update(sha256_ctx_t *ctx, const uint8_t *data, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        ctx->data[ctx->datalen++] = data[i];
+        if (ctx->datalen == sizeof(ctx->data)) {
+            sha256_transform(ctx, ctx->data);
+            ctx->bitlen += 512u;
+            ctx->datalen = 0;
+        }
+    }
+}
+
+static void sha256_final(sha256_ctx_t *ctx, uint8_t hash[32]) {
+    size_t i = ctx->datalen;
+
+    ctx->data[i++] = 0x80u;
+    if (i > 56) {
+        while (i < 64) ctx->data[i++] = 0;
+        sha256_transform(ctx, ctx->data);
+        i = 0;
+    }
+
+    while (i < 56) ctx->data[i++] = 0;
+
+    ctx->bitlen += (uint64_t)ctx->datalen * 8u;
+    ctx->data[63] = (uint8_t)(ctx->bitlen);
+    ctx->data[62] = (uint8_t)(ctx->bitlen >> 8);
+    ctx->data[61] = (uint8_t)(ctx->bitlen >> 16);
+    ctx->data[60] = (uint8_t)(ctx->bitlen >> 24);
+    ctx->data[59] = (uint8_t)(ctx->bitlen >> 32);
+    ctx->data[58] = (uint8_t)(ctx->bitlen >> 40);
+    ctx->data[57] = (uint8_t)(ctx->bitlen >> 48);
+    ctx->data[56] = (uint8_t)(ctx->bitlen >> 56);
+    sha256_transform(ctx, ctx->data);
+
+    for (i = 0; i < 4; i++) {
+        hash[i]      = (uint8_t)(ctx->state[0] >> (24 - i * 8));
+        hash[i + 4]  = (uint8_t)(ctx->state[1] >> (24 - i * 8));
+        hash[i + 8]  = (uint8_t)(ctx->state[2] >> (24 - i * 8));
+        hash[i + 12] = (uint8_t)(ctx->state[3] >> (24 - i * 8));
+        hash[i + 16] = (uint8_t)(ctx->state[4] >> (24 - i * 8));
+        hash[i + 20] = (uint8_t)(ctx->state[5] >> (24 - i * 8));
+        hash[i + 24] = (uint8_t)(ctx->state[6] >> (24 - i * 8));
+        hash[i + 28] = (uint8_t)(ctx->state[7] >> (24 - i * 8));
+    }
+}
+
+static void hmac_sha256(const uint8_t *key,
+                        size_t key_len,
+                        const uint8_t *part1,
+                        size_t part1_len,
+                        const uint8_t *part2,
+                        size_t part2_len,
+                        uint8_t out[OTA_HMAC_SIZE])
+{
+    uint8_t key_block[SHA256_BLOCK_SIZE];
+    uint8_t ipad[SHA256_BLOCK_SIZE];
+    uint8_t opad[SHA256_BLOCK_SIZE];
+    uint8_t inner_hash[OTA_HMAC_SIZE];
+    sha256_ctx_t ctx;
+
+    memset(key_block, 0, sizeof(key_block));
+    if (key_len > sizeof(key_block)) {
+        sha256_init(&ctx);
+        sha256_update(&ctx, key, key_len);
+        sha256_final(&ctx, key_block);
+    } else {
+        memcpy(key_block, key, key_len);
+    }
+
+    for (size_t i = 0; i < sizeof(key_block); i++) {
+        ipad[i] = (uint8_t)(key_block[i] ^ 0x36u);
+        opad[i] = (uint8_t)(key_block[i] ^ 0x5cu);
+    }
+
+    sha256_init(&ctx);
+    sha256_update(&ctx, ipad, sizeof(ipad));
+    if (part1 && part1_len > 0) sha256_update(&ctx, part1, part1_len);
+    if (part2 && part2_len > 0) sha256_update(&ctx, part2, part2_len);
+    sha256_final(&ctx, inner_hash);
+
+    sha256_init(&ctx);
+    sha256_update(&ctx, opad, sizeof(opad));
+    sha256_update(&ctx, inner_hash, sizeof(inner_hash));
+    sha256_final(&ctx, out);
+}
+
+static int ota_hex_nibble(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+    if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+    return -1;
+}
+
+static bool ota_parse_hex_key(const char *hex_key, uint8_t out[OTA_HMAC_SIZE]) {
+    if (!hex_key || strlen(hex_key) != OTA_HMAC_SIZE * 2u) {
+        return false;
+    }
+
+    for (size_t i = 0; i < OTA_HMAC_SIZE; i++) {
+        int hi = ota_hex_nibble(hex_key[i * 2]);
+        int lo = ota_hex_nibble(hex_key[i * 2 + 1]);
+        if (hi < 0 || lo < 0) {
+            return false;
+        }
+        out[i] = (uint8_t)((hi << 4) | lo);
+    }
+
+    return true;
+}
+
+static bool ota_load_auth_key(uint8_t key[OTA_HMAC_SIZE]) {
+    char hex_key[(OTA_HMAC_SIZE * 2u) + 1u];
+    if (config_get(OTA_AUTH_KEY_CONFIG, hex_key, sizeof(hex_key)) != CONFIG_OK) {
+        return false;
+    }
+    return ota_parse_hex_key(hex_key, key);
+}
+
+bool ota_has_auth_key(void) {
+    uint8_t key[OTA_HMAC_SIZE];
+    return ota_load_auth_key(key);
+}
+
+int ota_set_auth_key_hex(const char *hex_key) {
+    uint8_t key[OTA_HMAC_SIZE];
+    if (!ota_parse_hex_key(hex_key, key)) {
+        return OTA_ERR_AUTH;
+    }
+    if (config_set(OTA_AUTH_KEY_CONFIG, hex_key) != CONFIG_OK) {
+        return OTA_ERR_FLASH;
+    }
+    return config_save() ? OTA_OK : OTA_ERR_FLASH;
+}
+
+int ota_clear_auth_key(void) {
+    config_result_t rc = config_delete(OTA_AUTH_KEY_CONFIG);
+    if (rc != CONFIG_OK && rc != CONFIG_ERROR_NOT_FOUND) {
+        return OTA_ERR_FLASH;
+    }
+    return config_save() ? OTA_OK : OTA_ERR_FLASH;
+}
+
+static void ota_compute_image_hmac(const ota_image_header_t *hdr,
+                                   const uint8_t *image_data,
+                                   const uint8_t key[OTA_HMAC_SIZE],
+                                   uint8_t out[OTA_HMAC_SIZE])
+{
+    ota_image_header_t hdr_copy = *hdr;
+    memset(hdr_copy.image_hmac, 0, sizeof(hdr_copy.image_hmac));
+    hdr_copy.header_crc32 = 0;
+
+    hmac_sha256(key, OTA_HMAC_SIZE,
+                (const uint8_t *)&hdr_copy,
+                offsetof(ota_image_header_t, header_crc32),
+                image_data,
+                hdr->image_size,
+                out);
+}
+
+static bool ota_constant_time_eq(const uint8_t *lhs, const uint8_t *rhs, size_t len) {
+    uint8_t diff = 0;
+    for (size_t i = 0; i < len; i++) {
+        diff |= (uint8_t)(lhs[i] ^ rhs[i]);
+    }
+    return diff == 0;
 }
 
 /* ============================================================================
@@ -142,6 +417,7 @@ uint8_t ota_get_active_slot(void) {
 int ota_begin_uart(ota_progress_fn progress_cb) {
     if (!ota_initialized) return OTA_ERR_INIT;
     if (current_state == OTA_STATE_RECEIVING) return OTA_ERR_BUSY;
+    if (!ota_has_auth_key()) return OTA_ERR_AUTH;
 
     current_state = OTA_STATE_RECEIVING;
     bytes_received = 0;
@@ -155,6 +431,7 @@ int ota_begin_uart(ota_progress_fn progress_cb) {
 int ota_begin_tcp(uint16_t port, ota_progress_fn progress_cb) {
     if (!ota_initialized) return OTA_ERR_INIT;
     if (current_state == OTA_STATE_RECEIVING) return OTA_ERR_BUSY;
+    if (!ota_has_auth_key()) return OTA_ERR_AUTH;
 
     current_state = OTA_STATE_RECEIVING;
     bytes_received = 0;
@@ -223,7 +500,11 @@ int ota_write_chunk(const uint8_t *data, uint32_t offset, uint32_t len) {
 }
 
 int ota_verify(void) {
+    uint8_t auth_key[OTA_HMAC_SIZE];
+    uint8_t expected_hmac[OTA_HMAC_SIZE];
+
     if (!ota_initialized) return OTA_ERR_INIT;
+    if (!ota_load_auth_key(auth_key)) return OTA_ERR_AUTH;
 
     current_state = OTA_STATE_VERIFYING;
     dmesg_info("ota: verifying slot B image...");
@@ -242,6 +523,12 @@ int ota_verify(void) {
         dmesg_err("ota: unsupported version %u", hdr->version);
         current_state = OTA_STATE_ERROR;
         return OTA_ERR_VERIFY;
+    }
+
+    if (hdr->auth_type != OTA_AUTH_HMAC_SHA256) {
+        dmesg_err("ota: unsupported auth type %u", hdr->auth_type);
+        current_state = OTA_STATE_ERROR;
+        return OTA_ERR_AUTH;
     }
 
     if (hdr->image_size == 0 || hdr->image_size > OTA_MAX_IMAGE_SIZE) {
@@ -270,6 +557,13 @@ int ota_verify(void) {
                   img_crc, hdr->image_crc32);
         current_state = OTA_STATE_ERROR;
         return OTA_ERR_CRC;
+    }
+
+    ota_compute_image_hmac(hdr, image_data, auth_key, expected_hmac);
+    if (!ota_constant_time_eq(expected_hmac, hdr->image_hmac, sizeof(expected_hmac))) {
+        dmesg_err("ota: image HMAC verification failed");
+        current_state = OTA_STATE_ERROR;
+        return OTA_ERR_AUTH;
     }
 
     /* Update metadata with slot B CRC */
@@ -423,6 +717,7 @@ void ota_print_status(void) {
 
     printf("  Slot A CRC:    0x%08X\r\n", metadata.slot_a_crc32);
     printf("  Slot B CRC:    0x%08X\r\n", metadata.slot_b_crc32);
+    printf("  Auth key:      %s\r\n", ota_has_auth_key() ? "configured" : "missing");
     printf("  Last update:   %u\r\n", metadata.last_update_time);
     printf("  Magic:         0x%08X %s\r\n", metadata.magic,
            metadata.magic == OTA_MAGIC ? "(valid)" : "(INVALID)");
@@ -452,6 +747,9 @@ int ota_apply(void)                                     { ota_no_flash(); return
 int ota_confirm_boot(void)                              { ota_no_flash(); return OTA_ERR_INIT; }
 int ota_rollback(void)                                  { ota_no_flash(); return OTA_ERR_INIT; }
 int ota_cancel(void)                                    { ota_no_flash(); return OTA_ERR_INIT; }
+bool ota_has_auth_key(void)                             { return false; }
+int ota_set_auth_key_hex(const char *hex_key)           { (void)hex_key; ota_no_flash(); return OTA_ERR_INIT; }
+int ota_clear_auth_key(void)                            { ota_no_flash(); return OTA_ERR_INIT; }
 void ota_get_progress(uint32_t *received, uint32_t *total) {
     if (received) *received = 0;
     if (total)    *total    = 0;

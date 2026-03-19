@@ -32,11 +32,8 @@
 #include "trace.h"
 #include "coredump.h"
 #include "syslog.h"
+#include "shell.h"
 
-
-
-// Forward declarations
-void shell_run(void);
 void script_storage_init(void);
 
 
@@ -125,13 +122,16 @@ static void print_user_info(void) {
 static void init_device_permissions(void) {
     printf("\r\nSetting up device and subsystem permissions...\r\n");
 
+    perm_resources_init_defaults();
+
     // UART0 device
     resource_perm_t uart0_perms = perm_resource_create(
         UID_ROOT,           // Owner: root
-        GID_DRIVERS,        // Group: drivers
+        GID_USERS,          // Group: users
         PERM_0660,          // rw-rw----
         RESOURCE_DEVICE
     );
+    perm_resource_set(PERM_RESOURCE_UART0, &uart0_perms);
     printf("  UART0:      owner=root, group=drivers, mode=0660\r\n");
     dmesg_info("UART0 device permissions configured (rw-rw----)");
 
@@ -142,26 +142,29 @@ static void init_device_permissions(void) {
         PERM_0640,          // rw-r-----
         RESOURCE_DEVICE
     );
+    perm_resource_set(PERM_RESOURCE_WATCHDOG, &wdt_perms);
     printf("  Watchdog:   owner=root, group=system, mode=0640\r\n");
     dmesg_info("Watchdog device permissions configured (rw-r-----)");
 
     // Scheduler
     resource_perm_t sched_perms = perm_resource_create(
         UID_ROOT,           // Owner: root
-        GID_SYSTEM,         // Group: system
+        GID_USERS,          // Group: users
         PERM_0660,          // rw-rw----
-        RESOURCE_SYSCALL
+        RESOURCE_TASK
     );
+    perm_resource_set(PERM_RESOURCE_SCHEDULER, &sched_perms);
     printf("  Scheduler:  owner=root, group=system, mode=0660\r\n");
     dmesg_info("Scheduler permissions configured (rw-rw----)");
 
     // Memory manager
     resource_perm_t mem_perms = perm_resource_create(
         UID_ROOT,           // Owner: root
-        GID_SYSTEM,         // Group: system
-        PERM_0600,          // rw-------
-        RESOURCE_SYSCALL
+        GID_USERS,          // Group: users
+        PERM_0640,          // rw-r-----
+        RESOURCE_MEMORY
     );
+    perm_resource_set(PERM_RESOURCE_MEMORY, &mem_perms);
     printf("  Memory:     owner=root, group=system, mode=0600\r\n");
     dmesg_info("Memory manager permissions configured (rw-------)");
 
@@ -172,6 +175,7 @@ static void init_device_permissions(void) {
         PERM_0640,          // rw-r-----
         RESOURCE_IPC
     );
+    perm_resource_set(PERM_RESOURCE_CONFIG, &config_perms);
     printf("  Config:     owner=root, group=system, mode=0640\r\n");
     dmesg_info("Configuration storage permissions configured (rw-r-----)");
 
@@ -179,9 +183,10 @@ static void init_device_permissions(void) {
     resource_perm_t sage_perms = perm_resource_create(
         UID_ROOT,           // Owner: root
         GID_USERS,          // Group: users (accessible to all)
-        PERM_0755,          // rwxr-xr-x
+        PERM_0750,          // rwxr-x---
         RESOURCE_SYSCALL
     );
+    perm_resource_set(PERM_RESOURCE_SAGELANG, &sage_perms);
     printf("  SageLang:   owner=root, group=users, mode=0755\r\n");
     dmesg_info("SageLang interpreter permissions configured (rwxr-xr-x)");
 
@@ -192,6 +197,7 @@ static void init_device_permissions(void) {
         PERM_0770,          // rwxrwx---
         RESOURCE_IPC
     );
+    perm_resource_set(PERM_RESOURCE_SCRIPTS, &script_perms);
     printf("  Scripts:    owner=root, group=users, mode=0770\r\n");
     dmesg_info("Script storage permissions configured (rwxrwx---)");
 
@@ -202,18 +208,83 @@ static void init_device_permissions(void) {
         PERM_0600,          // rw-------
         RESOURCE_SYSCALL
     );
+    perm_resource_set(PERM_RESOURCE_SUPERVISOR, &super_perms);
     printf("  Supervisor: owner=root, group=system, mode=0600\r\n");
     dmesg_info("Supervisor permissions configured (rw-------)");
 
     // dmesg log
     resource_perm_t dmesg_perms = perm_resource_create(
         UID_ROOT,           // Owner: root
-        GID_SYSTEM,         // Group: system
+        GID_USERS,          // Group: users
         PERM_0644,          // rw-r--r--
         RESOURCE_IPC
     );
+    perm_resource_set(PERM_RESOURCE_DMESG, &dmesg_perms);
     printf("  dmesg log:  owner=root, group=system, mode=0644\r\n");
     dmesg_info("dmesg log permissions configured (rw-r--r--)");
+
+    resource_perm_t fs_perms = perm_resource_create(
+        UID_ROOT,
+        GID_USERS,
+        PERM_0660,
+        RESOURCE_MEMORY
+    );
+    perm_resource_set(PERM_RESOURCE_FILESYSTEM, &fs_perms);
+    dmesg_info("Filesystem permissions configured (rw-rw----)");
+
+    resource_perm_t net_perms = perm_resource_create(
+        UID_ROOT,
+        GID_USERS,
+        PERM_0660,
+        RESOURCE_DEVICE
+    );
+    perm_resource_set(PERM_RESOURCE_NETWORK, &net_perms);
+    dmesg_info("Network permissions configured (rw-rw----)");
+
+    resource_perm_t ipc_perms = perm_resource_create(
+        UID_ROOT,
+        GID_USERS,
+        PERM_0660,
+        RESOURCE_IPC
+    );
+    perm_resource_set(PERM_RESOURCE_IPC, &ipc_perms);
+    dmesg_info("IPC permissions configured (rw-rw----)");
+
+    resource_perm_t ota_perms = perm_resource_create(
+        UID_ROOT,
+        GID_SYSTEM,
+        PERM_0600,
+        RESOURCE_SYSCALL
+    );
+    perm_resource_set(PERM_RESOURCE_OTA, &ota_perms);
+    dmesg_info("OTA permissions configured (rw-------)");
+
+    resource_perm_t remote_perms = perm_resource_create(
+        UID_ROOT,
+        GID_SYSTEM,
+        PERM_0600,
+        RESOURCE_SYSCALL
+    );
+    perm_resource_set(PERM_RESOURCE_REMOTE_SHELL, &remote_perms);
+    dmesg_info("Remote shell permissions configured (rw-------)");
+
+    resource_perm_t debug_perms = perm_resource_create(
+        UID_ROOT,
+        GID_USERS,
+        PERM_0640,
+        RESOURCE_SYSCALL
+    );
+    perm_resource_set(PERM_RESOURCE_DEBUG, &debug_perms);
+    dmesg_info("Debug permissions configured (rw-r-----)");
+
+    resource_perm_t power_perms = perm_resource_create(
+        UID_ROOT,
+        GID_SYSTEM,
+        PERM_0640,
+        RESOURCE_SYSCALL
+    );
+    perm_resource_set(PERM_RESOURCE_POWER, &power_perms);
+    dmesg_info("Power permissions configured (rw-r-----)");
 }
 
 
@@ -298,11 +369,19 @@ void kernel_main(void) {
         }
     }
 
-    // Create root security context
-    task_sec_ctx_t root_ctx = users_root_context();
-    printf("\r\nCreated root security context (UID=%d, GID=%d)\r\n",
-           root_ctx.uid, root_ctx.gid);
-    dmesg_info("Root security context created");
+    const user_account_t *startup_user = users_get_by_uid(LITTLEOS_STARTUP_TASK_UID);
+    if (!startup_user) {
+        startup_user = users_get_default_user();
+    }
+    if (!startup_user) {
+        startup_user = users_get_root();
+    }
+
+    task_sec_ctx_t startup_ctx = users_account_to_context(startup_user);
+    printf("\r\nCreated shell security context for %s (UID=%d, GID=%d)\r\n",
+           startup_user->username, startup_ctx.uid, startup_ctx.gid);
+    dmesg_info("Shell security context created for %s (uid=%u)",
+               startup_user->username, startup_ctx.uid);
 
     // Initialize all device and subsystem permissions
     init_device_permissions();
@@ -339,6 +418,8 @@ void kernel_main(void) {
 
     // Initialize shell environment (env vars, aliases, prompt)
     shell_env_init();
+    shell_set_security_context(&startup_ctx, startup_user->username);
+    shell_env_set("USER", startup_user->username);
     dmesg_info("Shell environment initialized");
 
     // Initialize virtual filesystems
@@ -424,7 +505,7 @@ void kernel_main(void) {
 
     // Show current user context
     printf("✓ Running as: %s (UID=%d, GID=%d)\r\n",
-           "root", root_ctx.uid, root_ctx.gid);
+           startup_user->username, startup_ctx.uid, startup_ctx.gid);
 
     dmesg_info("Boot sequence complete - entering shell");
     printf("\r\n ");
