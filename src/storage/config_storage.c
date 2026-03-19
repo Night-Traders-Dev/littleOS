@@ -236,6 +236,9 @@ config_result_t config_get(const char* key, char* value, size_t value_size) {
     if (!config_initialized || !key || !value) {
         return CONFIG_ERROR_FLASH;
     }
+    if (value_size == 0) {
+        return CONFIG_ERROR_INVALID_VALUE;
+    }
     
     for (int i = 0; i < CONFIG_MAX_ENTRIES; i++) {
         if (config_data.entries[i].used && 
@@ -355,6 +358,9 @@ bool config_set_autoboot(const char* script) {
  */
 bool config_get_autoboot(char* script, size_t script_size) {
     if (!config_initialized || !script || !config_data.autoboot_enabled) {
+        return false;
+    }
+    if (script_size == 0) {
         return false;
     }
     

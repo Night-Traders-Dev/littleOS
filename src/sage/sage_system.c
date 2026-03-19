@@ -24,9 +24,7 @@ static Value sage_sys_version(int argc, Value* args) {
     (void)args;
     
     const char* version = system_get_version();
-    char* str = malloc(strlen(version) + 1);
-    strcpy(str, version);
-    return val_string(str);
+    return val_string(version);
 }
 
 /**
@@ -130,9 +128,7 @@ static Value sage_sys_board_id(int argc, Value* args) {
     
     char board_id[17];
     if (system_get_board_id(board_id, sizeof(board_id))) {
-        char* str = malloc(strlen(board_id) + 1);
-        strcpy(str, board_id);
-        return val_string(str);
+        return val_string(board_id);
     }
     return val_string("UNKNOWN");
 }
@@ -155,15 +151,11 @@ static Value sage_sys_info(int argc, Value* args) {
     
     // Version
     const char* version = system_get_version();
-    char* ver_str = malloc(strlen(version) + 1);
-    strcpy(ver_str, version);
-    dict_set(&dict, "version", val_string(ver_str));
+    dict_set(&dict, "version", val_string(version));
     
     // Build date
     const char* build_date = system_get_build_date();
-    char* date_str = malloc(strlen(build_date) + 1);
-    strcpy(date_str, build_date);
-    dict_set(&dict, "build_date", val_string(date_str));
+    dict_set(&dict, "build_date", val_string(build_date));
     
     // CPU info
     cpu_info_t cpu;
@@ -199,9 +191,7 @@ static Value sage_sys_info(int argc, Value* args) {
     // Board ID
     char board_id[17];
     if (system_get_board_id(board_id, sizeof(board_id))) {
-        char* id_str = malloc(strlen(board_id) + 1);
-        strcpy(id_str, board_id);
-        dict_set(&dict, "board_id", val_string(id_str));
+        dict_set(&dict, "board_id", val_string(board_id));
     }
     
     return dict;

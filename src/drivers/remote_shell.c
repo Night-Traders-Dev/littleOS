@@ -12,9 +12,17 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define RSHELL_TOKEN_KEY        "remote_token_enc"
-#define RSHELL_LEGACY_TOKEN_KEY "remote_token"
-#define RSHELL_NONCE_BYTES      16u
+#ifdef PICO_W
+#include "pico/rand.h"
+#endif
+
+#define RSHELL_TOKEN_RECORD_KEY          "remote_token_v2"
+#define RSHELL_LEGACY_TOKEN_KEY          "remote_token"
+#define RSHELL_LEGACY_ENCRYPTED_TOKEN_KEY "remote_token_enc"
+#define RSHELL_TOKEN_SALT_BYTES          16u
+#define RSHELL_TOKEN_VERIFIER_BYTES      32u
+#define RSHELL_TOKEN_RECORD_BYTES        (RSHELL_TOKEN_SALT_BYTES + RSHELL_TOKEN_VERIFIER_BYTES)
+#define RSHELL_NONCE_BYTES               16u
 
 typedef struct {
     uint32_t state[8];
@@ -284,7 +292,7 @@ static void rshell_format_hex(const uint8_t *data, size_t len, char *out, size_t
     out[len * 2u] = '\0';
 }
 
-static bool rshell_derive_device_key(uint8_t key[32]) {
+static bool rshell_derive_legacy_device_key(uint8_t key[32]) {
     char board_id[17];
 
     if (!system_get_board_id(board_id, sizeof(board_id))) {
@@ -295,9 +303,57 @@ static bool rshell_derive_device_key(uint8_t key[32]) {
     return true;
 }
 
-static bool rshell_encrypt_token(const char *token, char *encoded, size_t encoded_size) {
-    uint8_t key[32];
-    uint8_t ciphertext[REMOTE_SHELL_TOKEN_MAX];
+static void rshell_fill_random_bytes(uint8_t *out, size_t len) {
+    size_t offset = 0;
+
+    if (!out || len == 0) {
+        return;
+    }
+
+#ifdef PICO_W
+    while (offset < len) {
+        uint32_t word = get_rand_32();
+        size_t chunk = len - offset;
+        if (chunk > sizeof(word)) {
+            chunk = sizeof(word);
+        }
+        memcpy(out + offset, &word, chunk);
+        offset += chunk;
+    }
+#else
+    static uint32_t fallback_state = 0x6d2b79f5u;
+
+    while (offset < len) {
+        fallback_state = fallback_state * 1664525u + 1013904223u;
+        out[offset++] = (uint8_t)(fallback_state >> 24);
+    }
+#endif
+}
+
+static void rshell_compute_token_verifier(const char *token,
+                                          const uint8_t salt[RSHELL_TOKEN_SALT_BYTES],
+                                          uint8_t out[RSHELL_TOKEN_VERIFIER_BYTES]) {
+    rshell_sha256_ctx_t ctx;
+
+    rshell_sha256_init(&ctx);
+    rshell_sha256_update(&ctx, (const uint8_t *)token, strlen(token));
+    rshell_sha256_update(&ctx, salt, RSHELL_TOKEN_SALT_BYTES);
+    rshell_sha256_final(&ctx, out);
+}
+
+static void rshell_compute_auth_response(const uint8_t verifier[RSHELL_TOKEN_VERIFIER_BYTES],
+                                         const uint8_t nonce[RSHELL_NONCE_BYTES],
+                                         uint8_t out[32]) {
+    rshell_sha256_ctx_t ctx;
+
+    rshell_sha256_init(&ctx);
+    rshell_sha256_update(&ctx, verifier, RSHELL_TOKEN_VERIFIER_BYTES);
+    rshell_sha256_update(&ctx, nonce, RSHELL_NONCE_BYTES);
+    rshell_sha256_final(&ctx, out);
+}
+
+static bool rshell_store_token_record(const char *token, char *encoded, size_t encoded_size) {
+    uint8_t record[RSHELL_TOKEN_RECORD_BYTES];
     size_t len;
 
     if (!token || !encoded) {
@@ -308,18 +364,34 @@ static bool rshell_encrypt_token(const char *token, char *encoded, size_t encode
     if (len == 0 || len > REMOTE_SHELL_TOKEN_MAX) {
         return false;
     }
-    if (!rshell_derive_device_key(key)) {
+
+    rshell_fill_random_bytes(record, RSHELL_TOKEN_SALT_BYTES);
+    rshell_compute_token_verifier(token, record, record + RSHELL_TOKEN_SALT_BYTES);
+    return rshell_base64_encode(record, sizeof(record), encoded, encoded_size);
+}
+
+static bool rshell_load_token_record(uint8_t salt[RSHELL_TOKEN_SALT_BYTES],
+                                     uint8_t verifier[RSHELL_TOKEN_VERIFIER_BYTES]) {
+    char encoded[CONFIG_MAX_VALUE_LEN];
+    uint8_t record[RSHELL_TOKEN_RECORD_BYTES];
+    size_t record_len = 0;
+
+    if (config_get(RSHELL_TOKEN_RECORD_KEY, encoded, sizeof(encoded)) != CONFIG_OK) {
+        return false;
+    }
+    if (!rshell_base64_decode(encoded, record, &record_len, sizeof(record))) {
+        return false;
+    }
+    if (record_len != sizeof(record)) {
         return false;
     }
 
-    for (size_t i = 0; i < len; i++) {
-        ciphertext[i] = (uint8_t)token[i] ^ key[i % sizeof(key)];
-    }
-
-    return rshell_base64_encode(ciphertext, len, encoded, encoded_size);
+    memcpy(salt, record, RSHELL_TOKEN_SALT_BYTES);
+    memcpy(verifier, record + RSHELL_TOKEN_SALT_BYTES, RSHELL_TOKEN_VERIFIER_BYTES);
+    return true;
 }
 
-static bool rshell_decrypt_token(const char *encoded, char *token, size_t token_size) {
+static bool rshell_decrypt_legacy_token(const char *encoded, char *token, size_t token_size) {
     uint8_t key[32];
     uint8_t ciphertext[REMOTE_SHELL_TOKEN_MAX];
     size_t ciphertext_len = 0;
@@ -327,7 +399,7 @@ static bool rshell_decrypt_token(const char *encoded, char *token, size_t token_
     if (!encoded || !token || token_size < (REMOTE_SHELL_TOKEN_MAX + 1u)) {
         return false;
     }
-    if (!rshell_derive_device_key(key)) {
+    if (!rshell_derive_legacy_device_key(key)) {
         return false;
     }
     if (!rshell_base64_decode(encoded, ciphertext, &ciphertext_len, sizeof(ciphertext))) {
@@ -344,24 +416,58 @@ static bool rshell_decrypt_token(const char *encoded, char *token, size_t token_
     return true;
 }
 
-static bool rshell_load_token(char *token, size_t token_size) {
+static bool rshell_load_legacy_token(char *token, size_t token_size) {
     char encoded[CONFIG_MAX_VALUE_LEN];
 
-    if (config_get(RSHELL_TOKEN_KEY, encoded, sizeof(encoded)) == CONFIG_OK) {
-        return rshell_decrypt_token(encoded, token, token_size);
+    if (!token || token_size < (REMOTE_SHELL_TOKEN_MAX + 1u)) {
+        return false;
+    }
+
+    if (config_get(RSHELL_LEGACY_ENCRYPTED_TOKEN_KEY, encoded, sizeof(encoded)) == CONFIG_OK) {
+        return rshell_decrypt_legacy_token(encoded, token, token_size);
     }
 
     return config_get(RSHELL_LEGACY_TOKEN_KEY, token, token_size) == CONFIG_OK;
 }
 
+static int rshell_migrate_legacy_token(void) {
+    char legacy_token[REMOTE_SHELL_TOKEN_MAX + 1];
+    uint8_t salt[RSHELL_TOKEN_SALT_BYTES];
+    uint8_t verifier[RSHELL_TOKEN_VERIFIER_BYTES];
+
+    if (rshell_load_token_record(salt, verifier)) {
+        return 0;
+    }
+    if (!rshell_load_legacy_token(legacy_token, sizeof(legacy_token))) {
+        return 0;
+    }
+    if (remote_shell_set_token(legacy_token) != 0) {
+        return -1;
+    }
+
+    dmesg_info("rshell: migrated legacy token to verifier storage");
+    return 0;
+}
+
 bool remote_shell_has_token(void) {
-    char token[REMOTE_SHELL_TOKEN_MAX + 1];
-    return rshell_load_token(token, sizeof(token));
+    uint8_t salt[RSHELL_TOKEN_SALT_BYTES];
+    uint8_t verifier[RSHELL_TOKEN_VERIFIER_BYTES];
+
+    if (rshell_load_token_record(salt, verifier)) {
+        return true;
+    }
+
+    if (rshell_migrate_legacy_token() == 0 && rshell_load_token_record(salt, verifier)) {
+        return true;
+    }
+
+    return false;
 }
 
 int remote_shell_set_token(const char *token) {
     char encoded[CONFIG_MAX_VALUE_LEN];
     config_result_t clear_rc;
+    config_result_t legacy_enc_rc;
 
     if (!token || token[0] == '\0') {
         return -1;
@@ -369,25 +475,29 @@ int remote_shell_set_token(const char *token) {
     if (strlen(token) > REMOTE_SHELL_TOKEN_MAX) {
         return -1;
     }
-    if (!rshell_encrypt_token(token, encoded, sizeof(encoded))) {
+    if (!rshell_store_token_record(token, encoded, sizeof(encoded))) {
         return -1;
     }
-    if (config_set(RSHELL_TOKEN_KEY, encoded) != CONFIG_OK) {
+    if (config_set(RSHELL_TOKEN_RECORD_KEY, encoded) != CONFIG_OK) {
         return -1;
     }
     clear_rc = config_delete(RSHELL_LEGACY_TOKEN_KEY);
-    if (clear_rc != CONFIG_OK && clear_rc != CONFIG_ERROR_NOT_FOUND) {
+    legacy_enc_rc = config_delete(RSHELL_LEGACY_ENCRYPTED_TOKEN_KEY);
+    if ((clear_rc != CONFIG_OK && clear_rc != CONFIG_ERROR_NOT_FOUND) ||
+        (legacy_enc_rc != CONFIG_OK && legacy_enc_rc != CONFIG_ERROR_NOT_FOUND)) {
         return -1;
     }
     return config_save() ? 0 : -1;
 }
 
 int remote_shell_clear_token(void) {
-    config_result_t rc = config_delete(RSHELL_TOKEN_KEY);
+    config_result_t rc = config_delete(RSHELL_TOKEN_RECORD_KEY);
     config_result_t legacy_rc = config_delete(RSHELL_LEGACY_TOKEN_KEY);
+    config_result_t legacy_enc_rc = config_delete(RSHELL_LEGACY_ENCRYPTED_TOKEN_KEY);
 
     if ((rc != CONFIG_OK && rc != CONFIG_ERROR_NOT_FOUND) ||
-        (legacy_rc != CONFIG_OK && legacy_rc != CONFIG_ERROR_NOT_FOUND)) {
+        (legacy_rc != CONFIG_OK && legacy_rc != CONFIG_ERROR_NOT_FOUND) ||
+        (legacy_enc_rc != CONFIG_OK && legacy_enc_rc != CONFIG_ERROR_NOT_FOUND)) {
         return -1;
     }
 
@@ -467,71 +577,64 @@ static int rshell_parse_args(char *buffer, char *argv[], int max_args) {
 }
 
 static void rshell_generate_nonce(rshell_client_t *client) {
-    uint8_t seed[32];
-    uint8_t digest[32];
-    uint32_t now = to_ms_since_boot(get_absolute_time());
-    static uint32_t nonce_counter = 0;
+    if (!client) {
+        return;
+    }
 
-    memset(seed, 0, sizeof(seed));
-    memcpy(&seed[0], &client->client_ip, sizeof(client->client_ip));
-    memcpy(&seed[4], &client->client_port, sizeof(client->client_port));
-    memcpy(&seed[8], &client->connected_at_ms, sizeof(client->connected_at_ms));
-    memcpy(&seed[12], &now, sizeof(now));
-    memcpy(&seed[16], &total_connections, sizeof(total_connections));
-    memcpy(&seed[20], &nonce_counter, sizeof(nonce_counter));
-    nonce_counter++;
-
-    rshell_sha256_bytes(seed, sizeof(seed), digest);
-    memcpy(client->auth_nonce, digest, RSHELL_NONCE_BYTES);
+    rshell_fill_random_bytes(client->auth_nonce, sizeof(client->auth_nonce));
 }
 
 static bool rshell_auth_response_matches(const rshell_client_t *client, const char *provided_hex) {
-    char token[REMOTE_SHELL_TOKEN_MAX + 1];
+    uint8_t salt[RSHELL_TOKEN_SALT_BYTES];
+    uint8_t verifier[RSHELL_TOKEN_VERIFIER_BYTES];
     uint8_t provided[32];
     uint8_t expected[32];
-    rshell_sha256_ctx_t ctx;
 
-    if (!provided_hex || !rshell_load_token(token, sizeof(token))) {
+    if (!provided_hex || !rshell_load_token_record(salt, verifier)) {
         return false;
     }
+    (void)salt;
     if (!rshell_parse_hex(provided_hex, provided, sizeof(provided))) {
         return false;
     }
 
-    rshell_sha256_init(&ctx);
-    rshell_sha256_update(&ctx, (const uint8_t *)token, strlen(token));
-    rshell_sha256_update(&ctx, client->auth_nonce, sizeof(client->auth_nonce));
-    rshell_sha256_final(&ctx, expected);
+    rshell_compute_auth_response(verifier, client->auth_nonce, expected);
 
     return rshell_constant_time_eq(expected, provided, sizeof(expected));
 }
 
 static void rshell_send_auth_instructions(rshell_client_t *client, const char *prefix) {
+    uint8_t salt[RSHELL_TOKEN_SALT_BYTES];
+    uint8_t verifier[RSHELL_TOKEN_VERIFIER_BYTES];
+    char salt_hex[(RSHELL_TOKEN_SALT_BYTES * 2u) + 1u];
     char nonce_hex[(RSHELL_NONCE_BYTES * 2u) + 1u];
     char msg[256];
 
+    if (!client) {
+        return;
+    }
+
+    if (!rshell_load_token_record(salt, verifier)) {
+        rshell_format_output(msg, sizeof(msg),
+                             "%sRemote shell is not configured with a token.\r\n"
+                             "Type 'exit' to disconnect.\r\n",
+                             prefix ? prefix : "");
+        rshell_tcp_send(client, msg, strlen(msg));
+        return;
+    }
+    (void)verifier;
+
+    rshell_format_hex(salt, sizeof(salt), salt_hex, sizeof(salt_hex));
     rshell_format_hex(client->auth_nonce, sizeof(client->auth_nonce), nonce_hex, sizeof(nonce_hex));
     rshell_format_output(msg, sizeof(msg),
-                         "%sNonce: %s\r\n"
-                         "Reply with: AUTH <sha256(token||nonce) hex>\r\n"
+                         "%sSalt: %s\r\n"
+                         "Nonce: %s\r\n"
+                         "Reply with: AUTH <sha256(sha256(token||salt)||nonce) hex>\r\n"
                          "Type 'exit' to disconnect.\r\n",
                          prefix ? prefix : "",
+                         salt_hex,
                          nonce_hex);
     rshell_tcp_send(client, msg, strlen(msg));
-}
-
-static int rshell_migrate_legacy_token(void) {
-    char legacy_token[REMOTE_SHELL_TOKEN_MAX + 1];
-
-    if (config_get(RSHELL_LEGACY_TOKEN_KEY, legacy_token, sizeof(legacy_token)) != CONFIG_OK) {
-        return 0;
-    }
-    if (remote_shell_set_token(legacy_token) != 0) {
-        return -1;
-    }
-
-    dmesg_info("rshell: migrated legacy plaintext token to encrypted storage");
-    return 0;
 }
 
 static bool rshell_is_auth_command(const char *line) {

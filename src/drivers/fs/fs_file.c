@@ -445,12 +445,9 @@ static void fs_free_inode_blocks(struct fs *fs, struct fs_inode *ino) {
     for (uint32_t i = 0; i < FS_DIRECT_BLOCKS; i++) {
         uint32_t blk = ino->direct[i];
         if (blk != FS_INVALID_BLOCK && blk != 0) {
-            uint32_t seg = blk / FS_BLOCKS_PER_SEGMENT;
-            if (seg < fs->sb.total_segments && fs->sit[seg].valid_count > 0) {
-                fs->sit[seg].valid_count--;
-                fs->sit_dirty = true;
+            if (fs_mark_block_free(fs, blk) == FS_OK) {
+                fs->free_blocks_count++;
             }
-            fs->free_blocks_count++;
             ino->direct[i] = FS_INVALID_BLOCK;
         }
     }
@@ -464,22 +461,16 @@ static void fs_free_inode_blocks(struct fs *fs, struct fs_inode *ino) {
             for (uint32_t i = 0; i < FS_INDIRECT_PTRS; i++) {
                 uint32_t blk = node.ptrs[i];
                 if (blk != FS_INVALID_BLOCK && blk != 0) {
-                    uint32_t seg = blk / FS_BLOCKS_PER_SEGMENT;
-                    if (seg < fs->sb.total_segments && fs->sit[seg].valid_count > 0) {
-                        fs->sit[seg].valid_count--;
-                        fs->sit_dirty = true;
+                    if (fs_mark_block_free(fs, blk) == FS_OK) {
+                        fs->free_blocks_count++;
                     }
-                    fs->free_blocks_count++;
                 }
             }
         }
         /* Free the indirect node block itself */
-        uint32_t seg = ino->indirect / FS_BLOCKS_PER_SEGMENT;
-        if (seg < fs->sb.total_segments && fs->sit[seg].valid_count > 0) {
-            fs->sit[seg].valid_count--;
-            fs->sit_dirty = true;
+        if (fs_mark_block_free(fs, ino->indirect) == FS_OK) {
+            fs->free_blocks_count++;
         }
-        fs->free_blocks_count++;
         ino->indirect = FS_INVALID_BLOCK;
     }
 
@@ -499,31 +490,22 @@ static void fs_free_inode_blocks(struct fs *fs, struct fs_inode *ino) {
                     for (uint32_t j = 0; j < FS_INDIRECT_PTRS; j++) {
                         uint32_t blk = l2.ptrs[j];
                         if (blk != FS_INVALID_BLOCK && blk != 0) {
-                            uint32_t seg = blk / FS_BLOCKS_PER_SEGMENT;
-                            if (seg < fs->sb.total_segments && fs->sit[seg].valid_count > 0) {
-                                fs->sit[seg].valid_count--;
-                                fs->sit_dirty = true;
+                            if (fs_mark_block_free(fs, blk) == FS_OK) {
+                                fs->free_blocks_count++;
                             }
-                            fs->free_blocks_count++;
                         }
                     }
                 }
                 /* Free the L2 node */
-                uint32_t seg = l1.ptrs[i] / FS_BLOCKS_PER_SEGMENT;
-                if (seg < fs->sb.total_segments && fs->sit[seg].valid_count > 0) {
-                    fs->sit[seg].valid_count--;
-                    fs->sit_dirty = true;
+                if (fs_mark_block_free(fs, l1.ptrs[i]) == FS_OK) {
+                    fs->free_blocks_count++;
                 }
-                fs->free_blocks_count++;
             }
         }
         /* Free the L1 (double-indirect root) node */
-        uint32_t seg = ino->double_indirect / FS_BLOCKS_PER_SEGMENT;
-        if (seg < fs->sb.total_segments && fs->sit[seg].valid_count > 0) {
-            fs->sit[seg].valid_count--;
-            fs->sit_dirty = true;
+        if (fs_mark_block_free(fs, ino->double_indirect) == FS_OK) {
+            fs->free_blocks_count++;
         }
-        fs->free_blocks_count++;
         ino->double_indirect = FS_INVALID_BLOCK;
     }
 
@@ -532,12 +514,9 @@ static void fs_free_inode_blocks(struct fs *fs, struct fs_inode *ino) {
     if (ino_num > 0 && ino_num < fs->sb.total_inodes) {
         uint32_t iblk = fs->nat[ino_num].block_addr;
         if (iblk != FS_INVALID_BLOCK) {
-            uint32_t seg = iblk / FS_BLOCKS_PER_SEGMENT;
-            if (seg < fs->sb.total_segments && fs->sit[seg].valid_count > 0) {
-                fs->sit[seg].valid_count--;
-                fs->sit_dirty = true;
+            if (fs_mark_block_free(fs, iblk) == FS_OK) {
+                fs->free_blocks_count++;
             }
-            fs->free_blocks_count++;
         }
         fs->nat[ino_num].block_addr = FS_INVALID_BLOCK;
         fs->nat[ino_num].type       = 0;

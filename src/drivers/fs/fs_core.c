@@ -6,6 +6,188 @@
 #include <stdlib.h>
 #include <time.h>
 
+static size_t fs_block_bitmap_size_bytes(const struct fs *fs) {
+    if (!fs) return 0;
+    return ((size_t)fs->sb.total_blocks + 7u) / 8u;
+}
+
+static bool fs_bitmap_test(const struct fs *fs, uint32_t block_addr) {
+    size_t byte_index;
+    uint8_t bit_mask;
+
+    if (!fs || !fs->block_bitmap || block_addr >= fs->sb.total_blocks) {
+        return false;
+    }
+
+    byte_index = block_addr / 8u;
+    bit_mask = (uint8_t)(1u << (block_addr % 8u));
+    return (fs->block_bitmap[byte_index] & bit_mask) != 0;
+}
+
+static void fs_bitmap_set(struct fs *fs, uint32_t block_addr) {
+    size_t byte_index = block_addr / 8u;
+    uint8_t bit_mask = (uint8_t)(1u << (block_addr % 8u));
+    fs->block_bitmap[byte_index] |= bit_mask;
+}
+
+static void fs_bitmap_clear(struct fs *fs, uint32_t block_addr) {
+    size_t byte_index = block_addr / 8u;
+    uint8_t bit_mask = (uint8_t)(1u << (block_addr % 8u));
+    fs->block_bitmap[byte_index] &= (uint8_t)~bit_mask;
+}
+
+static void fs_release_runtime_state(struct fs *fs) {
+    if (!fs) return;
+    free(fs->nat);
+    free(fs->sit);
+    free(fs->block_bitmap);
+    fs->nat = NULL;
+    fs->sit = NULL;
+    fs->block_bitmap = NULL;
+}
+
+static int fs_alloc_runtime_state(struct fs *fs) {
+    if (!fs) return FS_ERR_INVALID_ARG;
+
+    if ((size_t)fs->sb.total_inodes > (SIZE_MAX / sizeof(struct fs_nat_entry)) ||
+        (size_t)fs->sb.total_segments > (SIZE_MAX / sizeof(struct fs_sit_entry))) {
+        return FS_ERR_CORRUPTED;
+    }
+
+    fs->nat = (struct fs_nat_entry *)
+        calloc(fs->sb.total_inodes, sizeof(struct fs_nat_entry));
+    fs->sit = (struct fs_sit_entry *)
+        calloc(fs->sb.total_segments, sizeof(struct fs_sit_entry));
+    fs->block_bitmap = (uint8_t *)calloc(fs_block_bitmap_size_bytes(fs), 1u);
+    if (!fs->nat || !fs->sit || !fs->block_bitmap) {
+        fs_release_runtime_state(fs);
+        return FS_ERR_NO_SPACE;
+    }
+
+    return FS_OK;
+}
+
+static int fs_validate_superblock_layout(const struct fs_superblock *sb) {
+    if (!sb) return FS_ERR_INVALID_ARG;
+    if (sb->total_blocks < FS_FIXED_METADATA_BLOCKS + 8u) return FS_ERR_CORRUPTED;
+    if (sb->total_segments != fs_div_ceil_u32(sb->total_blocks, FS_BLOCKS_PER_SEGMENT))
+        return FS_ERR_CORRUPTED;
+    if (sb->total_inodes == 0) return FS_ERR_CORRUPTED;
+    if (sb->root_inode != FS_ROOT_INODE) return FS_ERR_CORRUPTED;
+    if (sb->nat_start_block != FS_FIXED_METADATA_BLOCKS) return FS_ERR_CORRUPTED;
+    if (sb->nat_blocks != fs_nat_blocks_for_inodes(sb->total_inodes)) return FS_ERR_CORRUPTED;
+    if (sb->sit_start_block != sb->nat_start_block + sb->nat_blocks) return FS_ERR_CORRUPTED;
+    if (sb->sit_blocks != fs_sit_blocks_for_segments(sb->total_segments)) return FS_ERR_CORRUPTED;
+    if (sb->main_start_block != sb->sit_start_block + sb->sit_blocks) return FS_ERR_CORRUPTED;
+    if (sb->main_start_block >= sb->total_blocks) return FS_ERR_CORRUPTED;
+    return FS_OK;
+}
+
+static int fs_rebuild_mark_block(struct fs *fs, uint32_t block_addr) {
+    if (block_addr == FS_INVALID_BLOCK || block_addr == 0) return FS_OK;
+    if (block_addr < fs->sb.main_start_block || block_addr >= fs->sb.total_blocks) {
+        return FS_ERR_CORRUPTED;
+    }
+    return fs_mark_block_valid(fs, block_addr);
+}
+
+static int fs_rebuild_from_indirect(struct fs *fs, uint32_t node_block, bool leaf_points_to_data) {
+    struct fs_indirect_node node;
+    uint8_t buf[FS_BLOCK_SIZE];
+    int r = fs_rebuild_mark_block(fs, node_block);
+    if (r != FS_OK) return r;
+
+    r = fs_read_block_i(fs, node_block, buf);
+    if (r != FS_OK) return r;
+    memcpy(&node, buf, sizeof(node));
+
+    for (uint32_t i = 0; i < FS_INDIRECT_PTRS; i++) {
+        uint32_t blk = node.ptrs[i];
+        if (blk == FS_INVALID_BLOCK || blk == 0) continue;
+        if (leaf_points_to_data) {
+            r = fs_rebuild_mark_block(fs, blk);
+        } else {
+            r = fs_rebuild_from_indirect(fs, blk, true);
+        }
+        if (r != FS_OK) return r;
+    }
+
+    return FS_OK;
+}
+
+static int fs_rebuild_inode_references(struct fs *fs, uint32_t ino_num, uint32_t inode_block) {
+    struct fs_inode inode;
+    uint8_t buf[FS_BLOCK_SIZE];
+    int r = fs_read_block_i(fs, inode_block, buf);
+    if (r != FS_OK) return r;
+
+    memcpy(&inode, buf, sizeof(inode));
+    if (inode.inode_num != ino_num || inode.magic != 0xFA) {
+        return FS_ERR_CORRUPTED;
+    }
+
+    for (uint32_t i = 0; i < FS_DIRECT_BLOCKS; i++) {
+        r = fs_rebuild_mark_block(fs, inode.direct[i]);
+        if (r != FS_OK) return r;
+    }
+
+    if (inode.indirect != FS_INVALID_BLOCK && inode.indirect != 0) {
+        r = fs_rebuild_from_indirect(fs, inode.indirect, true);
+        if (r != FS_OK) return r;
+    }
+
+    if (inode.double_indirect != FS_INVALID_BLOCK && inode.double_indirect != 0) {
+        r = fs_rebuild_from_indirect(fs, inode.double_indirect, false);
+        if (r != FS_OK) return r;
+    }
+
+    return FS_OK;
+}
+
+static int fs_rebuild_runtime_state(struct fs *fs) {
+    uint32_t used_blocks = 0;
+
+    if (!fs || !fs->nat || !fs->sit || !fs->block_bitmap) return FS_ERR_INVALID_ARG;
+
+    memset(fs->block_bitmap, 0, fs_block_bitmap_size_bytes(fs));
+    memset(fs->sit, 0, (size_t)fs->sb.total_segments * sizeof(struct fs_sit_entry));
+
+    for (uint32_t b = 0; b < fs->sb.main_start_block; b++) {
+        int r = fs_mark_block_valid(fs, b);
+        if (r != FS_OK) return r;
+    }
+
+    for (uint32_t ino = 1; ino < fs->sb.total_inodes; ino++) {
+        const struct fs_nat_entry *entry = &fs->nat[ino];
+
+        if (entry->block_addr == FS_INVALID_BLOCK) {
+            if (entry->type != 0) return FS_ERR_CORRUPTED;
+            continue;
+        }
+
+        if (entry->type == 0) return FS_ERR_CORRUPTED;
+
+        int r = fs_rebuild_mark_block(fs, entry->block_addr);
+        if (r != FS_OK) return r;
+
+        if (entry->type == 1) {
+            r = fs_rebuild_inode_references(fs, ino, entry->block_addr);
+            if (r != FS_OK) return r;
+        }
+    }
+
+    for (uint32_t block = 0; block < fs->sb.total_blocks; block++) {
+        if (fs_bitmap_test(fs, block)) {
+            used_blocks++;
+        }
+    }
+
+    if (used_blocks > fs->sb.total_blocks) return FS_ERR_CORRUPTED;
+    fs->free_blocks_count = fs->sb.total_blocks - used_blocks;
+    fs->sit_dirty = true;
+    return FS_OK;
+}
+
 /* =========================
  * CRC32
  * ========================= */
@@ -171,11 +353,14 @@ static int fs_read_sit(struct fs *fs) {
 int fs_mark_block_valid(struct fs *fs, uint32_t block_addr) {
     if (!fs) return FS_ERR_INVALID_ARG;
     if (block_addr >= fs->sb.total_blocks) return FS_ERR_INVALID_BLOCK;
+    if (!fs->block_bitmap) return FS_ERR_INVALID_ARG;
 
     uint32_t seg = block_addr / FS_BLOCKS_PER_SEGMENT;
     if (seg >= fs->sb.total_segments) return FS_ERR_INVALID_BLOCK;
+    if (fs_bitmap_test(fs, block_addr)) return FS_ERR_CORRUPTED;
 
     if (fs->sit[seg].valid_count < FS_BLOCKS_PER_SEGMENT) {
+        fs_bitmap_set(fs, block_addr);
         fs->sit[seg].valid_count++;
         fs->sit_dirty = true;
         return FS_OK;
@@ -184,18 +369,29 @@ int fs_mark_block_valid(struct fs *fs, uint32_t block_addr) {
     return FS_ERR_CORRUPTED;
 }
 
+int fs_mark_block_free(struct fs *fs, uint32_t block_addr) {
+    if (!fs) return FS_ERR_INVALID_ARG;
+    if (block_addr >= fs->sb.total_blocks) return FS_ERR_INVALID_BLOCK;
+    if (!fs->block_bitmap) return FS_ERR_INVALID_ARG;
+
+    uint32_t seg = block_addr / FS_BLOCKS_PER_SEGMENT;
+    if (seg >= fs->sb.total_segments) return FS_ERR_INVALID_BLOCK;
+    if (!fs_bitmap_test(fs, block_addr)) return FS_ERR_CORRUPTED;
+    if (fs->sit[seg].valid_count == 0) return FS_ERR_CORRUPTED;
+
+    fs_bitmap_clear(fs, block_addr);
+    fs->sit[seg].valid_count--;
+    fs->sit_dirty = true;
+    return FS_OK;
+}
+
 uint32_t fs_find_first_free_data_block(struct fs *fs) {
     if (!fs) return FS_INVALID_BLOCK;
+    if (!fs->block_bitmap) return FS_INVALID_BLOCK;
 
-    for (uint32_t seg = (fs->sb.main_start_block / FS_BLOCKS_PER_SEGMENT);
-         seg < fs->sb.total_segments;
-         seg++) {
-        if (fs->sit[seg].valid_count < FS_BLOCKS_PER_SEGMENT) {
-            uint32_t off = fs->sit[seg].valid_count;
-            uint32_t blk = seg * FS_BLOCKS_PER_SEGMENT + off;
-            if (blk >= fs->sb.main_start_block && blk < fs->sb.total_blocks) {
-                return blk;
-            }
+    for (uint32_t blk = fs->sb.main_start_block; blk < fs->sb.total_blocks; blk++) {
+        if (!fs_bitmap_test(fs, blk)) {
+            return blk;
         }
     }
 
@@ -248,7 +444,7 @@ static int fs_read_superblock(struct fs *fs) {
     uint32_t calc = fs_crc32((const uint8_t *)&tmp, sizeof(tmp));
     if (crc != calc) return FS_ERR_CORRUPTED;
 
-    return FS_OK;
+    return fs_validate_superblock_layout(&fs->sb);
 }
 
 static int fs_write_checkpoint_block(struct fs *fs, uint32_t which /*0 or 1*/) {
@@ -295,6 +491,8 @@ int fs_format(struct fs *fs, uint32_t total_blocks) {
     if (!fs) return FS_ERR_INVALID_ARG;
     if (total_blocks < FS_FIXED_METADATA_BLOCKS + 8u) return FS_ERR_INVALID_ARG;
 
+    fs_release_runtime_state(fs);
+
     /* preserve backend */
     void *ctx              = fs->storage_ctx;
     fs_read_block_fn  rfn  = fs->read_block;
@@ -332,15 +530,8 @@ int fs_format(struct fs *fs, uint32_t total_blocks) {
     fs->sb.flags          = 0;
 
     /* allocate NAT/SIT in RAM */
-    fs->nat = (struct fs_nat_entry *)
-        calloc(fs->sb.total_inodes, sizeof(struct fs_nat_entry));
-    fs->sit = (struct fs_sit_entry *)
-        calloc(fs->sb.total_segments, sizeof(struct fs_sit_entry));
-    if (!fs->nat || !fs->sit) {
-        free(fs->nat); fs->nat = NULL;
-        free(fs->sit); fs->sit = NULL;
-        return FS_ERR_NO_SPACE;
-    }
+    int alloc_r = fs_alloc_runtime_state(fs);
+    if (alloc_r != FS_OK) return alloc_r;
 
     for (uint32_t i = 0; i < fs->sb.total_inodes; i++) {
         fs->nat[i].block_addr = FS_INVALID_BLOCK;
@@ -386,7 +577,8 @@ int fs_format(struct fs *fs, uint32_t total_blocks) {
     root.inode_crc32   = 0;
     root.inode_crc32   = fs_crc32((const uint8_t *)&root, sizeof(root));
 
-    fs_mark_block_valid(fs, root_blk);
+    int root_mark_r = fs_mark_block_valid(fs, root_blk);
+    if (root_mark_r != FS_OK) return root_mark_r;
     fs->nat[FS_ROOT_INODE].block_addr = root_blk;
     fs->nat[FS_ROOT_INODE].version    = 1;
     fs->nat[FS_ROOT_INODE].type       = 1; /* inode */
@@ -427,23 +619,17 @@ int fs_mount(struct fs *fs) {
     int r = fs_read_superblock(fs);
     if (r != FS_OK) return r;
 
-    free(fs->nat); fs->nat = NULL;
-    free(fs->sit); fs->sit = NULL;
-
-    fs->nat = (struct fs_nat_entry *)
-        calloc(fs->sb.total_inodes, sizeof(struct fs_nat_entry));
-    fs->sit = (struct fs_sit_entry *)
-        calloc(fs->sb.total_segments, sizeof(struct fs_sit_entry));
-    if (!fs->nat || !fs->sit) {
-        free(fs->nat); fs->nat = NULL;
-        free(fs->sit); fs->sit = NULL;
-        return FS_ERR_NO_SPACE;
-    }
+    fs_release_runtime_state(fs);
+    r = fs_alloc_runtime_state(fs);
+    if (r != FS_OK) return r;
 
     struct fs_checkpoint a, b;
     int ra = fs_read_checkpoint_block(fs, 0, &a);
     int rb = fs_read_checkpoint_block(fs, 1, &b);
-    if (ra != FS_OK && rb != FS_OK) return FS_ERR_CORRUPTED;
+    if (ra != FS_OK && rb != FS_OK) {
+        fs_release_runtime_state(fs);
+        return FS_ERR_CORRUPTED;
+    }
 
     if (ra == FS_OK && rb == FS_OK) {
         if (a.checkpoint_num >= b.checkpoint_num) {
@@ -457,14 +643,16 @@ int fs_mount(struct fs *fs) {
         fs->cp1 = b; fs->active_cp = 1;
     }
 
-    r = fs_read_nat(fs); if (r != FS_OK) return r;
-    r = fs_read_sit(fs); if (r != FS_OK) return r;
+    r = fs_read_nat(fs); if (r != FS_OK) { fs_release_runtime_state(fs); return r; }
+    r = fs_read_sit(fs); if (r != FS_OK) { fs_release_runtime_state(fs); return r; }
+    r = fs_rebuild_runtime_state(fs);
+    if (r != FS_OK) {
+        fs_release_runtime_state(fs);
+        return r;
+    }
 
     fs->sb.mount_count++;
     fs->sb_dirty = true;
-
-    fs->free_blocks_count =
-        (fs->active_cp == 0 ? fs->cp0.free_blocks : fs->cp1.free_blocks);
     return FS_OK;
 }
 
@@ -513,8 +701,7 @@ int fs_unmount(struct fs *fs) {
     int r = fs_sync(fs);
     if (r != FS_OK) return r;
 
-    free(fs->nat); fs->nat = NULL;
-    free(fs->sit); fs->sit = NULL;
+    fs_release_runtime_state(fs);
     return FS_OK;
 }
 

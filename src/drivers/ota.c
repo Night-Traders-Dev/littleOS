@@ -401,6 +401,56 @@ static void ota_create_default_metadata(void) {
     metadata.last_update_time   = 0;
 }
 
+static uint32_t ota_slot_offset(uint8_t slot) {
+    return slot == 0 ? OTA_SLOT_A_OFFSET : OTA_SLOT_B_OFFSET;
+}
+
+static bool ota_read_slot_header(uint8_t slot, ota_image_header_t *out) {
+    const ota_image_header_t *hdr;
+
+    if (!out || slot > 1u) {
+        return false;
+    }
+
+    hdr = (const ota_image_header_t *)(XIP_BASE + ota_slot_offset(slot));
+    memcpy(out, hdr, sizeof(*out));
+    return true;
+}
+
+static bool ota_header_has_valid_structure(const ota_image_header_t *hdr) {
+    ota_image_header_t hdr_copy;
+    uint32_t hdr_crc;
+
+    if (!hdr) return false;
+    if (hdr->magic != OTA_MAGIC) return false;
+    if (hdr->version != OTA_VERSION) return false;
+    if (hdr->auth_type != OTA_AUTH_HMAC_SHA256) return false;
+    if (hdr->image_size == 0 || hdr->image_size > OTA_MAX_IMAGE_SIZE) return false;
+
+    hdr_copy = *hdr;
+    hdr_copy.header_crc32 = 0;
+    hdr_crc = ota_crc32((const uint8_t *)&hdr_copy, sizeof(hdr_copy));
+    return hdr_crc == hdr->header_crc32;
+}
+
+static bool ota_seed_rollback_floor_from_active_slot(void) {
+    ota_image_header_t hdr;
+
+    if (metadata.last_update_time != 0) {
+        return true;
+    }
+
+    if (!ota_read_slot_header(metadata.active_slot, &hdr)) {
+        return true;
+    }
+    if (!ota_header_has_valid_structure(&hdr) || hdr.build_timestamp == 0) {
+        return true;
+    }
+
+    metadata.last_update_time = hdr.build_timestamp;
+    return ota_write_metadata() == OTA_OK;
+}
+
 /* ---------- Public API ---------- */
 
 int ota_init(void) {
@@ -416,6 +466,11 @@ int ota_init(void) {
             dmesg_err("ota: failed to write default metadata");
             return OTA_ERR_FLASH;
         }
+    }
+
+    if (!ota_seed_rollback_floor_from_active_slot()) {
+        dmesg_err("ota: failed to persist rollback floor");
+        return OTA_ERR_FLASH;
     }
 
     current_state = OTA_STATE_IDLE;
@@ -577,6 +632,21 @@ int ota_verify(void) {
         return OTA_ERR_SIZE;
     }
 
+    if (hdr->build_timestamp == 0) {
+        dmesg_err("ota: missing build timestamp in slot B image");
+        current_state = OTA_STATE_ERROR;
+        return OTA_ERR_ROLLBACK;
+    }
+
+    if (metadata.last_update_time != 0 &&
+        hdr->build_timestamp < metadata.last_update_time) {
+        dmesg_err("ota: refusing rollback image (build %u < floor %u)",
+                  hdr->build_timestamp,
+                  metadata.last_update_time);
+        current_state = OTA_STATE_ERROR;
+        return OTA_ERR_ROLLBACK;
+    }
+
     /* Verify header CRC */
     ota_image_header_t hdr_copy = *hdr;
     hdr_copy.header_crc32 = 0;
@@ -646,6 +716,8 @@ int ota_apply(void) {
 }
 
 int ota_confirm_boot(void) {
+    uint8_t confirmed_slot;
+
     if (!ota_initialized) return OTA_ERR_INIT;
 
     if (metadata.pending_slot == 0xFF) {
@@ -665,8 +737,20 @@ int ota_confirm_boot(void) {
                metadata.pending_slot == 0 ? 'A' : 'B',
                metadata.boot_count, metadata.max_boot_attempts);
 
+    confirmed_slot = metadata.pending_slot;
     metadata.active_slot = metadata.pending_slot;
     metadata.pending_slot = 0xFF;   /* Clear pending */
+
+    {
+        ota_image_header_t hdr;
+
+        if (ota_read_slot_header(confirmed_slot, &hdr) &&
+            ota_header_has_valid_structure(&hdr) &&
+            hdr.build_timestamp != 0 &&
+            hdr.build_timestamp > metadata.last_update_time) {
+            metadata.last_update_time = hdr.build_timestamp;
+        }
+    }
 
     int err = ota_write_metadata();
     if (err != OTA_OK) {

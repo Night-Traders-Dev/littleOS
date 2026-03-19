@@ -72,10 +72,8 @@ static Value sage_config_get(int argc, Value* args) {
     if (result != CONFIG_OK) {
         return val_nil();
     }
-    
-    char* str = malloc(strlen(value) + 1);
-    strcpy(str, value);
-    return val_string(str);
+
+    return val_string(value);
 }
 
 /**
@@ -151,9 +149,7 @@ static Value sage_config_list(int argc, Value* args) {
     Value array = val_array();
     
     for (int i = 0; i < count; i++) {
-        char* key_copy = malloc(strlen(keys[i]) + 1);
-        strcpy(key_copy, keys[i]);
-        array_push(&array, val_string(key_copy));
+        array_push(&array, val_string(keys[i]));
     }
     
     return array;

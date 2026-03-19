@@ -75,7 +75,8 @@ int cmd_ota(int argc, char *argv[]) {
         int r = ota_verify();
         printf("OTA verify: %s%s\r\n",
                r == OTA_OK ? "OK" : "FAILED",
-               r == OTA_ERR_AUTH ? " (authentication failed or key missing)" : "");
+               r == OTA_ERR_AUTH ? " (authentication failed or key missing)" :
+               r == OTA_ERR_ROLLBACK ? " (rollback rejected)" : "");
         return r;
     }
 

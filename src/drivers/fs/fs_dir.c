@@ -39,6 +39,10 @@ int fs_dir_lookup(struct fs *fs,
         while (off + sizeof(struct fs_dirent) <= FS_BLOCK_SIZE) {
             struct fs_dirent *de = (struct fs_dirent *)(buf + off);
             if (de->entry_size == 0) break;
+            if (de->entry_size < sizeof(struct fs_dirent) ||
+                off + de->entry_size > FS_BLOCK_SIZE) {
+                return FS_ERR_CORRUPTED;
+            }
             if (de->name_len == 0) {
                 off += de->entry_size;
                 continue;
@@ -71,6 +75,8 @@ int fs_dir_add(struct fs *fs,
     if (name_len == 0) return FS_ERR_INVALID_ARG;
 
     uint32_t hash = fs_name_hash(name);
+    uint32_t write_phys = FS_INVALID_BLOCK;
+    uint32_t write_end = dir_ino->size;
 
     /* Required size for this entry (header + name, 4-byte aligned) */
     uint16_t rec_len = (uint16_t)(sizeof(struct fs_dirent) + name_len);
@@ -108,7 +114,14 @@ int fs_dir_add(struct fs *fs,
                 de->hash       = hash;
                 char *dst = (char *)(de + 1);
                 memcpy(dst, name, name_len);
+                write_phys = phys;
+                write_end = lb * FS_BLOCK_SIZE + off + rec_len;
                 goto write_out;
+            }
+
+            if (de->entry_size < sizeof(struct fs_dirent) ||
+                off + de->entry_size > FS_BLOCK_SIZE) {
+                return FS_ERR_CORRUPTED;
             }
 
             /* occupied entry: see if we can split its slack space */
@@ -127,6 +140,8 @@ int fs_dir_add(struct fs *fs,
                 new_de->hash       = hash;
                 char *dst = (char *)(new_de + 1);
                 memcpy(dst, name, name_len);
+                write_phys = phys;
+                write_end = lb * FS_BLOCK_SIZE + off + used + rec_len;
                 goto write_out;
             }
 
@@ -139,32 +154,16 @@ int fs_dir_add(struct fs *fs,
     }
 
 write_out: {
-        /* update directory size if needed */
-        uint32_t needed_size =
-            (uint32_t)((int32_t)(dir_ino->size) < 0 ? 0 : dir_ino->size);
-        uint32_t block_end = (uint32_t)(((dir_ino->size + FS_BLOCK_SIZE - 1) / FS_BLOCK_SIZE)
-                                        * FS_BLOCK_SIZE);
-        if (block_end < (FS_BLOCK_SIZE * (1u))) {
-            /* nothing */
-            ;
+        if (write_phys == FS_INVALID_BLOCK) {
+            return FS_ERR_CORRUPTED;
         }
-        /* more simply, size = max(size, (lb+1)*block_size) */
-        /* but we know directory is append-only for now */
-        /* Set size conservatively */
-        uint32_t new_size = (uint32_t)((dir_ino->size + FS_BLOCK_SIZE - 1) / FS_BLOCK_SIZE)
-                            * FS_BLOCK_SIZE;
-        if (new_size == 0) new_size = FS_BLOCK_SIZE;
-        if (new_size > dir_ino->size) dir_ino->size = new_size;
+        if (write_end > dir_ino->size) {
+            dir_ino->size = write_end;
+        }
     }
 
     /* write back the modified block */
-    uint32_t cur_blocks = (dir_ino->size + FS_BLOCK_SIZE - 1) / FS_BLOCK_SIZE;
-    uint32_t last_lb = (cur_blocks == 0) ? 0 : (cur_blocks - 1);
-    uint32_t last_phys;
-    int r2 = fs_bmap(fs, dir_ino, last_lb, false, &last_phys);
-    if (r2 != FS_OK || last_phys == FS_INVALID_BLOCK) return FS_ERR_CORRUPTED;
-
-    r2 = fs_write_block_i(fs, last_phys, buf);
+    int r2 = fs_write_block_i(fs, write_phys, buf);
     if (r2 != FS_OK) return r2;
 
     return FS_OK;

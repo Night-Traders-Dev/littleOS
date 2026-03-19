@@ -233,6 +233,7 @@ struct fs {
     /* in-memory NAT/SIT */
     struct fs_nat_entry *nat; /* [total_inodes] */
     struct fs_sit_entry *sit; /* [total_segments] */
+    uint8_t             *block_bitmap; /* [total_blocks] bitset */
 
     /* counters */
     uint32_t free_blocks_count;
@@ -327,6 +328,7 @@ int fs_write_block_i(struct fs *fs, uint32_t block, const uint8_t *buf);
 /* simple allocator helpers (fs_core.c) */
 uint32_t fs_find_first_free_data_block(struct fs *fs);
 int      fs_mark_block_valid(struct fs *fs, uint32_t block_addr);
+int      fs_mark_block_free(struct fs *fs, uint32_t block_addr);
 
 
 #ifdef __cplusplus

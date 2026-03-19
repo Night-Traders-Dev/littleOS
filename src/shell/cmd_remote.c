@@ -15,7 +15,7 @@ static void cmd_remote_usage(void) {
     printf("  remote stop            - Stop listener and disconnect all clients\r\n");
     printf("  remote kick <id>       - Disconnect a specific client\r\n");
     printf("  remote send <text>     - Broadcast text to all connected clients\r\n");
-    printf("  remote token set <t>   - Configure challenge-response token\r\n");
+    printf("  remote token set <t>   - Configure token for verifier-based auth\r\n");
     printf("  remote token clear     - Remove authentication token\r\n");
 }
 

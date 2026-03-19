@@ -26,7 +26,10 @@ int fs_load_inode(struct fs *fs, uint32_t ino, struct fs_inode *out) {
 int fs_store_inode(struct fs *fs, const struct fs_inode *in) {
     if (!fs || !in) return FS_ERR_INVALID_ARG;
     uint32_t ino = in->inode_num;
+    uint32_t old_blk;
     if (ino >= fs->sb.total_inodes || ino == 0) return FS_ERR_INVALID_INODE;
+
+    old_blk = fs->nat[ino].block_addr;
 
     uint32_t blk = fs_find_first_free_data_block(fs);
     if (blk == FS_INVALID_BLOCK) return FS_ERR_NO_SPACE;
@@ -45,6 +48,12 @@ int fs_store_inode(struct fs *fs, const struct fs_inode *in) {
     fs->nat[ino].version++;
     fs->nat[ino].type = 1;
     fs->nat_dirty = true;
+
+    if (old_blk != FS_INVALID_BLOCK && old_blk != blk) {
+        if (fs_mark_block_free(fs, old_blk) == FS_OK) {
+            fs->free_blocks_count++;
+        }
+    }
 
     return FS_OK;
 }
