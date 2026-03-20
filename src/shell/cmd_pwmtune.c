@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "shell.h"
 
 #ifdef PICO_BUILD
 #include "pico/stdlib.h"
@@ -181,9 +182,9 @@ int cmd_pwmtune(int argc, char *argv[]) {
             pwm_set_chan_level(slice, channel, (uint16_t)(wrap * d / 100));
             sleep_ms((uint32_t)step_ms);
 
-            /* Check for keypress to abort */
+            /* Check for keypress or timeout to abort */
             int c = getchar_timeout_us(0);
-            if (c != PICO_ERROR_TIMEOUT) {
+            if (c != PICO_ERROR_TIMEOUT || shell_cmd_abort) {
                 printf("\r\nStopped at %d%%\r\n", d);
                 return 0;
             }

@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "shell.h"
 
 #ifdef PICO_BUILD
 #include "pico/stdlib.h"
@@ -103,7 +104,7 @@ int cmd_gpiowatch(int argc, char *argv[]) {
 
             sleep_us(100); /* 10kHz polling */
             int c = getchar_timeout_us(0);
-            if (c != PICO_ERROR_TIMEOUT) break;
+            if (c != PICO_ERROR_TIMEOUT || shell_cmd_abort) break;
         }
 
         printf("\r\n%d state changes detected.\r\n", changes);

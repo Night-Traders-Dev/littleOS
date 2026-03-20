@@ -8,6 +8,18 @@
 extern "C" {
 #endif
 
+/**
+ * Set by the command timeout alarm. Commands should check this flag
+ * in any long-running loop and return early when it becomes true.
+ *
+ * Example:
+ *   while (running) {
+ *       if (shell_cmd_abort) { printf("Aborted\r\n"); return -1; }
+ *       ...
+ *   }
+ */
+extern volatile bool shell_cmd_abort;
+
 void shell_run(void);
 void shell_execute_command(const char *cmd);
 

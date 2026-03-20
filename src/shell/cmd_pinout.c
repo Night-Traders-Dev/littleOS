@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "shell.h"
 
 #ifdef PICO_BUILD
 #include "pico/stdlib.h"
@@ -313,7 +314,8 @@ static int cmd_pinout_watch(void) {
         /* Wait ~500ms, checking for keypress */
         for (int i = 0; i < 50; i++) {
             int c = getchar_timeout_us(0);
-            if (c != PICO_ERROR_TIMEOUT && (c == 'q' || c == 'Q')) {
+            if (shell_cmd_abort ||
+                (c != PICO_ERROR_TIMEOUT && (c == 'q' || c == 'Q'))) {
                 printf("Watch mode stopped.\r\n");
                 return 0;
             }

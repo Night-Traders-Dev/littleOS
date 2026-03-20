@@ -1,6 +1,7 @@
 #include "sage_embed.h"
 #include "watchdog.h"
 #include "supervisor.h"
+#include "shell.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -301,7 +302,13 @@ sage_result_t sage_eval_string(sage_context_t* ctx, const char* source, size_t s
         // Time-based heartbeat (every 250ms via sage_try_heartbeat)
         sage_try_heartbeat();
 
-        // Check timeout after each statement
+        // Check shell command timeout (set by shell timer alarm)
+        if (shell_cmd_abort) {
+            snprintf(ctx->error_msg, sizeof(ctx->error_msg), "Aborted by shell timeout");
+            return SAGE_ERROR_TIMEOUT;
+        }
+
+        // Check SageLang execution timeout
         if (sage_check_timeout(ctx)) {
             return SAGE_ERROR_TIMEOUT;
         }

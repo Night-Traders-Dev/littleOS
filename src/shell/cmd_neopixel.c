@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "neopixel.h"
+#include "shell.h"
 
 #ifdef PICO_BUILD
 #include "pico/stdlib.h"
@@ -95,7 +96,7 @@ int cmd_neopixel(int argc, char *argv[]) {
             neopixel_show();
             sleep_ms((uint32_t)speed);
             int c = getchar_timeout_us(0);
-            if (c != PICO_ERROR_TIMEOUT) break;
+            if (c != PICO_ERROR_TIMEOUT || shell_cmd_abort) break;
         }
         printf("Stopped.\r\n");
 #else
@@ -118,7 +119,7 @@ int cmd_neopixel(int argc, char *argv[]) {
             neopixel_show();
             sleep_ms((uint32_t)speed);
             int c = getchar_timeout_us(0);
-            if (c != PICO_ERROR_TIMEOUT) break;
+            if (c != PICO_ERROR_TIMEOUT || shell_cmd_abort) break;
         }
         printf("Stopped.\r\n");
 #else

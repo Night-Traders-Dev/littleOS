@@ -9,6 +9,7 @@
 #include "permissions.h"
 #include "scheduler.h"
 #include "shell.h"
+#include "shell.h"
 #include "profiler.h"
 #include "memory_segmented.h"
 #include "watchdog.h"
@@ -327,6 +328,12 @@ int cmd_top(int argc, char *argv[]) {
     int iteration = 0;
 
     while (1) {
+        if (shell_cmd_abort) {
+            printf(ANSI_CLEAR);
+            printf("top: timed out\r\n");
+            return 0;
+        }
+
         uint32_t start = top_now_ms();
 
         /* Feed watchdog & heartbeat so we don't trigger reset */

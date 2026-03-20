@@ -5,6 +5,7 @@
 
 #include "pico/stdlib.h"
 #include "hardware/watchdog.h"
+#include "hardware/timer.h"
 
 #include "board/board_config.h"
 #include "watchdog.h"
@@ -87,6 +88,37 @@ extern int  cmd_mod(int argc, char *argv[]);
 #if LITTLEOS_HAS_HSTX
 extern int  cmd_display_dvi(int argc, char *argv[]);
 #endif
+
+// ===========================================================================
+// Command timeout
+// ===========================================================================
+
+#define SHELL_CMD_TIMEOUT_MS 30000  // Default: 30 seconds
+
+volatile bool shell_cmd_abort = false;
+static alarm_id_t cmd_alarm_id = -1;
+static uint32_t cmd_timeout_ms = SHELL_CMD_TIMEOUT_MS;
+
+static int64_t cmd_timeout_callback(alarm_id_t id, void *user_data) {
+    (void)id;
+    (void)user_data;
+    shell_cmd_abort = true;
+    return 0;  // Don't reschedule
+}
+
+static void cmd_timeout_start(void) {
+    shell_cmd_abort = false;
+    if (cmd_timeout_ms > 0) {
+        cmd_alarm_id = add_alarm_in_ms(cmd_timeout_ms, cmd_timeout_callback, NULL, false);
+    }
+}
+
+static void cmd_timeout_cancel(void) {
+    if (cmd_alarm_id >= 0) {
+        cancel_alarm(cmd_alarm_id);
+        cmd_alarm_id = -1;
+    }
+}
 
 // ===========================================================================
 // Command table
@@ -778,7 +810,7 @@ static void tab_complete(char *buffer, int *idx) {
         }
         // Also check built-in commands
         const char *builtins[] = { "help", "version", "clear", "reboot", "history",
-                                    "exit", NULL };
+                                    "exit", "timeout", NULL };
         for (int i = 0; builtins[i] && match_count < 16; i++) {
             if (strncmp(builtins[i], prefix, prefix_len) == 0) {
                 // Check not already matched
@@ -995,7 +1027,7 @@ static int execute_single(int argc, char *argv[]) {
     if (strcmp(argv[0], "help") == 0) {
         printf("\033[1mAvailable commands:\033[0m\r\n");
         printf("\r\n  \033[1mSystem:\033[0m\r\n");
-        printf("    help version clear reboot history health stats\r\n");
+        printf("    help version clear reboot history timeout health stats\r\n");
         printf("    supervisor dmesg fetch\r\n");
         printf("\r\n  \033[1mProcesses & Memory:\033[0m\r\n");
         printf("    tasks memory top profile\r\n");
@@ -1037,6 +1069,26 @@ static int execute_single(int argc, char *argv[]) {
         return 0;
     }
 
+    if (strcmp(argv[0], "timeout") == 0) {
+        if (argc < 2) {
+            if (cmd_timeout_ms == 0) {
+                printf("Command timeout: disabled\r\n");
+            } else {
+                printf("Command timeout: %lu ms\r\n", (unsigned long)cmd_timeout_ms);
+            }
+            printf("Usage: timeout <ms>  (0 = disable)\r\n");
+            return 0;
+        }
+        uint32_t ms = (uint32_t)atoi(argv[1]);
+        cmd_timeout_ms = ms;
+        if (ms == 0) {
+            printf("Command timeout disabled\r\n");
+        } else {
+            printf("Command timeout: %lu ms\r\n", (unsigned long)ms);
+        }
+        return 0;
+    }
+
     if (strcmp(argv[0], "history") == 0) {
         printf("Command history:\r\n");
         int start = (history_count > HISTORY_SIZE) ? history_count - HISTORY_SIZE : 0;
@@ -1062,7 +1114,16 @@ static int execute_single(int argc, char *argv[]) {
     // Look up in command hash table (O(1) average)
     const shell_cmd_t *entry = cmd_hash_lookup(argv[0]);
     if (entry) {
-        return entry->handler(argc, argv);
+        cmd_timeout_start();
+        int rc = entry->handler(argc, argv);
+        cmd_timeout_cancel();
+        if (shell_cmd_abort) {
+            printf("\r\nCommand '%s' timed out (%lu ms)\r\n",
+                   argv[0], (unsigned long)cmd_timeout_ms);
+            shell_cmd_abort = false;
+            return -1;
+        }
+        return rc;
     }
 
     printf("Unknown command: %s\r\n", argv[0]);
