@@ -10,11 +10,13 @@
 #include "pico/stdlib.h"
 #include "hardware/sync.h"
 #include "hardware/adc.h"
+#include "hardware/structs/sio.h"
 #endif
 
 static volatile system_metrics_t metrics;
 static volatile bool supervisor_running = false;
 static volatile bool alerts_enabled = true;
+static volatile bool single_core_mode = false;
 
 static uint32_t last_heap_used = 0;
 static uint32_t memory_stable_count = 0;
@@ -236,6 +238,33 @@ static void supervisor_loop(void) {
 #endif
 }
 
+/**
+ * @brief Single-core fallback: run health checks cooperatively from Core 0.
+ *
+ * Called from supervisor_heartbeat() when multicore launch failed.
+ */
+static void supervisor_poll_health(void) {
+#ifdef PICO_BUILD
+    static uint32_t last_poll_ms = 0;
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+
+    if (!metrics_lock) return;
+
+    /* Update uptime */
+    uint32_t save = spin_lock_blocking(metrics_lock);
+    metrics.uptime_ms = now;
+    spin_unlock(metrics_lock, save);
+
+    /* Run health check at the normal supervisor interval */
+    if (now - last_poll_ms >= SUPERVISOR_CHECK_INTERVAL_MS) {
+        check_system_health();
+        last_poll_ms = now;
+    }
+
+    wdt_feed();
+#endif
+}
+
 void supervisor_init(void) {
 #ifdef PICO_BUILD
     if (supervisor_running) {
@@ -249,12 +278,54 @@ void supervisor_init(void) {
         metrics_lock = spin_lock_init(lock_num);
     }
 
+    // Initialize metrics for single-core fallback path
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+    memset((void *)&metrics, 0, sizeof(metrics));
+    metrics.core0_responsive = true;
+    metrics.health_status = HEALTH_OK;
+    metrics.uptime_ms = now;
+    metrics.core0_last_heartbeat = now;
+    metrics.last_feed_time_ms = now;
+
+    // Probe Core 1 FIFO: drain any stale data, then check if Core 1
+    // can accept FIFO writes.  On emulators that only run a single core
+    // (e.g. Bramble in default mode) the FIFO drain after reset never
+    // sees the expected response, so multicore_launch_core1 would hang.
+    // We detect this by checking if the FIFO is ready after reset.
+    bool core1_available = true;
+
+    // Reset Core 1 — on real hardware this puts it in the boot ROM
+    // waiting-for-launch state and pushes a 0 onto our FIFO.
     multicore_reset_core1();
-    multicore_launch_core1(supervisor_loop);
+    sleep_ms(10);
 
-    sleep_ms(100);
+    // After reset, the boot ROM on Core 1 pushes 0 onto Core 0's FIFO.
+    // If we can read it, Core 1 is alive and ready for the launch seq.
+    if (!(sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS)) {
+        core1_available = false;
+    } else {
+        (void)sio_hw->fifo_rd;  // drain the sentinel
+    }
 
-    printf("Supervisor: Launched on Core 1\r\n");
+    if (core1_available) {
+        multicore_launch_core1(supervisor_loop);
+        sleep_ms(100);
+    }
+
+    if (supervisor_running) {
+        single_core_mode = false;
+        printf("Supervisor: Launched on Core 1\r\n");
+    } else {
+        // Core 1 failed to start — fall back to cooperative polling
+        single_core_mode = true;
+        supervisor_running = true;
+
+        // Enable ADC for temperature reading on Core 0
+        adc_init();
+        adc_set_temp_sensor_enabled(true);
+
+        printf("Supervisor: Single-core mode (cooperative polling)\r\n");
+    }
 #endif
 }
 
@@ -265,8 +336,11 @@ void supervisor_stop(void) {
     }
 
     supervisor_running = false;
-    sleep_ms(200);
-    multicore_reset_core1();
+
+    if (!single_core_mode) {
+        sleep_ms(200);
+        multicore_reset_core1();
+    }
 
     printf("Supervisor: Stopped\r\n");
 #endif
@@ -283,8 +357,12 @@ bool supervisor_pause_for_flash(void) {
     }
 
     supervisor_running = false;
-    sleep_ms(200);
-    multicore_reset_core1();
+
+    if (!single_core_mode) {
+        sleep_ms(200);
+        multicore_reset_core1();
+    }
+
     return true;
 #else
     return false;
@@ -322,21 +400,23 @@ void supervisor_heartbeat(void) {
 
     if (now - last_feed_ms >= 2000) {
         last_feed_ms = now;
-#ifdef PICO_BUILD
         if (metrics_lock) {
             uint32_t save = spin_lock_blocking(metrics_lock);
             metrics.core0_last_heartbeat = now;
             metrics.last_feed_time_ms = now;
             metrics.watchdog_feeds++;
             spin_unlock(metrics_lock, save);
-        } else
-#endif
-        {
+        } else {
             metrics.core0_last_heartbeat = now;
             metrics.last_feed_time_ms = now;
             metrics.watchdog_feeds++;
         }
         wdt_feed();
+    }
+
+    // In single-core mode, also run the health checks cooperatively
+    if (single_core_mode) {
+        supervisor_poll_health();
     }
 #endif
 }

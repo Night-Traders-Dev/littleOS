@@ -57,6 +57,15 @@ project(littleOS C CXX ASM)
 # Let the SDK choose the right boot stage and CPU flags for the platform.
 pico_sdk_init()
 
+# Emulator compatibility: skip SDK clock init for emulators that don't fully
+# support PLL/XOSC register polling (e.g. Bramble single-core mode).
+# Usage: cmake -DLITTLEOS_EMULATOR=ON ..
+option(LITTLEOS_EMULATOR "Build for emulator (skip hardware clock init)" OFF)
+if(LITTLEOS_EMULATOR)
+    add_compile_definitions(PICO_RUNTIME_NO_INIT_CLOCKS=1 PICO_NO_RAM_VECTOR_TABLE=1)
+    message(STATUS "Emulator mode: Skipping SDK clock init and RAM vector table")
+endif()
+
 # Generic compiler flags (SDK handles -mcpu and -mthumb per platform)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-free-nonheap-object")
 
