@@ -631,7 +631,7 @@ The shell (`src/shell/shell.c`) is a UART-based REPL that reads lines, tokenizes
 
 | Command | Description |
 |---------|-------------|
-| `net` | WiFi scan/connect/status, TCP/UDP, DNS, HTTP, ping |
+| `net` | WiFi scan/connect/status, TAP bridge (tap/dhcp), TCP/UDP, DNS, HTTP, ping |
 | `mqtt` | MQTT IoT client (connect, publish, subscribe) |
 | `remote` | Remote shell over TCP |
 | `ota` | Over-the-air firmware update |
@@ -1173,7 +1173,25 @@ int  net_get_info(net_info_t *info);
 int  net_set_hostname(const char *hostname);
 ```
 
-### 13.3 Socket API
+### 13.3 TAP Bridge API
+
+For emulator use (Bramble `-tap <ifname>`):
+
+```c
+int  net_tap_up(net_ip4_t ip, net_ip4_t gateway, net_ip4_t netmask);  // Static IP
+int  net_tap_dhcp(void);                                                // DHCP
+```
+
+Shell usage:
+```bash
+> net tap 10.0.0.2 10.0.0.1          # Static IP (/24 default)
+> net tap dhcp                         # DHCP
+> net status                           # Shows "Mode: TAP bridge"
+```
+
+`net tap` initializes the CYW43 hardware (emulated by Bramble), sets the IP on the lwIP netif, and marks the connection as TAP bridge mode. Requires `CAP_NET_ADMIN`.
+
+### 13.4 Socket API
 
 ```c
 int  net_socket_create(net_socket_type_t type);    // TCP or UDP
@@ -1186,7 +1204,7 @@ int  net_socket_sendto(int sock_id, const char *ip, uint16_t port,
                        const void *data, size_t len);    // UDP
 ```
 
-### 13.4 Utility API
+### 13.5 Utility API
 
 ```c
 int  net_dns_lookup(const char *hostname, char *ip);
@@ -1194,7 +1212,7 @@ int  net_ping(const char *ip, uint32_t timeout_ms);      // Returns RTT in ms
 int  net_http_get(const char *url, char *response_buf, size_t buf_size);
 ```
 
-### 13.5 Shell Usage
+### 13.6 Shell Usage
 
 ```bash
 net scan                          # Scan for WiFi networks

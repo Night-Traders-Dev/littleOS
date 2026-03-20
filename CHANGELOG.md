@@ -26,12 +26,15 @@ All notable changes to littleOS. Format based on [Keep a Changelog](https://keep
 
 ### Added - TAP Network Bridge Support
 
+- **`net tap <ip> <gw> [mask]`** command - Bring up TAP interface with static IP (default /24 netmask)
+- **`net tap dhcp`** command - Bring up TAP interface with DHCP
 - **`net status` works on TAP** - Detects when CYW43 link reports DOWN but lwIP netif has an IP (TAP bridge mode)
 - Shows `Mode: TAP bridge` vs `Mode: WiFi` in status output
 - RSSI display hidden on TAP (no radio hardware)
 - CYW43 lazy-init on `net status` (was only on `net connect`/`net scan`)
-- **Security logging** - Remote shell logs non-local connections with `dmesg_warn` security alert
+- **Security**: `net tap` requires `CAP_NET_ADMIN` (same as `net connect`); remote shell logs non-local connections with `dmesg_warn` security alert
 - TAP status shows `Security: TAP bridge (host-side firewall applies)` reminder
+- API: `net_tap_up(ip, gw, netmask)` and `net_tap_dhcp()` in `net.h`
 
 ### Added - Command Timeout System
 

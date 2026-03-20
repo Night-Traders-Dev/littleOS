@@ -78,11 +78,11 @@ The littleOS shell provides a Unix-like command environment with 64+ commands, p
 | `neopixel` | WS2812 NeoPixel LED control |
 | `display` | SSD1306 OLED display driver |
 
-### Networking (Pico W)
+### Networking (Pico W / TAP)
 
 | Command | Description |
 |---------|-------------|
-| `net` | WiFi/TCP/UDP (scan/connect/status/ping/http/socket) |
+| `net` | WiFi/TCP/UDP/TAP (scan/connect/tap/status/ping/http/socket) |
 | `mqtt` | MQTT IoT client (connect/pub/sub) |
 | `remote` | Remote shell over TCP |
 | `ota` | Over-the-air firmware updates |

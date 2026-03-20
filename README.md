@@ -192,9 +192,9 @@ display           # SSD1306 OLED display
 dvi               # DVI display via HSTX (RP2350 only)
 ```
 
-### Networking (Pico W / Pico 2 W)
+### Networking (Pico W / Pico 2 W / TAP)
 ```bash
-net               # WiFi/TCP/UDP (scan|connect|status|ping|http|socket)
+net               # WiFi/TCP/UDP (scan|connect|tap|status|ping|http|socket)
 mqtt              # MQTT IoT client (connect|pub|sub)
 remote            # Remote shell over TCP
 ota               # Over-the-air firmware updates
@@ -265,6 +265,17 @@ Build with a WiFi-enabled board (`pico_w`, `pico2_w`, `pico2_w_riscv`) to enable
 > mqtt connect broker.io 1883  # MQTT broker
 > mqtt pub topic "hello"       # Publish message
 > remote start 2323            # Start TCP shell server
+```
+
+### TAP Bridge (Emulator)
+
+When running on Bramble with `-tap`, use `net tap` instead of `net connect`:
+
+```bash
+> net tap 10.0.0.2 10.0.0.1             # Static IP with /24 netmask
+> net tap 192.168.1.100 192.168.1.1 255.255.255.0  # Custom netmask
+> net tap dhcp                           # DHCP on TAP interface
+> net status                             # Verify (shows "Mode: TAP bridge")
 ```
 
 **lwIP stack** with conservative memory settings optimized for RP2040/RP2350:
