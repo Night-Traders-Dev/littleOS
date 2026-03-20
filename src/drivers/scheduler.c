@@ -23,6 +23,20 @@ static volatile uint32_t system_ticks       = 0;
 static volatile bool     preemption_enabled = false;
 static volatile uint16_t running_task_core0 = 0;
 
+/* Cached pointer to current running task (avoids find_task in hot path) */
+static volatile task_descriptor_t *running_task_ptr = NULL;
+
+/* Active scheduling policy */
+static sched_policy_t active_policy = SCHED_POLICY_PRIORITY;
+
+/* CFS weight table: lower priority = higher weight = slower vruntime growth */
+static const uint32_t cfs_weight[] = {
+    [TASK_PRIORITY_LOW]      = 4,   /* runs 4x slower than critical */
+    [TASK_PRIORITY_NORMAL]   = 2,
+    [TASK_PRIORITY_HIGH]     = 1,
+    [TASK_PRIORITY_CRITICAL] = 1,
+};
+
 /* Default time slices per priority level (ms) */
 static const uint32_t default_timeslice[] = {
     [TASK_PRIORITY_LOW]      = 50,
@@ -30,6 +44,9 @@ static const uint32_t default_timeslice[] = {
     [TASK_PRIORITY_HIGH]     = 10,
     [TASK_PRIORITY_CRITICAL] = 5,
 };
+
+/* Round-robin uses a fixed time slice regardless of priority */
+#define RR_TIMESLICE_MS 20
 
 typedef struct {
     uint16_t tasks[LITTLEOS_MAX_TASKS];
@@ -44,12 +61,10 @@ static task_queue_t core1_queue = {0};
  * Internal helpers
  * ========================================================================== */
 
-// Improved task ID allocation to prevent collisions
 static uint16_t alloc_task_id(void) {
     static uint16_t next_id = 1;
 
     if (task_count >= LITTLEOS_MAX_TASKS - 1) {
-        // Table nearly full - search for available ID
         for (uint16_t search_id = 1; search_id < 0xFFFF; search_id++) {
             int found = 0;
             for (uint16_t i = 0; i < task_count; i++) {
@@ -118,14 +133,18 @@ static uint32_t get_timestamp_ms(void) {
 #endif
 }
 
-static uint16_t scheduler_select_next(task_queue_t *queue) {
+/* ============================================================================
+ * Scheduling Policies
+ * ========================================================================== */
+
+/**
+ * Fixed-priority scheduler: always picks the highest-priority ready task.
+ * Among equal priority, round-robins via current_index.
+ */
+static uint16_t select_priority(task_queue_t *queue) {
     int best_priority = -1;
     uint16_t selected_task = 0;
     uint16_t selected_index = 0;
-
-    if (!queue || queue->count == 0) {
-        return 0;
-    }
 
     uint16_t start = (queue->count > 0) ? (queue->current_index % queue->count) : 0;
 
@@ -134,13 +153,8 @@ static uint16_t scheduler_select_next(task_queue_t *queue) {
         uint16_t task_id = queue->tasks[idx];
         task_descriptor_t *task = find_task(task_id);
 
-        if (!task) {
-            continue;
-        }
-
-        if (task->state != TASK_STATE_READY && task->state != TASK_STATE_RUNNING) {
-            continue;
-        }
+        if (!task) continue;
+        if (task->state != TASK_STATE_READY && task->state != TASK_STATE_RUNNING) continue;
 
         if ((int)task->priority > best_priority) {
             best_priority = (int)task->priority;
@@ -156,6 +170,72 @@ static uint16_t scheduler_select_next(task_queue_t *queue) {
     return selected_task;
 }
 
+/**
+ * Round-robin scheduler: rotate through all ready tasks regardless of priority.
+ * Each task gets an equal time slice.
+ */
+static uint16_t select_round_robin(task_queue_t *queue) {
+    if (!queue || queue->count == 0) return 0;
+
+    uint16_t start = queue->current_index % queue->count;
+
+    for (uint16_t offset = 0; offset < queue->count; offset++) {
+        uint16_t idx = (uint16_t)((start + offset) % queue->count);
+        uint16_t task_id = queue->tasks[idx];
+        task_descriptor_t *task = find_task(task_id);
+
+        if (!task) continue;
+        if (task->state != TASK_STATE_READY && task->state != TASK_STATE_RUNNING) continue;
+
+        queue->current_index = (uint16_t)((idx + 1) % queue->count);
+        return task_id;
+    }
+
+    return 0;
+}
+
+/**
+ * CFS-like scheduler: pick the task with the lowest virtual runtime.
+ * Virtual runtime grows proportionally to actual runtime, weighted by priority.
+ * Lower-priority tasks accumulate vruntime faster, so higher-priority tasks
+ * are naturally favored while still ensuring fairness.
+ */
+static uint16_t select_cfs(task_queue_t *queue) {
+    if (!queue || queue->count == 0) return 0;
+
+    uint64_t min_vruntime = UINT64_MAX;
+    uint16_t selected_task = 0;
+
+    for (uint16_t i = 0; i < queue->count; i++) {
+        uint16_t task_id = queue->tasks[i];
+        task_descriptor_t *task = find_task(task_id);
+
+        if (!task) continue;
+        if (task->state != TASK_STATE_READY && task->state != TASK_STATE_RUNNING) continue;
+
+        if (task->vruntime < min_vruntime) {
+            min_vruntime = task->vruntime;
+            selected_task = task_id;
+        }
+    }
+
+    return selected_task;
+}
+
+static uint16_t scheduler_select_next(task_queue_t *queue) {
+    if (!queue || queue->count == 0) return 0;
+
+    switch (active_policy) {
+    case SCHED_POLICY_ROUND_ROBIN:
+        return select_round_robin(queue);
+    case SCHED_POLICY_CFS:
+        return select_cfs(queue);
+    case SCHED_POLICY_PRIORITY:
+    default:
+        return select_priority(queue);
+    }
+}
+
 /* ============================================================================
  * Public API
  * ========================================================================== */
@@ -168,6 +248,8 @@ void scheduler_init(void) {
     memset(task_table, 0, sizeof(task_table));
     task_count      = 0;
     current_task_id = 0;
+    running_task_ptr = NULL;
+    active_policy = SCHED_POLICY_PRIORITY;
 
     memset(&core0_queue, 0, sizeof(task_queue_t));
     memset(&core1_queue, 0, sizeof(task_queue_t));
@@ -229,9 +311,15 @@ uint16_t task_create(const char *name, task_entry_t entry, void *arg,
     task->context_switches   = 0;
     task->memory_allocated   = 0;
     task->memory_peak        = 0;
+    task->vruntime           = 0;
 
-    /* Initialize preemptive scheduling fields */
-    uint32_t timeslice = default_timeslice[priority];
+    /* Set time slice based on policy */
+    uint32_t timeslice;
+    if (active_policy == SCHED_POLICY_ROUND_ROBIN) {
+        timeslice = RR_TIMESLICE_MS;
+    } else {
+        timeslice = default_timeslice[priority];
+    }
     task->time_slice_ms     = timeslice;
     task->time_remaining_ms = timeslice;
     task->needs_switch      = false;
@@ -300,6 +388,11 @@ bool task_terminate(uint16_t task_id) {
 
     task->state = TASK_STATE_TERMINATED;
 
+    /* Invalidate cached pointer if this was the running task */
+    if (running_task_ptr == task) {
+        running_task_ptr = NULL;
+    }
+
     if (idx < (int)task_count - 1) {
         memcpy(task, &task_table[task_count - 1], sizeof(task_descriptor_t));
     }
@@ -335,7 +428,8 @@ int task_list(char *buffer, size_t buffer_size) {
     };
 
     written += snprintf(buffer + written, buffer_size - written,
-                        "\r\n=== Task List (%d tasks) ===\r\n", task_count);
+                        "\r\n=== Task List (%d tasks, policy: %s) ===\r\n",
+                        task_count, scheduler_policy_name(active_policy));
 
     written += snprintf(buffer + written, buffer_size - written,
                         "ID   Name                 State   Prio Core    Mem UID\r\n");
@@ -390,7 +484,6 @@ void task_report_memory(uint16_t task_id, int allocated) {
         if (task->memory_allocated >= freed) {
             task->memory_allocated -= freed;
         } else {
-            printf("WARNING: Task %d freed more than allocated\r\n", task_id);
             task->memory_allocated = 0;
         }
     }
@@ -454,6 +547,7 @@ int task_get_stats(uint16_t task_id, char *buffer, size_t size) {
         "Stack Size: %lu bytes\r\n"
         "Runtime: %lu ms\r\n"
         "Context Switches: %lu\r\n"
+        "Virtual Runtime: %lu\r\n"
         "==============================\r\n",
         task->name,
         task->task_id,
@@ -465,7 +559,50 @@ int task_get_stats(uint16_t task_id, char *buffer, size_t size) {
         (unsigned long)task->memory_peak,
         (unsigned long)task->stack_size,
         (unsigned long)task->total_runtime_ms,
-        (unsigned long)task->context_switches);
+        (unsigned long)task->context_switches,
+        (unsigned long)task->vruntime);
+}
+
+/* ============================================================================
+ * Scheduler Policy API
+ * ========================================================================== */
+
+static const char *policy_names[] = {
+    [SCHED_POLICY_PRIORITY]    = "priority",
+    [SCHED_POLICY_ROUND_ROBIN] = "round-robin",
+    [SCHED_POLICY_CFS]         = "cfs",
+};
+
+bool scheduler_set_policy(sched_policy_t policy) {
+    if (policy >= SCHED_POLICY_COUNT) {
+        return false;
+    }
+    active_policy = policy;
+
+    /* Adjust time slices for new policy */
+    for (uint16_t i = 0; i < task_count; i++) {
+        task_descriptor_t *task = &task_table[i];
+        if (policy == SCHED_POLICY_ROUND_ROBIN) {
+            task->time_slice_ms = RR_TIMESLICE_MS;
+        } else {
+            task->time_slice_ms = default_timeslice[task->priority];
+        }
+        task->time_remaining_ms = task->time_slice_ms;
+    }
+
+    printf("Scheduler policy: %s\r\n", policy_names[policy]);
+    return true;
+}
+
+sched_policy_t scheduler_get_policy(void) {
+    return active_policy;
+}
+
+const char *scheduler_policy_name(sched_policy_t policy) {
+    if (policy < SCHED_POLICY_COUNT) {
+        return policy_names[policy];
+    }
+    return "unknown";
 }
 
 /* ============================================================================
@@ -530,13 +667,20 @@ void scheduler_tick(void) {
         return;
     }
 
-    task_descriptor_t *task = find_task(running_task_core0);
+    /* Use cached pointer to avoid O(n) lookup every 1ms tick */
+    task_descriptor_t *task = (task_descriptor_t *)running_task_ptr;
     if (!task || task->state != TASK_STATE_RUNNING) {
         return;
     }
 
     /* Track runtime */
     task->total_runtime_ms++;
+
+    /* CFS: advance virtual runtime weighted by priority */
+    if (active_policy == SCHED_POLICY_CFS) {
+        uint32_t weight = cfs_weight[task->priority];
+        task->vruntime += weight;
+    }
 
     /* Decrement time remaining; trigger switch when expired */
     if (task->time_slice_ms > 0 && task->time_remaining_ms > 0) {
@@ -553,7 +697,7 @@ void scheduler_context_switch(void) {
         return;
     }
 
-    task_descriptor_t *current = find_task(running_task_core0);
+    task_descriptor_t *current = (task_descriptor_t *)running_task_ptr;
 
     /* Move current task back to READY if it was RUNNING */
     if (current && current->state == TASK_STATE_RUNNING) {
@@ -562,7 +706,7 @@ void scheduler_context_switch(void) {
         current->context_switches++;
     }
 
-    /* Select next task using existing priority-based scheduler */
+    /* Select next task using active policy */
     uint16_t next_id = scheduler_next_task_core0();
     if (next_id == 0) {
         /* No ready tasks; keep running current if available */
@@ -578,6 +722,7 @@ void scheduler_context_switch(void) {
     }
 
     running_task_core0 = next_id;
+    running_task_ptr = next;
     next->state = TASK_STATE_RUNNING;
     next->time_remaining_ms = next->time_slice_ms;
 }
@@ -604,15 +749,17 @@ void scheduler_start(void) {
         if (task) {
             task->state = TASK_STATE_RUNNING;
             running_task_core0 = first;
+            running_task_ptr = task;
         }
     }
 
     preemption_enabled = true;
-    printf("Preemptive scheduler started (SysTick 1ms)\r\n");
+    printf("Preemptive scheduler started (SysTick 1ms, policy: %s)\r\n",
+           scheduler_policy_name(active_policy));
 }
 
 void scheduler_yield(void) {
-    task_descriptor_t *task = find_task(running_task_core0);
+    task_descriptor_t *task = (task_descriptor_t *)running_task_ptr;
     if (task) {
         task->time_remaining_ms = 0;
         task->needs_switch = true;

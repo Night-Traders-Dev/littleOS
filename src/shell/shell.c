@@ -186,6 +186,44 @@ static const shell_cmd_t cmd_table[] = {
 
 #define CMD_TABLE_SIZE (sizeof(cmd_table) / sizeof(cmd_table[0]) - 1)
 
+/* ============================================================================
+ * Command hash table for O(1) lookup
+ * ========================================================================== */
+
+#define CMD_HASH_BUCKETS 128
+
+static const shell_cmd_t *cmd_hash[CMD_HASH_BUCKETS];
+
+static uint32_t cmd_hash_fn(const char *s) {
+    uint32_t h = 5381;
+    while (*s) {
+        h = ((h << 5) + h) + (unsigned char)*s++;
+    }
+    return h % CMD_HASH_BUCKETS;
+}
+
+static void cmd_hash_init(void) {
+    memset(cmd_hash, 0, sizeof(cmd_hash));
+    for (int i = 0; cmd_table[i].name != NULL; i++) {
+        uint32_t h = cmd_hash_fn(cmd_table[i].name);
+        /* Linear probe for collisions */
+        while (cmd_hash[h] != NULL) {
+            h = (h + 1) % CMD_HASH_BUCKETS;
+        }
+        cmd_hash[h] = &cmd_table[i];
+    }
+}
+
+static const shell_cmd_t *cmd_hash_lookup(const char *name) {
+    uint32_t h = cmd_hash_fn(name);
+    for (int probe = 0; probe < CMD_HASH_BUCKETS; probe++) {
+        uint32_t idx = (h + probe) % CMD_HASH_BUCKETS;
+        if (cmd_hash[idx] == NULL) return NULL;
+        if (strcmp(cmd_hash[idx]->name, name) == 0) return cmd_hash[idx];
+    }
+    return NULL;
+}
+
 #define SHELL_USERNAME_MAX 32
 
 static task_sec_ctx_t shell_sec_ctx = {
@@ -987,8 +1025,8 @@ static int execute_single(int argc, char *argv[]) {
     }
 
     if (strcmp(argv[0], "version") == 0) {
-        printf("littleOS v0.6.0 - RP2040\r\n");
-        printf("With SageLang v0.8.0\r\n");
+        printf("littleOS v0.8.0\r\n");
+        printf("With SageLang v0.13.0\r\n");
         printf("Supervisor: %s\r\n",
                supervisor_is_running() ? "Active" : "Inactive");
         return 0;
@@ -1021,11 +1059,10 @@ static int execute_single(int argc, char *argv[]) {
         return 0;
     }
 
-    // Look up in command table
-    for (int i = 0; cmd_table[i].name != NULL; i++) {
-        if (strcmp(argv[0], cmd_table[i].name) == 0) {
-            return cmd_table[i].handler(argc, argv);
-        }
+    // Look up in command hash table (O(1) average)
+    const shell_cmd_t *entry = cmd_hash_lookup(argv[0]);
+    if (entry) {
+        return entry->handler(argc, argv);
     }
 
     printf("Unknown command: %s\r\n", argv[0]);
@@ -1168,6 +1205,9 @@ static void show_motd(void) {
 void shell_run(void) {
     char buffer[MAX_CMD_LEN];
     int  idx = 0;
+
+    // Build command hash table for O(1) lookup
+    cmd_hash_init();
 
     // Ctrl+C flag
     volatile bool interrupted = false;

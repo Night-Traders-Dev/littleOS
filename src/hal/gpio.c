@@ -10,7 +10,7 @@
 #define GPIO_MAX_PIN BOARD_GPIO_MAX
 
 // Debug flag - set to 1 to enable verbose GPIO debug output
-#define GPIO_DEBUG 1
+#define GPIO_DEBUG 0
 
 /**
  * @brief Validate GPIO pin number

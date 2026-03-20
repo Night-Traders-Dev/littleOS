@@ -333,6 +333,41 @@ int cmd_tasks_test(int argc, char *argv[]) {
 }
 
 // Usage info
+int cmd_tasks_policy(int argc, char *argv[]) {
+    if (argc < 2) {
+        printf("Scheduler policy: %s\n", scheduler_policy_name(scheduler_get_policy()));
+        printf("\nAvailable policies:\n");
+        printf("  priority     - Fixed-priority (highest priority always runs)\n");
+        printf("  round-robin  - Equal time slices, rotate all tasks\n");
+        printf("  cfs          - Completely Fair Scheduler (weighted vruntime)\n");
+        printf("\nUsage: tasks policy <name>\n");
+        return 0;
+    }
+
+    const char *name = argv[1];
+    sched_policy_t policy;
+
+    if (strcmp(name, "priority") == 0) {
+        policy = SCHED_POLICY_PRIORITY;
+    } else if (strcmp(name, "round-robin") == 0 || strcmp(name, "rr") == 0) {
+        policy = SCHED_POLICY_ROUND_ROBIN;
+    } else if (strcmp(name, "cfs") == 0 || strcmp(name, "fair") == 0) {
+        policy = SCHED_POLICY_CFS;
+    } else {
+        printf("Unknown policy: %s\n", name);
+        printf("Valid policies: priority, round-robin, cfs\n");
+        return 1;
+    }
+
+    if (scheduler_set_policy(policy)) {
+        printf("Switched to %s scheduler\n", scheduler_policy_name(policy));
+    } else {
+        printf("Failed to set policy\n");
+        return 1;
+    }
+    return 0;
+}
+
 int cmd_tasks_help(void) {
     printf("\nTask Management Commands:\n");
     printf("─────────────────────────────────────────────────────────────\n");
@@ -344,6 +379,7 @@ int cmd_tasks_help(void) {
     printf("  tasks resume <id>       - Resume a task\n");
     printf("  tasks kill <id>         - Terminate a task\n");
     printf("  tasks stats <id>        - Show task statistics\n");
+    printf("  tasks policy [name]     - Show/set scheduler policy\n");
     printf("  tasks module list <mod> - List tasks for module\n");
     printf("  tasks module kill <mod> - Kill all tasks for module\n");
     printf("  tasks test <count>      - Create test tasks\n");
@@ -379,6 +415,8 @@ int cmd_tasks(int argc, char *argv[]) {
         return cmd_tasks_stats(argc - 1, argv + 1);
     } else if (strcmp(subcommand, "status") == 0) {
         return cmd_tasks_status(argc - 1, argv + 1);
+    } else if (strcmp(subcommand, "policy") == 0) {
+        return cmd_tasks_policy(argc - 1, argv + 1);
     } else if (strcmp(subcommand, "module") == 0) {
         return cmd_tasks_module(argc - 1, argv + 1);
     } else if (strcmp(subcommand, "test") == 0) {

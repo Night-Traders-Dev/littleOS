@@ -4,6 +4,16 @@ All notable changes to littleOS. Format based on [Keep a Changelog](https://keep
 
 ## [0.8.0] - 2026-03-20
 
+### Added - Multi-Policy Scheduler
+
+- **3 scheduling policies** switchable at runtime via `tasks policy <name>`:
+  - `priority` - Fixed-priority: highest-priority task always runs (default)
+  - `round-robin` - Equal 20ms time slices, rotates through all ready tasks
+  - `cfs` - Completely Fair Scheduler: weighted virtual runtime ensures fairness while respecting priority
+- **`tasks policy`** shell command to view/switch scheduler policy
+- **CFS virtual runtime** (`vruntime` field) tracks weighted execution time per task
+- Policy changes take effect immediately and adjust all task time slices
+
 ### Added - SageLang Bytecode VM and Tooling
 
 - **Bytecode VM** - Stack-based virtual machine for fast execution of simple statements
@@ -20,6 +30,13 @@ All notable changes to littleOS. Format based on [Keep a Changelog](https://keep
   - Severity levels: error, warning, style
 - **`sage -m`** now works as a single argument (previously required `sage -m dummy`)
 - **`sage --lint CODE`** - New command to lint SageLang code from the shell
+
+### Changed - Performance Improvements
+
+- **Command hash table** - Shell command lookup is now O(1) average via djb2 hash (was O(n) linear scan of 64 entries)
+- **Scheduler tick optimization** - Cached `running_task_ptr` eliminates O(n) `find_task()` call in 1ms SysTick handler
+- **GPIO debug disabled** - `GPIO_DEBUG` set to 0 in production; eliminates UART printf on every GPIO operation
+- **SageLang heartbeat reduction** - Removed per-statement `sage_force_heartbeat()`; now uses time-based 250ms interval only, reducing overhead during script execution
 
 ### Changed - SageLang Submodule
 

@@ -37,7 +37,7 @@ littleOS is designed as a **practical embedded operating system** that:
 | **Target Chips** | RP2040 (Cortex-M0+), RP2350 (Cortex-M33 or Hazard3 RISC-V) |
 | **Supported Boards** | Pico, Pico W, Pico 2, Pico 2 W, Adafruit Feather RP2350 (8 build targets) |
 | **SDK** | Raspberry Pi Pico SDK (handles boot, linker, clocks, per-platform toolchain) |
-| **Multitasking** | Cooperative scheduler, 16 tasks max, priority-based with security contexts |
+| **Multitasking** | Multi-policy scheduler (priority/round-robin/CFS), 16 tasks max, preemptive with security contexts |
 | **Filesystem** | F2FS-inspired RAM filesystem with NAT, SIT, dual checkpoints, CRC32 |
 | **Shell** | 64+ commands, pipes, redirection, aliases, env vars, tab completion, history |
 | **Scripting** | SageLang bytecode VM + AST interpreter (Python-like syntax, GC, linter, constfold) |
@@ -434,9 +434,9 @@ bool memory_account_get(uint16_t task_id, size_t *allocated, size_t *peak);
 
 ## Part 6: Task Scheduler
 
-### 6.1 Cooperative Multitasking
+### 6.1 Multi-Policy Preemptive Scheduler
 
-The scheduler (`src/drivers/scheduler.c`) provides cooperative multitasking with priority-based ordering. Tasks run until they explicitly yield or terminate — there is no preemption timer.
+The scheduler (`src/drivers/scheduler.c`) provides preemptive multitasking with three switchable scheduling policies. Tasks are preempted via SysTick (1ms interval) and PendSV context switching, or can yield voluntarily via `scheduler_yield()`.
 
 **Configuration:**
 
@@ -446,7 +446,17 @@ The scheduler (`src/drivers/scheduler.c`) provides cooperative multitasking with
 | `LITTLEOS_TASK_STACK_SIZE` | 4096 | Stack per task (bytes) |
 | `LITTLEOS_MAX_TASK_NAME` | 32 | Task name length |
 
-### 6.2 Task States
+### 6.2 Scheduling Policies
+
+| Policy | Name | Description |
+|--------|------|-------------|
+| `priority` | Fixed-Priority | Highest-priority ready task always runs; round-robin among equal priority |
+| `round-robin` | Round-Robin | Equal 20ms time slices; rotates through all ready tasks regardless of priority |
+| `cfs` | Completely Fair | Weighted virtual runtime; lower-priority tasks accumulate vruntime faster, ensuring fairness while respecting priority |
+
+Switch at runtime: `tasks policy cfs`
+
+### 6.3 Task States
 
 ```
 TASK_STATE_IDLE        → Not scheduled
@@ -457,7 +467,7 @@ TASK_STATE_SUSPENDED   → Manually paused
 TASK_STATE_TERMINATED  → Finished or killed
 ```
 
-### 6.3 Task Priorities
+### 6.4 Task Priorities
 
 ```
 TASK_PRIORITY_LOW      = 0    (background work)
@@ -466,7 +476,7 @@ TASK_PRIORITY_HIGH     = 2    (time-sensitive)
 TASK_PRIORITY_CRITICAL = 3    (system-critical)
 ```
 
-### 6.4 Task Descriptor
+### 6.5 Task Descriptor
 
 Each task carries a full descriptor:
 
@@ -492,7 +502,7 @@ typedef struct {
 } task_descriptor_t;
 ```
 
-### 6.5 Scheduler API
+### 6.6 Scheduler API
 
 ```c
 void     scheduler_init(void);
@@ -505,6 +515,10 @@ bool     task_get_descriptor(uint16_t task_id, task_descriptor_t *desc);
 uint16_t task_get_current(void);
 uint16_t task_get_count(void);
 void     scheduler_yield(void);
+void     scheduler_start(void);
+bool     scheduler_set_policy(sched_policy_t policy);
+sched_policy_t scheduler_get_policy(void);
+const char    *scheduler_policy_name(sched_policy_t policy);
 ```
 
 ---

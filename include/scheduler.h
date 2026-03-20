@@ -22,6 +22,17 @@
  */
 
 /* ============================================================================
+ * Scheduler Policies
+ * ========================================================================== */
+
+typedef enum {
+    SCHED_POLICY_PRIORITY = 0,   /* Fixed-priority: highest priority always runs */
+    SCHED_POLICY_ROUND_ROBIN,    /* Round-robin: equal time slices, rotate tasks */
+    SCHED_POLICY_CFS,            /* CFS-like: fair share based on virtual runtime */
+    SCHED_POLICY_COUNT           /* Sentinel (number of policies) */
+} sched_policy_t;
+
+/* ============================================================================
  * Task Definitions
  * ========================================================================== */
 
@@ -73,7 +84,9 @@ typedef struct {
     uint32_t        time_remaining_ms;    /* Remaining time in current slice */
     bool            needs_switch;         /* Context switch pending */
 
-    uint8_t         reserved[44];         /* Reserved for future use  */
+    uint64_t        vruntime;             /* CFS virtual runtime (weighted ticks) */
+
+    uint8_t         reserved[36];         /* Reserved for future use  */
 } task_descriptor_t;
 
 /* ============================================================================
@@ -206,6 +219,33 @@ void scheduler_update_runtime(uint16_t task_id, uint32_t elapsed_ms);
  * Count tasks that are READY or RUNNING
  */
 uint16_t scheduler_count_ready_tasks(void);
+
+/* ============================================================================
+ * Scheduler Policy
+ * ========================================================================== */
+
+/**
+ * Set the active scheduling policy
+ *
+ * @param policy  New scheduling policy
+ * @return true if changed successfully
+ */
+bool scheduler_set_policy(sched_policy_t policy);
+
+/**
+ * Get the active scheduling policy
+ *
+ * @return Current scheduling policy
+ */
+sched_policy_t scheduler_get_policy(void);
+
+/**
+ * Get the name of a scheduling policy
+ *
+ * @param policy  Scheduling policy
+ * @return Human-readable name
+ */
+const char *scheduler_policy_name(sched_policy_t policy);
 
 /* ============================================================================
  * Preemptive Scheduling

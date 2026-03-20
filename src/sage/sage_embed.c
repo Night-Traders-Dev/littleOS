@@ -279,14 +279,11 @@ sage_result_t sage_eval_string(sage_context_t* ctx, const char* source, size_t s
             return SAGE_ERROR_TIMEOUT;
         }
         
-        // Send heartbeat before parsing
-        sage_try_heartbeat();
-        
         Stmt* stmt = parse();
         if (stmt == NULL) {
             break; // End of input
         }
-        
+
         statement_count++;
 
         // Apply constant folding before execution
@@ -294,26 +291,16 @@ sage_result_t sage_eval_string(sage_context_t* ctx, const char* source, size_t s
 
         sage_retain_stmt(ctx, stmt);
 
-        // Send heartbeat after parsing (AST construction can be expensive)
-        sage_try_heartbeat();
-
-#ifdef PICO_BUILD
-        // For embedded: force heartbeat every 10th statement
-        if (statement_count % 10 == 0) {
-            sage_force_heartbeat();
-        }
-#endif
-
         // Execute via bytecode VM with AST fallback
         ExecResult result = sage_execute_stmt(stmt, ctx->global_env, ctx->runtime_mode);
         if (result.is_throwing) {
             sage_set_error_value(ctx, result.exception_value, "Unhandled SageLang exception");
             return SAGE_ERROR_RUNTIME;
         }
-        
-        // Force heartbeat after each statement interpretation
-        sage_force_heartbeat();
-        
+
+        // Time-based heartbeat (every 250ms via sage_try_heartbeat)
+        sage_try_heartbeat();
+
         // Check timeout after each statement
         if (sage_check_timeout(ctx)) {
             return SAGE_ERROR_TIMEOUT;
