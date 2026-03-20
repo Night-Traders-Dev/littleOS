@@ -47,9 +47,15 @@ int net_str_to_ip4(const char *str, net_ip4_t *ip) {
     return NET_OK;
 }
 
+#ifdef PICO_W
+static bool cyw43_hw_initialized = false;
+#endif
+
 void net_poll(void) {
 #ifdef PICO_W
-    cyw43_arch_poll();
+    if (cyw43_hw_initialized) {
+        cyw43_arch_poll();
+    }
 #endif
 }
 
@@ -211,10 +217,11 @@ static int scan_cb(void *env, const cyw43_ev_scan_result_t *result) {
 
 /* ---------- WiFi API ---------- */
 
-int net_init(void) {
-    if (net_initialized) return NET_OK;
-
-    memset(sockets, 0, sizeof(sockets));
+/* Lazily initialize CYW43 hardware. Called on first net_init() or
+ * deferred until net_wifi_connect() to avoid PIO/DMA overhead during
+ * boot when WiFi isn't needed. */
+static int net_hw_init(void) {
+    if (cyw43_hw_initialized) return NET_OK;
 
     if (cyw43_arch_init()) {
         dmesg_err("net: CYW43 init failed");
@@ -222,14 +229,31 @@ int net_init(void) {
     }
 
     cyw43_arch_enable_sta_mode();
+    cyw43_hw_initialized = true;
+    dmesg_info("net: CYW43 hardware initialized (PIO + gSPI)");
+    return NET_OK;
+}
+
+int net_init(void) {
+    if (net_initialized) return NET_OK;
+
+    memset(sockets, 0, sizeof(sockets));
+
+    /* Register the net subsystem as available but defer CYW43
+     * hardware init until actually needed (net connect, net scan).
+     * This avoids PIO/DMA polling overhead at boot. */
     net_initialized = true;
-    dmesg_info("net: initialized (CYW43439)");
+    dmesg_info("net: subsystem registered (CYW43 deferred)");
     return NET_OK;
 }
 
 int net_wifi_connect(const char *ssid, const char *password, uint32_t timeout_ms) {
     if (!net_initialized) return NET_ERR_INIT;
     if (!ssid) return NET_ERR_INVALID;
+
+    /* Lazy CYW43 hardware init on first use */
+    int hw_err = net_hw_init();
+    if (hw_err != NET_OK) return hw_err;
 
     dmesg_info("net: connecting to '%s'...", ssid);
 
@@ -263,6 +287,7 @@ int net_wifi_disconnect(void) {
     }
 
     cyw43_arch_deinit();
+    cyw43_hw_initialized = false;
     net_initialized = false;
     connected_ssid[0] = '\0';
     connect_time_ms = 0;
@@ -274,6 +299,10 @@ int net_wifi_disconnect(void) {
 int net_wifi_scan(net_scan_result_t *results, int max_results) {
     if (!net_initialized) return NET_ERR_INIT;
     if (!results || max_results <= 0) return NET_ERR_INVALID;
+
+    /* Lazy CYW43 hardware init on first use */
+    int hw_err = net_hw_init();
+    if (hw_err != NET_OK) return hw_err;
 
     scan_results_ptr = results;
     scan_max = (max_results > NET_MAX_SCAN_RESULTS) ? NET_MAX_SCAN_RESULTS : max_results;

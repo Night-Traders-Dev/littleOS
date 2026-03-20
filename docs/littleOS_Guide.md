@@ -337,17 +337,17 @@ The kernel performs a 29-step initialization in `kernel_init()` (`src/kernel/ker
 | 25 | `pkg_init()` | Package manager |
 | 26 | `tmux_init()` | Terminal multiplexer |
 | 27 | Debug subsystem init | logcat, trace, coredump, syslog |
-| 28 | `wdt_enable(8000)` | Hardware watchdog (8s timeout) |
-| 29 | `supervisor_init()` | Core 1 health monitor |
+| 28 | `wdt_init(8000)` + `wdt_enable(8000)` | Hardware watchdog (8s timeout, checks prior reset reason) |
+| 29 | `supervisor_init()` | Core 1 health monitor (or single-core fallback on emulators) |
 
 After initialization completes, the kernel prints the welcome banner and enters `shell_run()`.
 
 ### 4.2 Dual-Core Model
 
-- **Core 0**: Runs the kernel, shell, scheduler, and all user tasks
-- **Core 1**: Runs the supervisor — an independent health monitor that checks temperature, memory usage, watchdog status, and Core 0 heartbeats every 100 ms
+- **Core 0**: Runs the kernel, shell, scheduler, and all user tasks. Only Core 0 feeds the hardware watchdog (via `supervisor_heartbeat()` -> `wdt_feed()`).
+- **Core 1**: Runs the supervisor — an independent health monitor that checks temperature, memory usage, and Core 0 heartbeat timestamps every 100 ms. Core 1 does **not** feed the hardware watchdog, ensuring a Core 0 hang triggers a hardware reset.
 
-The cores communicate through the RP2040/RP2350 hardware FIFO (multicore mailbox). Core 0 sends periodic heartbeats; if Core 1 detects a stall, it can trigger alerts or recovery actions.
+The cores share metrics through a spinlock-protected structure. On emulators (e.g., Bramble) where Core 1 is unavailable, the supervisor falls back to cooperative single-core mode, running health checks from `supervisor_heartbeat()` on Core 0.
 
 ---
 
@@ -450,11 +450,13 @@ The scheduler (`src/drivers/scheduler.c`) provides preemptive multitasking with 
 
 | Policy | Name | Description |
 |--------|------|-------------|
-| `priority` | Fixed-Priority | Highest-priority ready task always runs; round-robin among equal priority |
+| `priority` | Fixed-Priority | Highest-priority ready task always runs; true round-robin rotation among tasks at the same priority level |
 | `round-robin` | Round-Robin | Equal 20ms time slices; rotates through all ready tasks regardless of priority |
-| `cfs` | Completely Fair | Weighted virtual runtime; lower-priority tasks accumulate vruntime faster, ensuring fairness while respecting priority |
+| `cfs` | Completely Fair | Weighted virtual runtime; lower-priority tasks accumulate vruntime faster, ensuring fairness while respecting priority. New tasks start at `min(vruntime)` of existing ready tasks to prevent starvation. |
 
 Switch at runtime: `tasks policy cfs`
+
+Policy changes reset CFS virtual runtimes and adjust all task time slices immediately.
 
 ### 6.3 Task States
 
@@ -571,6 +573,7 @@ The shell (`src/shell/shell.c`) is a UART-based REPL that reads lines, tokenizes
 | `history` | Show command history |
 | `reboot` | Restart the system |
 | `exit` | Log out current user |
+| `timeout` | View/set command execution timeout (default 30s, 0=disable) |
 | `health` | System health summary |
 | `stats` | System statistics |
 | `supervisor` | Core 1 supervisor status |
@@ -1296,7 +1299,7 @@ The built-in linter (`sage --lint`) performs static analysis with 13 rules cover
 
 ### 14.7 Heartbeat System
 
-During script execution, the SageLang runtime calls `supervisor_heartbeat()` and `wdt_feed()` every 250 ms to prevent the watchdog from triggering on long-running scripts. This is transparent to the script author.
+During script execution, the SageLang runtime calls `supervisor_heartbeat()` every 250 ms (time-based, not per-statement) to prevent the watchdog from triggering on long-running scripts. This is transparent to the script author. The eval loop also checks `shell_cmd_abort` after each statement, allowing the shell's command timeout (default 30s) to abort long-running scripts gracefully.
 
 ---
 
@@ -1304,7 +1307,7 @@ During script execution, the SageLang runtime calls `supervisor_heartbeat()` and
 
 ### 15.1 Core 1 Supervisor
 
-The supervisor (`src/drivers/supervisor.c`) runs independently on Core 1 and monitors system health every 100 ms:
+The supervisor (`src/drivers/supervisor.c`) runs independently on Core 1 and monitors system health every 100 ms. The supervisor does **not** feed the hardware watchdog — only Core 0 feeds it via `supervisor_heartbeat()`, ensuring a Core 0 hang triggers a hardware reset. On emulators where Core 1 is unavailable, the supervisor falls back to cooperative single-core polling:
 
 **Monitored parameters:**
 

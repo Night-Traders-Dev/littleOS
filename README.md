@@ -33,7 +33,7 @@ littleOS brings a **Unix-like shell environment** to **bare-metal RP2040 and RP2
 | **Hardware** | GPIO, I2C, SPI, PWM, ADC, DMA, PIO, NeoPixel, OLED display, DVI output (RP2350) |
 | **Filesystem** | F2FS-inspired RAM FS with crash recovery, procfs, devfs |
 | **Scripting** | SageLang REPL + bytecode VM, linter, flash script storage, auto-boot scripts |
-| **System** | Watchdog, multicore supervisor, multi-policy scheduler, cron, IPC, power management |
+| **System** | Watchdog, multicore supervisor, multi-policy scheduler, command timeouts, cron, IPC, power management |
 | **Debug** | logcat, trace, watchpoints, benchmarks, selftest, coredump, syslog |
 | **Security** | Multi-user, capability-based permissions, Unix-style rwx |
 | **Multi-Chip** | RP2040 and RP2350 from a single codebase with board auto-detection |
@@ -133,6 +133,7 @@ version           # OS and SageLang version
 clear             # Clear screen
 reboot            # Software reboot (via watchdog)
 history           # Command history
+timeout           # View/set command execution timeout (default 30s, 0=disable)
 health            # Quick system health check
 stats             # Detailed system statistics
 supervisor        # Core 1 supervisor (start|stop|status|alerts)
@@ -446,8 +447,8 @@ Pico SDK crt0.S (clocks, memory)
       -> net_init (WiFi boards only)
       -> MQTT, pkg, tmux
       -> logcat, trace, coredump, syslog
-      -> Watchdog enable (8s)
-      -> Supervisor launch (Core 1)
+      -> Watchdog init + enable (8s)
+      -> Supervisor launch (Core 1, or single-core fallback)
       -> shell_run()
 ```
 

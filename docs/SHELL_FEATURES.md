@@ -16,6 +16,7 @@ The littleOS shell provides a Unix-like command environment with 64+ commands, p
 | `reboot` | Software reboot via watchdog |
 | `history` | Show command history |
 | `exit` | Logout |
+| `timeout` | View/set command execution timeout (default 30s, 0 to disable) |
 | `health` | Quick system health check |
 | `stats` | Detailed system statistics |
 | `supervisor` | Core 1 supervisor control (start/stop/status/alerts) |
@@ -238,9 +239,23 @@ Recommended settings:
 - Navigation speed: <1ms
 - History lookup: O(1) constant time
 - Tab completion: O(n) command table scan
-- Command dispatch: O(n) table lookup
+- Command dispatch: O(1) hash table lookup (djb2 hash)
+
+### Command Timeout
+
+Every command is wrapped with a hardware timer alarm (default 30 seconds). If a command does not return within the timeout, the `shell_cmd_abort` flag is set and the shell prints a timeout message. Long-running commands (`top`, `gpiowatch`, `adc stream`, etc.) check this flag in their polling loops and exit gracefully.
+
+```bash
+> timeout              # Show current timeout
+Command timeout: 30000 ms
+
+> timeout 60000        # Set to 60 seconds
+> timeout 0            # Disable timeout
+```
+
+SageLang scripts also respect the timeout - the eval loop checks `shell_cmd_abort` after each statement.
 
 ---
 
-**Version**: 0.6.0
+**Version**: 0.8.0
 **Last Updated**: March 2026

@@ -21,21 +21,22 @@ Traditional embedded systems can hang or crash silently. The supervisor prevents
 ## Architecture
 
 ```
-RP2040 Dual-Core System
+RP2040 / RP2350 Dual-Core System
 ├─ Core 0 (Main)
 │  ├─ Shell / User Interface
 │  ├─ SageLang Interpreter
 │  ├─ Application Code
-│  └─ Sends heartbeat every 500ms → Core 1
+│  ├─ Sends heartbeat every 500ms (supervisor_heartbeat)
+│  └─ Feeds hardware watchdog every 2s (only Core 0 feeds!)
 │
 └─ Core 1 (Supervisor)
-   ├─ Monitors Core 0 heartbeat
-   ├─ Checks watchdog feeding
+   ├─ Monitors Core 0 heartbeat timestamps
    ├─ Reads die temperature every 100ms
    ├─ Tracks memory usage
-   └─ Triggers alerts/recovery as needed
+   ├─ Does NOT feed hardware watchdog (so a Core 0 hang triggers reset)
+   └─ Falls back to single-core cooperative polling on emulators
 
-Hardware FIFO: Core 0 ← → Core 1 (heartbeat communication)
+Spinlock: Metrics shared via hardware spinlock (cross-core safe)
 ```
 
 ---
@@ -152,13 +153,13 @@ System at risk of failure:
 
 ### 1. Watchdog Feeding
 
-**What:** Ensures the hardware watchdog is fed regularly
+**What:** Monitors that Core 0 feeds the hardware watchdog regularly
 
-**Why:** If the watchdog isn't fed, system is likely hung
+**Why:** If the watchdog isn't fed, Core 0 is likely hung
 
 **Threshold:** Alert if >4 seconds between feeds (half of 8s timeout)
 
-**Recovery:** Supervisor itself feeds watchdog, preventing false resets
+**Recovery:** Only Core 0 feeds the hardware watchdog (via `supervisor_heartbeat()`). The supervisor on Core 1 monitors the feed timestamps but does not feed the watchdog itself. This ensures a Core 0 hang actually triggers a hardware reset after 8 seconds.
 
 ### 2. Core 0 Heartbeat
 
@@ -458,17 +459,23 @@ Get human-readable health string.
 ### Supervisor Loop Timing
 
 ```
-Every 100ms:
+Every 100ms (check_system_health):
   ├─ Check Core 0 heartbeat (5 second timeout)
-  ├─ Check watchdog feed status (4 second timeout)
+  ├─ Check watchdog feed timestamps (4 second timeout)
   ├─ Read temperature sensor (~50μs)
   ├─ Calculate memory usage
-  ├─ Update health status
-  └─ Feed watchdog
+  └─ Update health status and flags (spinlock-protected)
 
 Every 10ms:
   └─ Quick sleep to prevent busy-waiting
+
+NOTE: The supervisor does NOT feed the hardware watchdog.
+Only Core 0 feeds it via supervisor_heartbeat() -> wdt_feed().
 ```
+
+### Single-Core Fallback
+
+On emulators (e.g., Bramble) or if Core 1 fails to start, the supervisor falls back to **cooperative single-core mode**. Health checks run from `supervisor_heartbeat()` on Core 0 at the normal interval. The system detects this by probing the inter-core FIFO after `multicore_reset_core1()` during `supervisor_init()`.
 
 ### Customizing Thresholds
 
@@ -490,11 +497,11 @@ Then rebuild: `make -j$(nproc)`
 
 | Feature | Manual Monitoring | Supervisor |
 |---------|------------------|-----------|
-| **Watchdog** | Must call `wdt_feed()` everywhere | Automatic from Core 1 |
-| **Temperature** | Manual ADC reads | Continuous monitoring |
+| **Watchdog** | Must call `wdt_feed()` everywhere | Core 0 feeds via `supervisor_heartbeat()`; Core 1 monitors |
+| **Temperature** | Manual ADC reads | Continuous monitoring from Core 1 |
 | **Memory** | Manual tracking | Automatic leak detection |
-| **Crash Detection** | No detection | Detects Core 0 hangs |
-| **Overhead** | Scattered throughout code | Isolated on Core 1 |
+| **Crash Detection** | No detection | Detects Core 0 hangs (triggers HW watchdog reset) |
+| **Overhead** | Scattered throughout code | Isolated on Core 1 (or cooperative polling) |
 | **Reliability** | Easy to forget | Always watching |
 
 ---

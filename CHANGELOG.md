@@ -4,6 +4,15 @@ All notable changes to littleOS. Format based on [Keep a Changelog](https://keep
 
 ## [0.8.0] - 2026-03-20
 
+### Added - Command Timeout System
+
+- **`timeout` shell command** - View or set command execution timeout (`timeout <ms>`, 0 to disable)
+- **Hardware timer alarm** fires after 30 seconds (default) and sets `shell_cmd_abort` flag
+- All long-running commands (`top`, `gpiowatch`, `adc stream`, `neopixel animate`, `pwmtune sweep`, `pinout watch`) check the flag and exit gracefully
+- SageLang eval loop checks `shell_cmd_abort` after each statement, returns `SAGE_ERROR_TIMEOUT`
+- Timeout is cooperative (flag-based); the hardware watchdog (8s) remains the last resort for truly hung commands
+- `shell_cmd_abort` exported in `shell.h` for custom commands to check
+
 ### Added - Multi-Policy Scheduler
 
 - **3 scheduling policies** switchable at runtime via `tasks policy <name>`:
@@ -43,6 +52,18 @@ All notable changes to littleOS. Format based on [Keep a Changelog](https://keep
 - Updated to commit `ad82849` (SageLang v0.13.0)
 - Build now includes 16 source files (was 12): added `bytecode.c`, `runtime.c`, `linter.c`, `constfold.c`
 - Execution pipeline: lex -> parse -> constant fold -> bytecode/AST execute
+
+### Fixed - Watchdog Integration
+
+- **`wdt_init()` never called at boot** - Boot reason (`watchdog_caused_reboot()`) was never checked; system never knew if it recovered from a watchdog reset. Now `wdt_init(8000)` is called before `wdt_enable()` in kernel init.
+- **Core 1 supervisor defeated the watchdog** - Supervisor loop called `wdt_feed()` every 10ms unconditionally, meaning the hardware watchdog would never fire even if Core 0 was completely dead. Removed `wdt_feed()` from Core 1; only Core 0 feeds via `supervisor_heartbeat()` now.
+- **Shell bypassed supervisor feed tracking** - Shell loop called `wdt_feed()` independently of `supervisor_heartbeat()`, creating two uncoordinated feed paths. Removed the direct `wdt_feed()` call; single feed path: shell -> `supervisor_heartbeat()` -> `wdt_feed()` (every 2s).
+
+### Fixed - Scheduler Bugs
+
+- **Priority scheduler didn't round-robin among equal-priority tasks** - `select_priority()` always picked the first highest-priority match; now uses two-pass: find max priority, then rotate among tasks at that level
+- **CFS new-task starvation** - New tasks started with `vruntime = 0`, starving all existing tasks until the new task caught up. New tasks under CFS now start at `min(vruntime)` of all ready tasks.
+- **CFS vruntime not reset on policy switch** - Switching to CFS mid-run left stale vruntimes; `scheduler_set_policy(CFS)` now resets all vruntimes to 0
 
 ### Fixed - Shell Security Audit
 

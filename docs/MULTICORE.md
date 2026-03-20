@@ -461,18 +461,19 @@ else:
 core_send(value)
 ```
 
-### 4. Watchdog on Both Cores
+### 4. Watchdog Considerations
 
-Core 1 scripts should feed the watchdog too:
+Only Core 0 should feed the hardware watchdog. Core 1 user scripts should **not** call `wdt_feed()` directly, as this would mask Core 0 hangs. Instead, keep Core 1 scripts simple and ensure they don't block indefinitely:
 
 ```sagelang
 core1_launch_code("
     while(true):
         # Do work...
-        wdt_feed()  # Keep watchdog happy
-        sleep(1000)
+        sleep(1000)  # Don't call wdt_feed() - Core 0 handles it
 ")
 ```
+
+The supervisor on Core 1 monitors Core 0's heartbeat. If Core 0 hangs, the hardware watchdog will trigger a reset after 8 seconds.
 
 ---
 
@@ -538,9 +539,10 @@ core1_launch_code("
 **Symptom:** Both cores freeze
 
 **Solutions:**
-- Add `wdt_feed()` to Core 1 loops
-- Avoid infinite loops without delays
-- Check for deadlocks in communication
+- Avoid infinite loops without `sleep()` calls
+- Do NOT call `wdt_feed()` from Core 1 scripts (it masks Core 0 hangs)
+- Check for deadlocks in FIFO communication
+- The hardware watchdog (8s) will reset the system if Core 0 stops feeding
 
 ### Memory Issues
 

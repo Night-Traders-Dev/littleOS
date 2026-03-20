@@ -436,8 +436,8 @@ void kernel_main(void) {
 #ifdef PICO_W
     printf("Initializing network subsystem...\r\n");
     if (net_init() == NET_OK) {
-        printf("  CYW43 WiFi ready\r\n");
-        dmesg_info("Network subsystem initialized (CYW43)");
+        printf("  WiFi ready (CYW43 deferred until connect/scan)\r\n");
+        dmesg_info("Network subsystem registered (CYW43 deferred)");
     } else {
         printf("  Network init failed\r\n");
         dmesg_warn("Network subsystem init failed");
