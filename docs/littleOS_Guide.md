@@ -332,7 +332,7 @@ The kernel performs a 29-step initialization in `kernel_init()` (`src/kernel/ker
 | 20 | `procfs_init()` | /proc virtual filesystem |
 | 21 | `devfs_init()` | /dev virtual filesystem |
 | 22 | `cron_init()` | Scheduled tasks |
-| 23 | `net_init()` | WiFi (Pico W only) |
+| 23 | `net_init()` | WiFi subsystem registered (CYW43 deferred until connect/scan/status) |
 | 24 | `mqtt_init()` | MQTT client |
 | 25 | `pkg_init()` | Package manager |
 | 26 | `tmux_init()` | Terminal multiplexer |
@@ -593,7 +593,8 @@ The shell (`src/shell/shell.c`) is a UART-based REPL that reads lines, tokenizes
 
 | Command | Subcommands | Description |
 |---------|-------------|-------------|
-| `fs` | `init`, `mount`, `mkdir`, `touch`, `write`, `cat`, `ls`, `rm`, `sync`, `info`, `fsck` | F2FS-inspired filesystem |
+| `fs` | `init`, `mount`, `mkdir`, `touch`, `write`, `append`, `cat`, `ls`, `rm`, `sync`, `info`, `fsck` | F2FS-inspired filesystem (flash) |
+| `fat` | `init`, `mount`, `unmount`, `erase`, `ls`, `cat`, `write`, `mkdir`, `rm`, `touch`, `info` | FAT12/FAT16 filesystem (flash) |
 
 #### Text Processing Commands
 
@@ -684,13 +685,24 @@ The shell (`src/shell/shell.c`) is a UART-based REPL that reads lines, tokenizes
 
 ### 8.1 Design
 
-The filesystem (`src/drivers/fs/`) is inspired by F2FS (Flash-Friendly File System) and operates entirely in RAM with optional flash persistence. It features:
+littleOS provides two filesystems that coexist on separate flash partitions:
+
+**F2FS-style filesystem** (`src/drivers/fs/`) — Inspired by F2FS (Flash-Friendly File System) with:
 
 - **Log-structured writes** via NAT (Node Address Table)
 - **Wear leveling** via SIT (Segment Information Table)
 - **Crash recovery** via dual checkpoints (CP0/CP1)
 - **CRC32 integrity** on superblock, checkpoints, and inodes
 - **Hash-based directory lookup** with slack space optimization
+- **Inline data** for small files (<= 384 bytes stored directly in the inode)
+- Flash partition: `0x100000 - 0x17FFFF` (512 KB)
+
+**FAT12/FAT16 filesystem** (`src/drivers/fs/fat.c`) — Standard FAT with:
+
+- **Flash-backed** storage (persists across power cycles, zero RAM overhead)
+- Standard BPB, 8.3 filenames, dual FAT copies, subdirectories
+- FAT12 for small volumes, FAT16 for larger
+- Flash partition: `0x180000 - 0x1EFFFF` (448 KB on RP2040, 2.5 MB on RP2350)
 
 ### 8.2 On-Disk Layout
 
@@ -719,22 +731,30 @@ Block 3+: NAT blocks (inode-to-physical-block mapping)
 ### 8.4 Inode Structure
 
 ```c
-typedef struct {
-    uint16_t magic;
-    uint16_t inode_version;
-    uint16_t mode;            // FS_MODE_REG (0x8000) or FS_MODE_DIR (0x4000)
+typedef struct {                    // 512 bytes total
+    uint8_t  magic;                 // 0xFA
+    uint8_t  inode_version;         // 2 (v2: inline data support)
+    uint16_t mode;                  // FS_MODE_REG or FS_MODE_DIR
     uint32_t size;
     uint32_t atime, mtime, ctime;
     uint16_t link_count;
-    uint32_t direct[10];      // Direct block pointers
-    uint32_t indirect;        // Single indirect block
-    uint32_t double_indirect; // Double indirect block
+    uint16_t inode_flags;           // FS_IFLAG_INLINE_DATA, _EXTENTS, _COMPRESSED, _DEDUP
+    uint32_t direct[10];            // Direct block pointers
+    uint32_t indirect;              // Single indirect block
+    uint32_t double_indirect;       // Double indirect block
     uint32_t inode_num;
     uint32_t parent_inode;
     uint32_t generation;
     uint32_t crc32;
+    // --- v2 fields ---
+    uint8_t  inline_data[384];      // Small file data (when FS_IFLAG_INLINE_DATA set)
+    uint8_t  extent_count;          // Number of active extents
+    uint32_t content_hash;          // CRC32 of file content (for dedup)
+    uint32_t comp_size;             // Compressed size (for compression)
 } fs_inode_t;
 ```
+
+**Inline data**: Files <= 384 bytes store their data directly in the inode body. No block allocation needed. Files transparently promote to block-based storage when they grow past 384 bytes.
 
 ### 8.5 File API
 
@@ -1123,11 +1143,15 @@ bool perm_chmod(task_security_ctx_t *ctx, void *resource, uint16_t perms);
 
 ---
 
-## Part 13: Networking (Pico W)
+## Part 13: Networking (Pico W / TAP)
 
-### 13.1 WiFi Stack
+### 13.1 Network Stack
 
-Networking is available on Pico W and Pico 2 W boards via the CYW43439 WiFi chip. The stack uses lwIP (Lightweight IP) in threadsafe background mode.
+Networking is available on Pico W and Pico 2 W boards via the CYW43439 WiFi chip, or via TAP bridge when running on the Bramble emulator (`bramble -tap <ifname>`). The stack uses lwIP (Lightweight IP) in threadsafe background mode.
+
+**CYW43 deferred initialization**: The CYW43 hardware (PIO, gSPI, firmware loading) is not initialized at boot. It is lazily initialized on the first `net connect`, `net scan`, or `net status` call, avoiding ~230KB firmware load and PIO/DMA polling overhead when WiFi isn't needed.
+
+**TAP bridge mode**: When running under Bramble with `-tap`, the emulator bridges the CYW43 driver to a host TAP interface. `net status` auto-detects TAP mode by checking if the lwIP netif has an IP while the CYW43 link reports DOWN. TAP mode skips RSSI display (no radio) and shows security reminders about the host-side network.
 
 **Configuration:**
 

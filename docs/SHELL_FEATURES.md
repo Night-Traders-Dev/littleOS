@@ -44,7 +44,7 @@ The littleOS shell provides a Unix-like command environment with 64+ commands, p
 | Command | Description |
 |---------|-------------|
 | `fs` | F2FS-style filesystem (init/mount/mkdir/touch/cat/write/ls/sync/info/fsck) |
-| `fat` | FAT12/FAT16 filesystem (init/mount/ls/cat/write/mkdir/rm/touch/info) |
+| `fat` | FAT12/FAT16 flash filesystem (init/mount/erase/ls/cat/write/mkdir/rm/touch/info) |
 | `cat` | Display file contents |
 | `echo` | Print text (supports `>` redirect) |
 | `head` | Show first lines of file |

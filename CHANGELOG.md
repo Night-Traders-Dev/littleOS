@@ -12,15 +12,26 @@ All notable changes to littleOS. Format based on [Keep a Changelog](https://keep
 - New inode v2 fields: `inode_flags`, `inline_data[384]`, `extent_count`, `content_hash`, `comp_size`
 - Backward-compatible: v1 inodes (inode_flags=0) continue to work with block-based I/O
 
-### Added - FAT12/FAT16 Filesystem
+### Added - FAT12/FAT16 Filesystem (Flash-Backed)
 
 - **`fat` shell command** - Full FAT12 and FAT16 filesystem alongside the existing F2FS-style FS
-- **Subcommands**: `fat init <12|16> [sectors]`, `fat mount`, `fat unmount`, `fat info`, `fat ls`, `fat cat`, `fat write`, `fat mkdir`, `fat rm`, `fat touch`
-- RAM-backed with `.uninitialized_data` persistence (survives soft reboot)
+- **Subcommands**: `fat init <12|16> [sectors]`, `fat mount`, `fat unmount`, `fat erase`, `fat info`, `fat ls`, `fat cat`, `fat write`, `fat mkdir`, `fat rm`, `fat touch`
+- **Flash-backed** storage — persists across power cycles and reboots, zero RAM overhead (only the in-memory FAT cluster table lives in RAM)
+- Split flash partition layout: F2FS gets 512KB, FAT gets 448KB (RP2040) or 2.5MB (RP2350 4MB+ flash)
 - Standard BPB, 8.3 filenames, dual FAT copies, subdirectories with `.` and `..`
 - FAT12 for small volumes (< 4085 clusters), FAT16 for larger volumes
 - In-memory FAT table for O(1) cluster lookup
-- Separate from the F2FS-style FS: both can be mounted simultaneously
+- Both F2FS and FAT can be mounted simultaneously on separate flash partitions
+- Read-only subcommands (`ls`, `cat`, `info`) require `PERM_READ`; write operations require `PERM_WRITE`
+
+### Added - TAP Network Bridge Support
+
+- **`net status` works on TAP** - Detects when CYW43 link reports DOWN but lwIP netif has an IP (TAP bridge mode)
+- Shows `Mode: TAP bridge` vs `Mode: WiFi` in status output
+- RSSI display hidden on TAP (no radio hardware)
+- CYW43 lazy-init on `net status` (was only on `net connect`/`net scan`)
+- **Security logging** - Remote shell logs non-local connections with `dmesg_warn` security alert
+- TAP status shows `Security: TAP bridge (host-side firewall applies)` reminder
 
 ### Added - Command Timeout System
 
@@ -64,6 +75,13 @@ All notable changes to littleOS. Format based on [Keep a Changelog](https://keep
 - **Scheduler tick optimization** - Cached `running_task_ptr` eliminates O(n) `find_task()` call in 1ms SysTick handler
 - **GPIO debug disabled** - `GPIO_DEBUG` set to 0 in production; eliminates UART printf on every GPIO operation
 - **SageLang heartbeat reduction** - Removed per-statement `sage_force_heartbeat()`; now uses time-based 250ms interval only, reducing overhead during script execution
+- **CYW43 deferred init** - WiFi hardware initialization deferred until first `net connect`, `net scan`, or `net status`. Boot no longer loads 230KB CYW43 firmware or starts PIO/DMA polling until WiFi is actually needed.
+
+### Changed - Flash Partition Layout
+
+- F2FS partition reduced from 960KB to 512KB (`0x100000-0x17FFFF`)
+- New FAT partition: `0x180000-0x1EFFFF` (448KB on RP2040, 2.5MB on RP2350 4MB+ flash)
+- Config storage unchanged at `0x1F0000-0x1FFFFF`
 
 ### Changed - SageLang Submodule
 
@@ -86,6 +104,8 @@ All notable changes to littleOS. Format based on [Keep a Changelog](https://keep
 ### Fixed - Shell Security Audit
 
 - **Authorization default-deny** - `shell_authorize_command()` now returns `false` for unrecognized commands instead of `true` (was a security bypass for any new command not in the auth table)
+- **`fat` command missing from authorization** - Would hit default-deny. Added with read/write subcommand split matching `fs` (read-only: `ls`, `cat`, `info`; write: all others)
+- **`timeout` command missing from authorization** - Added to unconditionally-allowed built-in list (alongside `help`, `version`, `clear`, etc.)
 - **Buffer overflow in `cmd_script.c`** - `strcpy()` replaced with bounded `memcpy()` in script save code path; loop now breaks when buffer space is exhausted
 - **Tab completion overflow** - Added `MAX_CMD_LEN` bounds checks before `memcpy()` in single-match and partial-completion paths
 

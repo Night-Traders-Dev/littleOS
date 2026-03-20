@@ -29,9 +29,9 @@ littleOS brings a **Unix-like shell environment** to **bare-metal RP2040 and RP2
 | Category | Features |
 |----------|----------|
 | **Shell** | 64+ commands, pipes, aliases, env vars, tab completion, history, man pages |
-| **Networking** | WiFi (Pico W / Pico 2 W), TCP/UDP sockets, DNS, MQTT, ping, HTTP, remote shell, OTA |
+| **Networking** | WiFi (Pico W / Pico 2 W), TAP bridge (emulator), TCP/UDP, DNS, MQTT, ping, HTTP, remote shell, OTA |
 | **Hardware** | GPIO, I2C, SPI, PWM, ADC, DMA, PIO, NeoPixel, OLED display, DVI output (RP2350) |
-| **Filesystem** | F2FS-inspired RAM FS with crash recovery, FAT12/FAT16, procfs, devfs |
+| **Filesystem** | F2FS-inspired flash FS with crash recovery, FAT12/FAT16 (flash-backed), procfs, devfs |
 | **Scripting** | SageLang REPL + bytecode VM, linter, flash script storage, auto-boot scripts |
 | **System** | Watchdog, multicore supervisor, multi-policy scheduler, command timeouts, cron, IPC, power management |
 | **Debug** | logcat, trace, watchpoints, benchmarks, selftest, coredump, syslog |
@@ -158,7 +158,7 @@ perms             # Permission utilities (check|decode|presets)
 ### Filesystem & Text
 ```bash
 fs                # F2FS-style filesystem (init|mount|mkdir|touch|cat|write|append|ls|sync|info|fsck)
-fat               # FAT12/FAT16 filesystem (init|mount|ls|cat|write|mkdir|rm|touch|info)
+fat               # FAT12/FAT16 flash filesystem (init|mount|erase|ls|cat|write|mkdir|rm|touch|info)
 cat <file>        # Display file contents
 echo <text>       # Print text (supports > redirect)
 head <file>       # Show first lines
@@ -424,11 +424,19 @@ littleOS uses a single codebase for all supported boards. The Pico SDK provides 
 RP2040 (Pico / Pico W):
   SRAM:  264 KB (0x20000000 - 0x20042000)
   Flash: 2 MB
+    0x000000 - 0x100000  Code + data (1 MB)
+    0x100000 - 0x180000  F2FS partition (512 KB)
+    0x180000 - 0x1F0000  FAT partition (448 KB)
+    0x1F0000 - 0x200000  Config storage (64 KB)
   Free RAM: ~121-151 KB (depending on WiFi)
 
 RP2350 (Pico 2 / Pico 2 W / Feather):
   SRAM:  520 KB (0x20000000 - 0x20082000)
   Flash: 2-8 MB (board-dependent)
+    0x000000 - 0x100000  Code + data (1 MB)
+    0x100000 - 0x180000  F2FS partition (512 KB)
+    0x180000 - 0x3F0000  FAT partition (2.5 MB on 4MB flash)
+    0x3F0000 - 0x400000  Config storage (64 KB)
   Free RAM: ~350+ KB
 ```
 
@@ -445,7 +453,7 @@ Pico SDK crt0.S (clocks, memory)
       -> Permissions, IPC, OTA, DMA, power
       -> Sensor, profiler, shell env
       -> procfs, devfs, cron
-      -> net_init (WiFi boards only)
+      -> net_init (WiFi boards, CYW43 deferred until connect/scan/status)
       -> MQTT, pkg, tmux
       -> logcat, trace, coredump, syslog
       -> Watchdog init + enable (8s)
