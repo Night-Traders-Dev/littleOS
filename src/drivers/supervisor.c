@@ -84,6 +84,14 @@ static void check_system_health(void) {
     supervisor_copy_metrics(&snapshot);
 
     uint32_t time_since_feed = now - snapshot.last_feed_time_ms;
+
+    /* Guard against wraparound or uninitialized timestamps: if the
+     * elapsed time looks impossibly large (> 10 minutes), treat it
+     * as a stale value and skip the warning. */
+    if (time_since_feed > 600000) {
+        time_since_feed = 0;
+    }
+
     if (time_since_feed > (SUPERVISOR_WATCHDOG_TIMEOUT_MS / 2)) {
         flags |= HEALTH_FLAG_WATCHDOG;
         health = HEALTH_WARNING;
@@ -200,14 +208,10 @@ static void supervisor_loop(void) {
 
     supervisor_running = true;
 
+    /* Metrics are already initialized by supervisor_init() on Core 0.
+     * Do NOT memset here — that would race with Core 0 heartbeats and
+     * zero out last_feed_time_ms, causing a bogus watchdog warning. */
     uint32_t now = to_ms_since_boot(get_absolute_time());
-    memset((void*)&metrics, 0, sizeof(metrics));
-    metrics.core0_responsive = true;
-    metrics.health_status = HEALTH_OK;
-    metrics.uptime_ms = now;
-    metrics.core0_last_heartbeat = now;
-    metrics.last_feed_time_ms = now;
-
     uint32_t last_check_time = now;
 
     printf("[Core 1 Supervisor] Monitoring system health...\r\n");
@@ -395,20 +399,30 @@ system_health_t supervisor_get_health(void) {
 
 void supervisor_heartbeat(void) {
 #ifdef PICO_BUILD
-    static uint32_t last_feed_ms = 0;
+    static uint32_t last_hw_feed_ms = 0;
     uint32_t now = to_ms_since_boot(get_absolute_time());
 
-    if (now - last_feed_ms >= 2000) {
-        last_feed_ms = now;
+    // Always update the heartbeat/feed timestamps so the supervisor
+    // knows Core 0 is alive. This is cheap (one spinlock + two stores).
+    if (metrics_lock) {
+        uint32_t save = spin_lock_blocking(metrics_lock);
+        metrics.core0_last_heartbeat = now;
+        metrics.last_feed_time_ms = now;
+        spin_unlock(metrics_lock, save);
+    } else {
+        metrics.core0_last_heartbeat = now;
+        metrics.last_feed_time_ms = now;
+    }
+
+    // Feed the hardware watchdog at a lower rate (every 2s is plenty
+    // for the 8s timeout).
+    if (now - last_hw_feed_ms >= 2000) {
+        last_hw_feed_ms = now;
         if (metrics_lock) {
             uint32_t save = spin_lock_blocking(metrics_lock);
-            metrics.core0_last_heartbeat = now;
-            metrics.last_feed_time_ms = now;
             metrics.watchdog_feeds++;
             spin_unlock(metrics_lock, save);
         } else {
-            metrics.core0_last_heartbeat = now;
-            metrics.last_feed_time_ms = now;
             metrics.watchdog_feeds++;
         }
         wdt_feed();
