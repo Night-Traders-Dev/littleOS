@@ -10,6 +10,8 @@ static void cmd_net_usage(void) {
     printf("  net connect <ssid> <pass> - Connect to WiFi\r\n");
     printf("  net disconnect        - Disconnect from WiFi\r\n");
     printf("  net scan              - Scan for WiFi networks\r\n");
+    printf("  net tap <ip> <gw> [mask]  - Bring up TAP with static IP\r\n");
+    printf("  net tap dhcp          - Bring up TAP with DHCP\r\n");
     printf("  net ping <ip>         - Ping an IP address\r\n");
     printf("  net dns <hostname>    - DNS lookup\r\n");
     printf("  net http <url>        - HTTP GET request\r\n");
@@ -85,6 +87,65 @@ int cmd_net(int argc, char *argv[]) {
     if (strcmp(argv[1], "disconnect") == 0) {
         int r = net_wifi_disconnect();
         printf("WiFi %s\r\n", r == NET_OK ? "disconnected" : "disconnect failed");
+        return r;
+    }
+
+    if (strcmp(argv[1], "tap") == 0) {
+        if (argc < 3) {
+            printf("Usage: net tap <ip> <gateway> [netmask]\r\n");
+            printf("       net tap dhcp\r\n");
+            return -1;
+        }
+
+        if (strcmp(argv[2], "dhcp") == 0) {
+            printf("Starting DHCP on TAP interface...\r\n");
+            int r = net_tap_dhcp();
+            if (r == NET_OK) {
+                printf("DHCP started. Run 'net status' to check IP.\r\n");
+            } else {
+                printf("TAP DHCP failed: %d\r\n", r);
+            }
+            return r;
+        }
+
+        if (argc < 4) {
+            printf("Usage: net tap <ip> <gateway> [netmask]\r\n");
+            return -1;
+        }
+
+        net_ip4_t ip, gw, nm;
+        if (net_str_to_ip4(argv[2], &ip) != NET_OK) {
+            printf("Invalid IP: %s\r\n", argv[2]);
+            return -1;
+        }
+        if (net_str_to_ip4(argv[3], &gw) != NET_OK) {
+            printf("Invalid gateway: %s\r\n", argv[3]);
+            return -1;
+        }
+        if (argc >= 5) {
+            if (net_str_to_ip4(argv[4], &nm) != NET_OK) {
+                printf("Invalid netmask: %s\r\n", argv[4]);
+                return -1;
+            }
+        } else {
+            /* Default /24 netmask */
+            nm.addr[0] = 255; nm.addr[1] = 255;
+            nm.addr[2] = 255; nm.addr[3] = 0;
+        }
+
+        printf("Configuring TAP: %s gw %s...\r\n", argv[2], argv[3]);
+        int r = net_tap_up(ip, gw, nm);
+        if (r == NET_OK) {
+            printf("TAP interface up\r\n");
+            net_info_t info;
+            if (net_get_info(&info) == NET_OK) {
+                char ip_str[16];
+                net_ip4_to_str(info.ip, ip_str, sizeof(ip_str));
+                printf("IP: %s\r\n", ip_str);
+            }
+        } else {
+            printf("TAP setup failed: %d\r\n", r);
+        }
         return r;
     }
 

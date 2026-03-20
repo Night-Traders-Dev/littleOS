@@ -18,6 +18,7 @@
 #include "lwip/icmp.h"
 #include "lwip/inet_chksum.h"
 #include "lwip/ip4.h"
+#include "lwip/dhcp.h"
 #endif
 
 /* ============================================================================
@@ -435,6 +436,60 @@ int net_set_hostname(const char *hostname) {
         netif_set_hostname(netif_default, current_hostname);
     }
 
+    return NET_OK;
+}
+
+/* TAP bridge: bring up interface with a static IP.
+ * Initializes CYW43 hardware (for the emulated gSPI/PIO path),
+ * then sets a static IP on the lwIP netif. On real hardware this
+ * acts like a static WiFi config without actually joining an AP. */
+int net_tap_up(net_ip4_t ip, net_ip4_t gateway, net_ip4_t netmask) {
+    if (!net_initialized) return NET_ERR_INIT;
+
+    int hw_err = net_hw_init();
+    if (hw_err != NET_OK) return hw_err;
+
+    if (netif_default == NULL) {
+        dmesg_err("net_tap: no netif available");
+        return NET_ERR_INIT;
+    }
+
+    ip4_addr_t lwip_ip, lwip_gw, lwip_nm;
+    IP4_ADDR(&lwip_ip, ip.addr[0], ip.addr[1], ip.addr[2], ip.addr[3]);
+    IP4_ADDR(&lwip_gw, gateway.addr[0], gateway.addr[1], gateway.addr[2], gateway.addr[3]);
+    IP4_ADDR(&lwip_nm, netmask.addr[0], netmask.addr[1], netmask.addr[2], netmask.addr[3]);
+
+    netif_set_addr(netif_default, &lwip_ip, &lwip_nm, &lwip_gw);
+    netif_set_up(netif_default);
+
+    strncpy(connected_ssid, "(TAP bridge)", NET_SSID_MAX - 1);
+    connect_time_ms = to_ms_since_boot(get_absolute_time());
+
+    dmesg_info("net_tap: static IP %d.%d.%d.%d gw %d.%d.%d.%d",
+               ip.addr[0], ip.addr[1], ip.addr[2], ip.addr[3],
+               gateway.addr[0], gateway.addr[1], gateway.addr[2], gateway.addr[3]);
+    return NET_OK;
+}
+
+/* TAP bridge: bring up interface with DHCP */
+int net_tap_dhcp(void) {
+    if (!net_initialized) return NET_ERR_INIT;
+
+    int hw_err = net_hw_init();
+    if (hw_err != NET_OK) return hw_err;
+
+    if (netif_default == NULL) {
+        dmesg_err("net_tap: no netif available");
+        return NET_ERR_INIT;
+    }
+
+    netif_set_up(netif_default);
+    dhcp_start(netif_default);
+
+    strncpy(connected_ssid, "(TAP bridge)", NET_SSID_MAX - 1);
+    connect_time_ms = to_ms_since_boot(get_absolute_time());
+
+    dmesg_info("net_tap: DHCP started on TAP interface");
     return NET_OK;
 }
 
@@ -920,6 +975,13 @@ int net_ping(net_ip4_t ip, uint32_t timeout_ms) {
 }
 int net_http_get(const char *url, char *response_buf, size_t buf_size) {
     (void)url; (void)response_buf; (void)buf_size;
+    net_no_wifi(); return NET_ERR_NOT_SUPPORTED;
+}
+int net_tap_up(net_ip4_t ip, net_ip4_t gateway, net_ip4_t netmask) {
+    (void)ip; (void)gateway; (void)netmask;
+    net_no_wifi(); return NET_ERR_NOT_SUPPORTED;
+}
+int net_tap_dhcp(void) {
     net_no_wifi(); return NET_ERR_NOT_SUPPORTED;
 }
 

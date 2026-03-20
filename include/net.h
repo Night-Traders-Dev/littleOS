@@ -109,6 +109,12 @@ net_status_t net_get_status(void);
 /* Set hostname */
 int net_set_hostname(const char *hostname);
 
+/* TAP bridge: bring up interface with static IP (for emulator TAP mode) */
+int net_tap_up(net_ip4_t ip, net_ip4_t gateway, net_ip4_t netmask);
+
+/* TAP bridge: bring up interface with DHCP */
+int net_tap_dhcp(void);
+
 /* ============================================================================
  * Public API - Sockets (TCP/UDP)
  * ============================================================================ */
