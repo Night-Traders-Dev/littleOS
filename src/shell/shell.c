@@ -345,6 +345,9 @@ bool shell_authorize_command(const task_sec_ctx_t *task_ctx,
     static const char *const read_only_fs_subcommands[] = {
         "cat", "ls", "info", "status", "stat", "find", NULL
     };
+    static const char *const read_only_fat_subcommands[] = {
+        "ls", "cat", "info", NULL
+    };
     static const char *const read_only_tasks_subcommands[] = {
         "list", "info", "count", "stats", "status", NULL
     };
@@ -413,7 +416,7 @@ bool shell_authorize_command(const task_sec_ctx_t *task_ctx,
         strcmp(argv[0], "env") == 0 || strcmp(argv[0], "alias") == 0 ||
         strcmp(argv[0], "export") == 0 || strcmp(argv[0], "screen") == 0 ||
         strcmp(argv[0], "man") == 0 || strcmp(argv[0], "users") == 0 ||
-        strcmp(argv[0], "perms") == 0) {
+        strcmp(argv[0], "perms") == 0 || strcmp(argv[0], "timeout") == 0) {
         return true;
     }
 
@@ -530,6 +533,16 @@ bool shell_authorize_command(const task_sec_ctx_t *task_ctx,
             return shell_require_access(task_ctx, PERM_RESOURCE_FILESYSTEM,
                                         PERM_READ, 0, reason);
         }
+        return shell_require_access(task_ctx, PERM_RESOURCE_FILESYSTEM,
+                                    PERM_WRITE, 0, reason);
+    }
+
+    if (strcmp(argv[0], "fat") == 0) {
+        if (shell_subcommand_in(argc, argv, read_only_fat_subcommands)) {
+            return shell_require_access(task_ctx, PERM_RESOURCE_FILESYSTEM,
+                                        PERM_READ, 0, reason);
+        }
+        /* init, mount, unmount, erase, write, mkdir, rm, touch need write */
         return shell_require_access(task_ctx, PERM_RESOURCE_FILESYSTEM,
                                     PERM_WRITE, 0, reason);
     }
