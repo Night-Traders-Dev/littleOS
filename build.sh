@@ -159,6 +159,11 @@ if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     echo "  --clean-all     Remove all build directories and firmware artifacts"
     echo "  --help          Show this help"
     echo
+    echo "FAT filesystem:"
+    echo "  Interactive mode prompts for optional FAT12/FAT16 image."
+    echo "  The image is embedded in flash and loaded on 'fat mount'."
+    echo "  Requires mkfs.fat (dosfstools) or python3 for image generation."
+    echo
     echo "Boards:"
     for b in "${ALL_BOARDS[@]}"; do
         echo "  $b"
@@ -264,6 +269,39 @@ else
     echo "  UART-only — connect via GP0/GP1 at 115200 baud"
 fi
 
+# FAT filesystem image
+echo
+echo "Embed a FAT filesystem image in flash?"
+echo "  This creates a pre-formatted FAT12 or FAT16 volume that"
+echo "  persists across power cycles (stored in flash after firmware)."
+echo "  1) None (default — FAT available in RAM only)"
+echo "  2) FAT12 (small, up to 32KB)"
+echo "  3) FAT16 (larger, up to 128KB)"
+read -rp "FAT image [1]: " fat_choice
+FAT_CMAKE_OPTS=()
+FAT_IMG=""
+case "$fat_choice" in
+    2)
+        FAT_TYPE="12"
+        FAT_SECTORS=64
+        read -rp "  FAT12 sectors (32=16KB, 64=32KB) [$FAT_SECTORS]: " fat_sec
+        FAT_SECTORS=${fat_sec:-$FAT_SECTORS}
+        FAT_IMG="fat_image.bin"
+        echo "  Will create FAT12 image: ${FAT_SECTORS} sectors ($((FAT_SECTORS * 512)) bytes)"
+        ;;
+    3)
+        FAT_TYPE="16"
+        FAT_SECTORS=256
+        read -rp "  FAT16 sectors (128=64KB, 256=128KB) [$FAT_SECTORS]: " fat_sec
+        FAT_SECTORS=${fat_sec:-$FAT_SECTORS}
+        FAT_IMG="fat_image.bin"
+        echo "  Will create FAT16 image: ${FAT_SECTORS} sectors ($((FAT_SECTORS * 512)) bytes)"
+        ;;
+    *)
+        echo "  No FAT image (RAM-only mode)"
+        ;;
+esac
+
 echo
 echo "Cleaning previous build..."
 rm -rf build
@@ -272,7 +310,41 @@ echo "Configuring CMake..."
 mkdir -p build
 cd build
 
-cmake .. -DLITTLEOS_BOARD="$BOARD" "${USER_CMAKE_OPTS[@]}" "${USB_CMAKE_OPTS[@]}"
+# Generate FAT image if requested
+if [[ -n "$FAT_IMG" ]]; then
+    echo
+    echo "Creating FAT${FAT_TYPE} image (${FAT_SECTORS} sectors)..."
+    FAT_SIZE=$((FAT_SECTORS * 512))
+
+    # Create zero-filled image
+    dd if=/dev/zero of="$FAT_IMG" bs=512 count="$FAT_SECTORS" 2>/dev/null
+
+    # Format with mkfs.fat if available, otherwise we'll format at boot
+    if command -v mkfs.fat &>/dev/null; then
+        if [[ "$FAT_TYPE" == "12" ]]; then
+            mkfs.fat -F 12 -n "LITTLEOS" -S 512 "$FAT_IMG" 2>/dev/null || true
+        else
+            mkfs.fat -F 16 -n "LITTLEOS" -S 512 "$FAT_IMG" 2>/dev/null || true
+        fi
+        echo "  Formatted with mkfs.fat"
+    elif command -v mformat &>/dev/null; then
+        # mtools alternative
+        mformat -i "$FAT_IMG" -f $((FAT_SIZE / 1024)) -v "LITTLEOS" :: 2>/dev/null || true
+        echo "  Formatted with mformat"
+    else
+        echo "  No mkfs.fat or mformat found — image will be formatted at first boot via 'fat init'"
+    fi
+
+    FAT_CMAKE_OPTS=(
+        "-DLITTLEOS_FAT_IMAGE=${FAT_IMG}"
+        "-DLITTLEOS_FAT_TYPE=${FAT_TYPE}"
+        "-DLITTLEOS_FAT_SECTORS=${FAT_SECTORS}"
+    )
+
+    echo "  Image: $FAT_IMG ($FAT_SIZE bytes)"
+fi
+
+cmake .. -DLITTLEOS_BOARD="$BOARD" "${USER_CMAKE_OPTS[@]}" "${USB_CMAKE_OPTS[@]}" "${FAT_CMAKE_OPTS[@]}"
 
 echo
 echo "Building littleOS..."
@@ -296,3 +368,6 @@ else
 fi
 echo "Board: $BOARD"
 echo "Firmware: ./littleos.uf2"
+if [[ -n "$FAT_IMG" ]]; then
+    echo "FAT image: FAT${FAT_TYPE}, ${FAT_SECTORS} sectors ($((FAT_SECTORS * 512)) bytes)"
+fi

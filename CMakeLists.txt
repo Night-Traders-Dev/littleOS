@@ -85,6 +85,58 @@ else()
 endif()
 
 # =============================================================================
+# FAT Filesystem Image (optional, embedded in flash)
+# =============================================================================
+set(LITTLEOS_FAT_IMAGE "" CACHE STRING "Path to FAT image file to embed in flash")
+set(LITTLEOS_FAT_TYPE "" CACHE STRING "FAT type (12 or 16)")
+set(LITTLEOS_FAT_SECTORS "0" CACHE STRING "Number of 512-byte sectors in FAT image")
+
+if(NOT "${LITTLEOS_FAT_IMAGE}" STREQUAL "")
+    if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/${LITTLEOS_FAT_IMAGE}")
+        set(FAT_IMAGE_PATH "${CMAKE_CURRENT_BINARY_DIR}/${LITTLEOS_FAT_IMAGE}")
+    elseif(EXISTS "${LITTLEOS_FAT_IMAGE}")
+        set(FAT_IMAGE_PATH "${LITTLEOS_FAT_IMAGE}")
+    else()
+        message(FATAL_ERROR "FAT image not found: ${LITTLEOS_FAT_IMAGE}")
+    endif()
+
+    # Convert binary image to a C array using xxd or python
+    set(FAT_IMAGE_C "${CMAKE_CURRENT_BINARY_DIR}/fat_image_data.c")
+    set(FAT_IMAGE_H "${CMAKE_CURRENT_BINARY_DIR}/fat_image_data.h")
+
+    add_custom_command(
+        OUTPUT "${FAT_IMAGE_C}" "${FAT_IMAGE_H}"
+        COMMAND ${CMAKE_COMMAND} -E echo
+            "/* Auto-generated FAT image data */"
+            > "${FAT_IMAGE_H}"
+        COMMAND ${CMAKE_COMMAND} -E echo
+            "#include <stdint.h>"
+            >> "${FAT_IMAGE_H}"
+        COMMAND ${CMAKE_COMMAND} -E echo
+            "extern const uint8_t fat_flash_image[]\\;"
+            >> "${FAT_IMAGE_H}"
+        COMMAND ${CMAKE_COMMAND} -E echo
+            "extern const uint32_t fat_flash_image_size\\;"
+            >> "${FAT_IMAGE_H}"
+        COMMAND python3 -c
+            "import sys; data=open(sys.argv[1],'rb').read(); f=open(sys.argv[2],'w'); f.write('#include <stdint.h>\\n'); f.write('const uint8_t fat_flash_image[] __attribute__((section(\".rodata\"))) = {'); f.write(','.join(str(b) for b in data)); f.write('};\\n'); f.write('const uint32_t fat_flash_image_size = %d;\\n' % len(data)); f.close()"
+            "${FAT_IMAGE_PATH}" "${FAT_IMAGE_C}"
+        DEPENDS "${FAT_IMAGE_PATH}"
+        COMMENT "Generating FAT image C source from ${LITTLEOS_FAT_IMAGE}"
+        VERBATIM
+    )
+
+    add_compile_definitions(
+        LITTLEOS_HAS_FAT_IMAGE=1
+        LITTLEOS_FAT_IMAGE_TYPE=${LITTLEOS_FAT_TYPE}
+        LITTLEOS_FAT_IMAGE_SECTORS=${LITTLEOS_FAT_SECTORS}
+    )
+    message(STATUS "FAT image: FAT${LITTLEOS_FAT_TYPE}, ${LITTLEOS_FAT_SECTORS} sectors, embedded from ${LITTLEOS_FAT_IMAGE}")
+else()
+    message(STATUS "FAT image: None (RAM-only mode)")
+endif()
+
+# =============================================================================
 # User / Permissions Configuration
 # =============================================================================
 # Build-time configuration for the permissions + user system
@@ -396,6 +448,13 @@ if(LITTLEOS_USB_HOST)
     )
     target_link_libraries(littleos_core PUBLIC tinyusb_host)
     message(STATUS "USB Host: HID keyboard ENABLED (device mode disabled)")
+endif()
+
+# FAT flash image (generated from build.sh)
+if(NOT "${LITTLEOS_FAT_IMAGE}" STREQUAL "")
+    target_sources(littleos_core PRIVATE "${FAT_IMAGE_C}")
+    target_include_directories(littleos_core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+    message(STATUS "FAT flash image: linked (${LITTLEOS_FAT_SECTORS} sectors)")
 endif()
 
 # Add SageLang embedding if available
