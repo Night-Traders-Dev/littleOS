@@ -66,6 +66,28 @@ if(LITTLEOS_EMULATOR)
     message(STATUS "Emulator mode: Skipping SDK clock init and RAM vector table")
 endif()
 
+# TAP bridge auto-init: initialize CYW43 and start DHCP at boot.
+# Use when running on Bramble with -tap. Requires a WiFi-enabled board.
+# Usage: cmake -DLITTLEOS_TAP_BOOT=ON ..
+#   or:  cmake -DLITTLEOS_TAP_BOOT_IP="10.0.0.2" -DLITTLEOS_TAP_BOOT_GW="10.0.0.1" ..
+option(LITTLEOS_TAP_BOOT "Auto-init TAP network at boot (DHCP or static)" OFF)
+set(LITTLEOS_TAP_BOOT_IP "" CACHE STRING "Static IP for TAP boot (empty = DHCP)")
+set(LITTLEOS_TAP_BOOT_GW "" CACHE STRING "Gateway for TAP boot static IP")
+set(LITTLEOS_TAP_BOOT_MASK "255.255.255.0" CACHE STRING "Netmask for TAP boot static IP")
+if(LITTLEOS_TAP_BOOT)
+    add_compile_definitions(LITTLEOS_TAP_BOOT=1)
+    if(NOT LITTLEOS_TAP_BOOT_IP STREQUAL "")
+        add_compile_definitions(
+            LITTLEOS_TAP_BOOT_IP="${LITTLEOS_TAP_BOOT_IP}"
+            LITTLEOS_TAP_BOOT_GW="${LITTLEOS_TAP_BOOT_GW}"
+            LITTLEOS_TAP_BOOT_MASK="${LITTLEOS_TAP_BOOT_MASK}"
+        )
+        message(STATUS "TAP boot: static IP ${LITTLEOS_TAP_BOOT_IP} gw ${LITTLEOS_TAP_BOOT_GW}")
+    else()
+        message(STATUS "TAP boot: DHCP")
+    endif()
+endif()
+
 # Generic compiler flags (SDK handles -mcpu and -mthumb per platform)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-free-nonheap-object")
 

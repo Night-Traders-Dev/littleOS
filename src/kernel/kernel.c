@@ -436,13 +436,43 @@ void kernel_main(void) {
 #ifdef PICO_W
     printf("Initializing network subsystem...\r\n");
     if (net_init() == NET_OK) {
+#ifdef LITTLEOS_TAP_BOOT
+        /* TAP boot: init CYW43 immediately and configure network */
+        printf("  TAP boot: initializing CYW43...\r\n");
+#ifdef LITTLEOS_TAP_BOOT_IP
+        /* Static IP configured at build time */
+        {
+            net_ip4_t ip, gw, nm;
+            net_str_to_ip4(LITTLEOS_TAP_BOOT_IP, &ip);
+            net_str_to_ip4(LITTLEOS_TAP_BOOT_GW, &gw);
+            net_str_to_ip4(LITTLEOS_TAP_BOOT_MASK, &nm);
+            if (net_tap_up(ip, gw, nm) == NET_OK) {
+                printf("  TAP up: %s gw %s\r\n", LITTLEOS_TAP_BOOT_IP, LITTLEOS_TAP_BOOT_GW);
+                dmesg_info("TAP boot: static IP %s", LITTLEOS_TAP_BOOT_IP);
+            } else {
+                printf("  TAP static config failed\r\n");
+                dmesg_warn("TAP boot: static config failed");
+            }
+        }
+#else
+        /* DHCP */
+        if (net_tap_dhcp() == NET_OK) {
+            printf("  TAP up: DHCP started\r\n");
+            dmesg_info("TAP boot: DHCP started");
+        } else {
+            printf("  TAP DHCP failed\r\n");
+            dmesg_warn("TAP boot: DHCP failed");
+        }
+#endif /* LITTLEOS_TAP_BOOT_IP */
+#else
         printf("  WiFi ready (CYW43 deferred until connect/scan)\r\n");
         dmesg_info("Network subsystem registered (CYW43 deferred)");
+#endif /* LITTLEOS_TAP_BOOT */
     } else {
         printf("  Network init failed\r\n");
         dmesg_warn("Network subsystem init failed");
     }
-#endif
+#endif /* PICO_W */
 
     // Initialize MQTT client
     mqtt_init();
