@@ -1,8 +1,8 @@
 # littleOS
 
-**A feature-rich operating system for Raspberry Pi Pico, Pico 2, and Pico W with embedded SageLang scripting, WiFi networking, DVI video output, and 60+ shell commands**
+**A feature-rich operating system for Raspberry Pi Pico, Pico 2, and Pico W with embedded SageLang scripting, WiFi networking, DVI video output, and 64+ shell commands**
 
-[![Version](https://img.shields.io/badge/version-0.7.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.8.0-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-RP2040%20%7C%20RP2350-red.svg)](https://www.raspberrypi.com/documentation/microcontrollers/)
 [![Pico W](https://img.shields.io/badge/Pico_W-WiFi-orange.svg)](https://www.raspberrypi.com/documentation/microcontrollers/)
@@ -28,11 +28,11 @@ littleOS brings a **Unix-like shell environment** to **bare-metal RP2040 and RP2
 
 | Category | Features |
 |----------|----------|
-| **Shell** | 60+ commands, pipes, aliases, env vars, tab completion, history, man pages |
+| **Shell** | 64+ commands, pipes, aliases, env vars, tab completion, history, man pages |
 | **Networking** | WiFi (Pico W / Pico 2 W), TCP/UDP sockets, DNS, MQTT, ping, HTTP, remote shell, OTA |
 | **Hardware** | GPIO, I2C, SPI, PWM, ADC, DMA, PIO, NeoPixel, OLED display, DVI output (RP2350) |
 | **Filesystem** | F2FS-inspired RAM FS with crash recovery, procfs, devfs |
-| **Scripting** | SageLang REPL, flash script storage, auto-boot scripts |
+| **Scripting** | SageLang REPL + bytecode VM, linter, flash script storage, auto-boot scripts |
 | **System** | Watchdog, multicore supervisor, scheduler, cron, IPC, power management |
 | **Debug** | logcat, trace, watchpoints, benchmarks, selftest, coredump, syslog |
 | **Security** | Multi-user, capability-based permissions, Unix-style rwx |
@@ -108,8 +108,8 @@ Welcome to littleOS Shell!
 Type 'help' for available commands
 
 > version
-littleOS v0.7.0 - RP2350
-With SageLang v0.8.0
+littleOS v0.8.0 - RP2350
+With SageLang v0.13.0
 Supervisor: Active
 
 > fetch
@@ -124,7 +124,7 @@ Supervisor: Active
 
 ## Shell Commands
 
-littleOS provides 60+ commands organized by category. Use `man <cmd>` for detailed help on any command.
+littleOS provides 64+ commands organized by category. Use `man <cmd>` for detailed help on any command.
 
 ### System
 ```bash
@@ -200,7 +200,7 @@ ota               # Over-the-air firmware updates
 
 ### Scripting & Packages
 ```bash
-sage              # SageLang REPL / inline execution (-e "code")
+sage              # SageLang REPL / eval / lint / memory (-e, -m, --lint)
 script            # Flash script storage (save|list|run|delete|autoboot)
 pkg               # Package manager
 ```
@@ -282,6 +282,14 @@ sage> exit
 
 > sage -e "print 2 + 2"
 4
+
+> sage -m
+SageLang Memory:
+  Allocated: 1234 bytes
+  Objects: 42
+
+> sage --lint "let x = 1"
+No issues found.
 ```
 
 ### Language Features
@@ -495,4 +503,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-**Built for embedded education | Powered by SageLang and littleOS Core | v0.7.0**
+**Built for embedded education | Powered by SageLang and littleOS Core | v0.8.0**

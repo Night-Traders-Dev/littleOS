@@ -76,7 +76,7 @@ Quick reference for all littleOS shell commands and SageLang functions.
 
 | Command | Description |
 | ------- | ----------- |
-| `sage` | SageLang REPL / `-e "code"` inline |
+| `sage` | SageLang REPL / `-e "code"` / `-m` memory / `--lint` |
 | `script` | Flash script storage (save/list/run/autoboot) |
 | `pkg` | Package manager |
 | `sensor` | Sensor framework |

@@ -12,6 +12,11 @@
 #include "interpreter.h"
 #include "lexer.h"
 #include "parser.h"
+#include "runtime.h"
+#include "pass.h"
+
+// Constant folding pass (from constfold.c)
+extern Stmt* pass_constfold(Stmt* program, PassContext* ctx);
 
 #ifdef PICO_BUILD
 #include "pico/stdlib.h"
@@ -40,6 +45,7 @@ struct sage_context {
     bool initialized;
     uint32_t execution_start_time;
     uint32_t max_execution_time_ms;  // Maximum execution time before warning
+    SageRuntimeMode runtime_mode;    // AST, bytecode, or auto
 };
 
 static void sage_retain_stmt(sage_context_t* ctx, Stmt* stmt) {
@@ -179,7 +185,10 @@ sage_context_t* sage_init(void) {
     
     // Set default execution timeout to 5 seconds
     ctx->max_execution_time_ms = 5000;
-    
+
+    // Use auto mode: bytecode when possible, AST fallback
+    ctx->runtime_mode = SAGE_RUNTIME_AUTO;
+
     ctx->initialized = true;
     return ctx;
 }
@@ -279,20 +288,24 @@ sage_result_t sage_eval_string(sage_context_t* ctx, const char* source, size_t s
         }
         
         statement_count++;
+
+        // Apply constant folding before execution
+        pass_constfold(stmt, NULL);
+
         sage_retain_stmt(ctx, stmt);
-        
+
         // Send heartbeat after parsing (AST construction can be expensive)
         sage_try_heartbeat();
-        
+
 #ifdef PICO_BUILD
         // For embedded: force heartbeat every 10th statement
         if (statement_count % 10 == 0) {
             sage_force_heartbeat();
         }
 #endif
-        
-        // Interpret the statement
-        ExecResult result = interpret(stmt, ctx->global_env);
+
+        // Execute via bytecode VM with AST fallback
+        ExecResult result = sage_execute_stmt(stmt, ctx->global_env, ctx->runtime_mode);
         if (result.is_throwing) {
             sage_set_error_value(ctx, result.exception_value, "Unhandled SageLang exception");
             return SAGE_ERROR_RUNTIME;

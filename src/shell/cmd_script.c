@@ -27,16 +27,18 @@ static void cmd_save(int argc, char* argv[]) {
     // Reconstruct code from remaining arguments
     char code[512];
     int offset = 0;
-    
-    for (int i = 2; i < argc && offset < sizeof(code) - 2; i++) {
-        int len = strlen(argv[i]);
-        if (offset + len + 1 < sizeof(code)) {
-            if (i > 2) {
-                code[offset++] = ' ';
-            }
-            strcpy(code + offset, argv[i]);
-            offset += len;
+
+    for (int i = 2; i < argc; i++) {
+        int len = (int)strlen(argv[i]);
+        int need = (i > 2 ? 1 : 0) + len;
+        if (offset + need >= (int)sizeof(code)) {
+            break;
         }
+        if (i > 2) {
+            code[offset++] = ' ';
+        }
+        memcpy(code + offset, argv[i], len);
+        offset += len;
     }
     code[offset] = '\0';
     

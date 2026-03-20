@@ -620,7 +620,8 @@ bool shell_authorize_command(const task_sec_ctx_t *task_ctx,
                                     PERM_WRITE, CAP_SYS_ADMIN, reason);
     }
 
-    return true;
+    if (reason) *reason = "authorization not configured for command";
+    return false;
 }
 
 // ===========================================================================
@@ -762,11 +763,13 @@ static void tab_complete(char *buffer, int *idx) {
         if (last_space) {
             // Keep everything before the word
             int pre_len = (int)(last_space - buffer + 1);
+            if (pre_len + comp_len + 2 > MAX_CMD_LEN) return;
             memcpy(buffer + pre_len, completion, comp_len);
             buffer[pre_len + comp_len] = ' ';
             buffer[pre_len + comp_len + 1] = '\0';
             *idx = pre_len + comp_len + 1;
         } else {
+            if (comp_len + 2 > MAX_CMD_LEN) return;
             memcpy(buffer, completion, comp_len);
             buffer[comp_len] = ' ';
             buffer[comp_len + 1] = '\0';
@@ -792,13 +795,17 @@ static void tab_complete(char *buffer, int *idx) {
             clear_line(0); // Don't need to clear - we printed newlines
             if (last_space) {
                 int pre_len = (int)(last_space - buffer + 1);
-                memcpy(buffer + pre_len, matches[0], common_len);
-                buffer[pre_len + common_len] = '\0';
-                *idx = pre_len + common_len;
+                if (pre_len + common_len + 1 <= MAX_CMD_LEN) {
+                    memcpy(buffer + pre_len, matches[0], common_len);
+                    buffer[pre_len + common_len] = '\0';
+                    *idx = pre_len + common_len;
+                }
             } else {
-                memcpy(buffer, matches[0], common_len);
-                buffer[common_len] = '\0';
-                *idx = common_len;
+                if (common_len + 1 <= MAX_CMD_LEN) {
+                    memcpy(buffer, matches[0], common_len);
+                    buffer[common_len] = '\0';
+                    *idx = common_len;
+                }
             }
         }
         print_prompt();

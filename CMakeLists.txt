@@ -160,21 +160,25 @@ set(SAGELANG_DIR ${CMAKE_SOURCE_DIR}/third_party/sagelang)
 if(EXISTS ${SAGELANG_DIR})
     message(STATUS "Found SageLang at ${SAGELANG_DIR}")
 
-    # littleOS embeds the current AST interpreter plus the VM runtime pieces
-    # required by the GC. Keep the source list explicit so we avoid desktop-only
+    # littleOS embeds the AST interpreter, bytecode VM, linter, and constant
+    # folding pass. Keep the source list explicit so we avoid desktop-only
     # modules like graphics/networking in the firmware build.
     add_library(sagelang STATIC
         ${SAGELANG_DIR}/src/c/ast.c
+        ${SAGELANG_DIR}/src/c/constfold.c
         ${SAGELANG_DIR}/src/c/diagnostic.c
         ${SAGELANG_DIR}/src/c/env.c
         ${SAGELANG_DIR}/src/c/gc.c
         ${SAGELANG_DIR}/src/c/interpreter.c
         ${SAGELANG_DIR}/src/c/lexer.c
+        ${SAGELANG_DIR}/src/c/linter.c
         ${SAGELANG_DIR}/src/c/module.c
         ${SAGELANG_DIR}/src/c/parser.c
         ${SAGELANG_DIR}/src/c/sage_thread.c
         ${SAGELANG_DIR}/src/c/stdlib.c
         ${SAGELANG_DIR}/src/c/value.c
+        ${SAGELANG_DIR}/src/vm/bytecode.c
+        ${SAGELANG_DIR}/src/vm/runtime.c
         ${SAGELANG_DIR}/src/vm/vm.c
         ${CMAKE_SOURCE_DIR}/src/sage/sage_compat.c
         ${CMAKE_SOURCE_DIR}/src/sage/sage_module_stubs.c

@@ -39,8 +39,8 @@ littleOS is designed as a **practical embedded operating system** that:
 | **SDK** | Raspberry Pi Pico SDK (handles boot, linker, clocks, per-platform toolchain) |
 | **Multitasking** | Cooperative scheduler, 16 tasks max, priority-based with security contexts |
 | **Filesystem** | F2FS-inspired RAM filesystem with NAT, SIT, dual checkpoints, CRC32 |
-| **Shell** | 50+ commands, pipes, redirection, aliases, env vars, tab completion, history |
-| **Scripting** | SageLang interpreter (Python-like syntax, GC, GPIO/timer/config bindings) |
+| **Shell** | 64+ commands, pipes, redirection, aliases, env vars, tab completion, history |
+| **Scripting** | SageLang bytecode VM + AST interpreter (Python-like syntax, GC, linter, constfold) |
 | **Networking** | WiFi (CYW43), TCP/UDP sockets, DNS, HTTP GET, MQTT, remote shell (Pico W only) |
 | **Video Output** | DVI via HSTX peripheral, 640x480@60Hz, TMDS encoding (RP2350 only) |
 | **Security** | Unix-style UIDs/GIDs, capability flags, per-resource permissions |
@@ -622,7 +622,7 @@ The shell (`src/shell/shell.c`) is a UART-based REPL that reads lines, tokenizes
 
 | Command | Description |
 |---------|-------------|
-| `sage` | SageLang REPL and code evaluation |
+| `sage` | SageLang REPL, eval, lint, memory stats |
 | `script` | Flash-based script storage (save/list/run/delete/autoboot) |
 | `pkg` | Package manager framework |
 
@@ -1176,6 +1176,8 @@ remote start 23                   # Start remote shell on port 23
 
 SageLang is a Python-inspired scripting language embedded in littleOS via the `src/sage/` module. It provides runtime GPIO control, timing, configuration, and system queries without reflashing firmware.
 
+**Execution pipeline:** Source code is lexed, parsed into an AST, constant-folded, then executed. The runtime uses a dual execution engine: a bytecode VM for simple statements (loops, arithmetic, variable access) and the AST tree-walking interpreter as a fallback for complex constructs (classes, generators, exceptions). The mode is selected automatically per-statement.
+
 **Runtime configuration:**
 
 | Parameter | Value | Description |
@@ -1184,6 +1186,9 @@ SageLang is a Python-inspired scripting language embedded in littleOS via the `s
 | Execution timeout | 5000 ms | Maximum script runtime |
 | Heartbeat interval | 250 ms | Watchdog feed during execution |
 | GC | Mark-and-sweep | Automatic with manual trigger |
+| Runtime mode | Auto | Bytecode VM with AST fallback |
+| Constant folding | Enabled | Folds constant expressions at parse time |
+| Linter | Available | `sage --lint` for static analysis |
 
 ### 14.2 Native Function Bindings
 
@@ -1239,6 +1244,8 @@ wdt_get_timeout()             # Get current timeout
 sage                              # Enter interactive REPL
 sage -e "print(sys_version())"    # Evaluate expression
 sage -e "gpio_init(25, 1); gpio_write(25, 1)"    # Blink LED
+sage -m                           # Show memory statistics
+sage --lint "let x = 1"          # Lint code for issues
 
 script save blink "gpio_init(25,1); while true: gpio_toggle(25); sleep(0.5)"
 script list                       # List saved scripts
@@ -1246,7 +1253,34 @@ script run blink                  # Execute saved script
 script autoboot blink             # Run on boot
 ```
 
-### 14.4 Heartbeat System
+### 14.4 Bytecode VM
+
+The bytecode VM compiles simple AST statements (variable declarations, assignments, loops, arithmetic, function calls) into stack-based bytecode and executes them on a register-free virtual machine. Complex constructs (classes, generators, try/catch, async/await) fall back to the AST interpreter automatically.
+
+The runtime mode is set to `SAGE_RUNTIME_AUTO` by default, which attempts bytecode compilation for each statement and falls back to AST interpretation on failure. This provides improved loop and arithmetic performance with zero configuration.
+
+### 14.5 Constant Folding
+
+The constant folding pass (`constfold.c`) evaluates constant expressions at parse time:
+
+- Number arithmetic: `2 + 3` becomes `5`
+- String concatenation: `"a" + "b"` becomes `"ab"`
+- Boolean logic: `true and false` becomes `false`
+- Constant conditions: `if true:` eliminates the dead branch
+
+This reduces runtime evaluation overhead for common patterns.
+
+### 14.6 Linter
+
+The built-in linter (`sage --lint`) performs static analysis with 13 rules covering:
+
+- Unused variables (W001)
+- Naming conventions (W002-W003)
+- Style issues (S001-S005)
+- Complexity warnings (W004)
+- Error patterns (E001-E003)
+
+### 14.7 Heartbeat System
 
 During script execution, the SageLang runtime calls `supervisor_heartbeat()` and `wdt_feed()` every 250 ms to prevent the watchdog from triggering on long-running scripts. This is transparent to the script author.
 

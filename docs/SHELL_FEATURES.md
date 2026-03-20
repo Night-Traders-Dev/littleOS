@@ -2,7 +2,7 @@
 
 ## Overview
 
-The littleOS shell provides a Unix-like command environment with 60+ commands, pipes, aliases, environment variables, tab completion, and command history. All commands support `man <cmd>` for built-in documentation.
+The littleOS shell provides a Unix-like command environment with 64+ commands, pipes, aliases, environment variables, tab completion, and command history. All commands support `man <cmd>` for built-in documentation.
 
 ## Command Reference
 
@@ -89,7 +89,7 @@ The littleOS shell provides a Unix-like command environment with 60+ commands, p
 
 | Command | Description |
 |---------|-------------|
-| `sage` | SageLang REPL / inline execution (`-e "code"`) |
+| `sage` | SageLang REPL / eval / lint / memory (`-e`, `-m`, `--lint`) |
 | `script` | Flash script storage (save/list/run/delete/show/autoboot/noboot) |
 | `pkg` | Package manager |
 

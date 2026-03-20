@@ -2,13 +2,13 @@
 
 ## Overview
 
-[SageLang](https://github.com/Night-Traders-Dev/SageLang) is integrated into littleOS as a Git submodule, providing an interactive scripting environment on bare-metal RP2040.
+[SageLang](https://github.com/Night-Traders-Dev/SageLang) is integrated into littleOS as a Git submodule, providing an interactive scripting environment on bare-metal RP2040 and RP2350.
 
-**Features:** Classes, generators, exception handling, garbage collection, arrays, dictionaries, 30+ native functions, GPIO/system/timing/config/watchdog bindings.
+**Features:** Classes, generators, exception handling, garbage collection, arrays, dictionaries, 30+ native functions, GPIO/system/timing/config/watchdog bindings, bytecode VM, constant folding, linter.
 
 ## Current Status
 
-**Version:** littleOS v0.6.0 with SageLang v0.8.0
+**Version:** littleOS v0.8.0 with SageLang v0.13.0
 
 All integration phases are complete:
 
@@ -17,13 +17,14 @@ All integration phases are complete:
 - Phase 3: Shell Integration (REPL, inline execution)
 - Phase 4: Hardware Bindings (GPIO, system, timing, config, watchdog)
 - Phase 5: Script Storage (flash persistence, auto-boot)
+- Phase 6: Bytecode VM + Constant Folding + Linter
 
 ## Submodule Layout
 
 ```text
 third_party/sagelang/
 ├── src/
-│   ├── c/          # C implementation (compiled for RP2040)
+│   ├── c/          # C implementation (compiled for RP2040/RP2350)
 │   │   ├── lexer.c
 │   │   ├── parser.c
 │   │   ├── ast.c
@@ -32,12 +33,34 @@ third_party/sagelang/
 │   │   ├── env.c
 │   │   ├── gc.c
 │   │   ├── module.c
-│   │   └── sage_thread.c
+│   │   ├── stdlib.c
+│   │   ├── sage_thread.c
+│   │   ├── diagnostic.c
+│   │   ├── constfold.c     # Constant folding optimization pass
+│   │   └── linter.c        # Static analysis linter
+│   ├── vm/         # Bytecode virtual machine
+│   │   ├── bytecode.c      # AST → bytecode compiler
+│   │   ├── runtime.c       # Execution mode dispatch (VM or AST)
+│   │   └── vm.c            # Stack-based bytecode executor
 │   └── sage/       # Self-hosting Sage implementation
 └── include/        # Headers (shared between C and Pico builds)
 ```
 
-The CMake build compiles sources from `src/c/` with `PICO_BUILD=1` and `SAGE_NO_FFI=1` defined.
+The CMake build compiles sources from `src/c/` and `src/vm/` with `PICO_BUILD=1` and `SAGE_NO_FFI=1` defined.
+
+## Execution Pipeline
+
+```text
+Source Code
+  → Lexer (tokenize)
+  → Parser (build AST)
+  → Constant Folding (optimize constant expressions)
+  → Runtime Dispatch:
+      ├── Bytecode VM (simple statements: loops, assignments, arithmetic)
+      └── AST Interpreter (complex: classes, generators, try/catch, async)
+```
+
+The runtime mode is `SAGE_RUNTIME_AUTO` by default. Each statement is first compiled to bytecode; if the bytecode compiler cannot handle the construct, the AST interpreter takes over transparently.
 
 ## Platform Detection
 
@@ -141,6 +164,13 @@ sage> exit
 
 # Memory stats
 > sage -m
+SageLang Memory:
+  Allocated: 1234 bytes
+  Objects: 42
+
+# Lint code
+> sage --lint "let x = 1"
+No issues found.
 
 # Help
 > sage --help
@@ -170,20 +200,31 @@ In `CMakeLists.txt`:
 set(SAGELANG_DIR ${CMAKE_SOURCE_DIR}/third_party/sagelang)
 
 add_library(sagelang STATIC
-    ${SAGELANG_DIR}/src/c/lexer.c
-    ${SAGELANG_DIR}/src/c/parser.c
     ${SAGELANG_DIR}/src/c/ast.c
-    ${SAGELANG_DIR}/src/c/interpreter.c
-    ${SAGELANG_DIR}/src/c/value.c
+    ${SAGELANG_DIR}/src/c/constfold.c
+    ${SAGELANG_DIR}/src/c/diagnostic.c
     ${SAGELANG_DIR}/src/c/env.c
     ${SAGELANG_DIR}/src/c/gc.c
+    ${SAGELANG_DIR}/src/c/interpreter.c
+    ${SAGELANG_DIR}/src/c/lexer.c
+    ${SAGELANG_DIR}/src/c/linter.c
     ${SAGELANG_DIR}/src/c/module.c
+    ${SAGELANG_DIR}/src/c/parser.c
     ${SAGELANG_DIR}/src/c/sage_thread.c
+    ${SAGELANG_DIR}/src/c/stdlib.c
+    ${SAGELANG_DIR}/src/c/value.c
+    ${SAGELANG_DIR}/src/vm/bytecode.c
+    ${SAGELANG_DIR}/src/vm/runtime.c
+    ${SAGELANG_DIR}/src/vm/vm.c
 )
 
-target_include_directories(sagelang PUBLIC ${SAGELANG_DIR}/include)
+target_include_directories(sagelang PUBLIC
+    ${SAGELANG_DIR}/include
+    ${SAGELANG_DIR}/src/c
+    ${SAGELANG_DIR}/src/vm
+)
 target_compile_definitions(sagelang PUBLIC PICO_BUILD=1 SAGE_NO_FFI=1)
-target_link_libraries(sagelang PUBLIC pico_stdlib)
+target_link_libraries(sagelang PUBLIC pico_stdlib m)
 ```
 
 ## Resources

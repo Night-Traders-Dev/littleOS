@@ -2,6 +2,39 @@
 
 All notable changes to littleOS. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.8.0] - 2026-03-20
+
+### Added - SageLang Bytecode VM and Tooling
+
+- **Bytecode VM** - Stack-based virtual machine for fast execution of simple statements
+  - `bytecode.c` - AST-to-bytecode compiler for loops, assignments, arithmetic, function calls
+  - `runtime.c` - Dual execution engine: bytecode VM with automatic AST interpreter fallback
+  - `vm.c` already present; now wired into the eval pipeline via `sage_execute_stmt()`
+  - Mode: `SAGE_RUNTIME_AUTO` (bytecode when possible, AST for classes/generators/exceptions)
+- **Constant folding** (`constfold.c`) - Compile-time evaluation of constant expressions
+  - Number arithmetic: `2 + 3` -> `5`
+  - String concatenation: `"a" + "b"` -> `"ab"`
+  - Boolean logic: `true and false` -> `false`
+- **Linter** (`linter.c`) - Static analysis via `sage --lint "code"`
+  - 13 rules: unused variables, naming conventions, style, complexity, error patterns
+  - Severity levels: error, warning, style
+- **`sage -m`** now works as a single argument (previously required `sage -m dummy`)
+- **`sage --lint CODE`** - New command to lint SageLang code from the shell
+
+### Changed - SageLang Submodule
+
+- Updated to commit `ad82849` (SageLang v0.13.0)
+- Build now includes 16 source files (was 12): added `bytecode.c`, `runtime.c`, `linter.c`, `constfold.c`
+- Execution pipeline: lex -> parse -> constant fold -> bytecode/AST execute
+
+### Fixed - Shell Security Audit
+
+- **Authorization default-deny** - `shell_authorize_command()` now returns `false` for unrecognized commands instead of `true` (was a security bypass for any new command not in the auth table)
+- **Buffer overflow in `cmd_script.c`** - `strcpy()` replaced with bounded `memcpy()` in script save code path; loop now breaks when buffer space is exhausted
+- **Tab completion overflow** - Added `MAX_CMD_LEN` bounds checks before `memcpy()` in single-match and partial-completion paths
+
+---
+
 ## [0.7.0] - 2026-03-13
 
 ### Added - RP2350 Multi-Board Support
