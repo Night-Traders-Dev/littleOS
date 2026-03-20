@@ -482,7 +482,8 @@ void kernel_main(void) {
     }
 #endif
 
-    // Enable watchdog AFTER all init is done - start monitoring for hangs
+    // Initialize watchdog (checks for prior watchdog reset) then enable
+    wdt_init(8000);
     wdt_enable(8000);  // 8 second timeout
     printf("✓ Watchdog: Active (8s timeout - auto-recovery enabled)\r\n");
     dmesg_info("Watchdog enabled - monitoring for system hangs");

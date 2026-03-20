@@ -1280,9 +1280,8 @@ void shell_run(void) {
     bool ctrl_a_pending = false;
 
     // Track time for periodic tasks
-    uint32_t last_wdt_feed   = to_ms_since_boot(get_absolute_time());
-    uint32_t last_heartbeat  = last_wdt_feed;
-    uint32_t last_cron_tick  = last_wdt_feed;
+    uint32_t last_heartbeat  = to_ms_since_boot(get_absolute_time());
+    uint32_t last_cron_tick  = last_heartbeat;
 
     // Show MOTD
     show_motd();
@@ -1291,13 +1290,10 @@ void shell_run(void) {
     while (1) {
         uint32_t now = to_ms_since_boot(get_absolute_time());
 
-        // Feed watchdog every 1 second
-        if (now - last_wdt_feed >= 1000) {
-            wdt_feed();
-            last_wdt_feed = now;
-        }
-
-        // Send heartbeat to supervisor every 500ms
+        // Send heartbeat to supervisor every 500ms.
+        // This also feeds the hardware watchdog (every 2s internally).
+        // Do NOT call wdt_feed() separately — only supervisor_heartbeat()
+        // should feed it so a Core 0 hang is detectable.
         if (now - last_heartbeat >= 500) {
             supervisor_heartbeat();
             last_heartbeat = now;

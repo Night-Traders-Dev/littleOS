@@ -234,7 +234,9 @@ static void supervisor_loop(void) {
             last_check_time = now;
         }
 
-        wdt_feed();
+        // NOTE: Do NOT feed the hardware watchdog here. Only Core 0
+        // should feed it so that a Core 0 hang actually triggers a
+        // hardware reset. Core 1 monitors the heartbeat instead.
         sleep_ms(10);
     }
 
@@ -265,7 +267,7 @@ static void supervisor_poll_health(void) {
         last_poll_ms = now;
     }
 
-    wdt_feed();
+    // watchdog fed by supervisor_heartbeat() caller — not here
 #endif
 }
 
