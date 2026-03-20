@@ -271,65 +271,17 @@ fi
 
 # FAT filesystem image
 echo
-# Determine RAM budget for FAT based on board
+# FAT filesystem info
+echo
+echo "FAT12/FAT16 filesystem: flash-backed (no RAM overhead)"
+echo "  Format at runtime with: fat init <12|16> [sectors]"
 case "$BOARD" in
     pico2*|adafruit_feather*)
-        FAT_RAM_LIMIT=256   # RP2350: 128KB max
-        FAT_RAM_LABEL="128KB (RP2350)"
-        ;;
-    pico_w)
-        FAT_RAM_LIMIT=48    # Pico W: 24KB max (WiFi uses a lot of RAM)
-        FAT_RAM_LABEL="24KB (Pico W — WiFi reserves RAM)"
-        ;;
+        echo "  Flash partition: ~2.5MB (RP2350 4MB+ flash)" ;;
     *)
-        FAT_RAM_LIMIT=64    # Pico: 32KB max
-        FAT_RAM_LABEL="32KB (RP2040)"
-        ;;
+        echo "  Flash partition: 448KB (RP2040 2MB flash)" ;;
 esac
-
-echo
-echo "Embed a FAT filesystem image in flash?"
-echo "  This creates a pre-formatted FAT volume stored in flash."
-echo "  RAM backend limit for $BOARD: $FAT_RAM_LABEL"
-echo "  1) None (default — FAT available in RAM only)"
-echo "  2) FAT12 (small volumes)"
-echo "  3) FAT16 (larger volumes)"
-read -rp "FAT image [1]: " fat_choice
-FAT_CMAKE_OPTS=()
-FAT_IMG=""
-case "$fat_choice" in
-    2)
-        FAT_TYPE="12"
-        FAT_SECTORS=$FAT_RAM_LIMIT
-        echo "  Max sectors for this board: $FAT_RAM_LIMIT ($((FAT_RAM_LIMIT * 512 / 1024))KB)"
-        read -rp "  FAT12 sectors [$FAT_SECTORS]: " fat_sec
-        FAT_SECTORS=${fat_sec:-$FAT_SECTORS}
-        if [[ "$FAT_SECTORS" -gt "$FAT_RAM_LIMIT" ]]; then
-            echo "  WARNING: $FAT_SECTORS sectors > RAM limit of $FAT_RAM_LIMIT for $BOARD"
-            echo "  Clamping to $FAT_RAM_LIMIT sectors ($((FAT_RAM_LIMIT * 512 / 1024))KB)"
-            FAT_SECTORS=$FAT_RAM_LIMIT
-        fi
-        FAT_IMG="fat_image.bin"
-        echo "  Will create FAT12 image: ${FAT_SECTORS} sectors ($((FAT_SECTORS * 512)) bytes)"
-        ;;
-    3)
-        FAT_TYPE="16"
-        FAT_SECTORS=$FAT_RAM_LIMIT
-        echo "  Max sectors for this board: $FAT_RAM_LIMIT ($((FAT_RAM_LIMIT * 512 / 1024))KB)"
-        read -rp "  FAT16 sectors [$FAT_SECTORS]: " fat_sec
-        FAT_SECTORS=${fat_sec:-$FAT_SECTORS}
-        if [[ "$FAT_SECTORS" -gt "$FAT_RAM_LIMIT" ]]; then
-            echo "  WARNING: $FAT_SECTORS sectors > RAM limit of $FAT_RAM_LIMIT for $BOARD"
-            echo "  Clamping to $FAT_RAM_LIMIT sectors ($((FAT_RAM_LIMIT * 512 / 1024))KB)"
-            FAT_SECTORS=$FAT_RAM_LIMIT
-        fi
-        FAT_IMG="fat_image.bin"
-        echo "  Will create FAT16 image: ${FAT_SECTORS} sectors ($((FAT_SECTORS * 512)) bytes)"
-        ;;
-    *)
-        echo "  No FAT image (RAM-only mode)"
-        ;;
-esac
+echo "  Data persists across power cycles and reboots."
 
 echo
 echo "Cleaning previous build..."
@@ -339,41 +291,7 @@ echo "Configuring CMake..."
 mkdir -p build
 cd build
 
-# Generate FAT image if requested
-if [[ -n "$FAT_IMG" ]]; then
-    echo
-    echo "Creating FAT${FAT_TYPE} image (${FAT_SECTORS} sectors)..."
-    FAT_SIZE=$((FAT_SECTORS * 512))
-
-    # Create zero-filled image
-    dd if=/dev/zero of="$FAT_IMG" bs=512 count="$FAT_SECTORS" 2>/dev/null
-
-    # Format with mkfs.fat if available, otherwise we'll format at boot
-    if command -v mkfs.fat &>/dev/null; then
-        if [[ "$FAT_TYPE" == "12" ]]; then
-            mkfs.fat -F 12 -n "LITTLEOS" -S 512 "$FAT_IMG" 2>/dev/null || true
-        else
-            mkfs.fat -F 16 -n "LITTLEOS" -S 512 "$FAT_IMG" 2>/dev/null || true
-        fi
-        echo "  Formatted with mkfs.fat"
-    elif command -v mformat &>/dev/null; then
-        # mtools alternative
-        mformat -i "$FAT_IMG" -f $((FAT_SIZE / 1024)) -v "LITTLEOS" :: 2>/dev/null || true
-        echo "  Formatted with mformat"
-    else
-        echo "  No mkfs.fat or mformat found — image will be formatted at first boot via 'fat init'"
-    fi
-
-    FAT_CMAKE_OPTS=(
-        "-DLITTLEOS_FAT_IMAGE=${FAT_IMG}"
-        "-DLITTLEOS_FAT_TYPE=${FAT_TYPE}"
-        "-DLITTLEOS_FAT_SECTORS=${FAT_SECTORS}"
-    )
-
-    echo "  Image: $FAT_IMG ($FAT_SIZE bytes)"
-fi
-
-cmake .. -DLITTLEOS_BOARD="$BOARD" "${USER_CMAKE_OPTS[@]}" "${USB_CMAKE_OPTS[@]}" "${FAT_CMAKE_OPTS[@]}"
+cmake .. -DLITTLEOS_BOARD="$BOARD" "${USER_CMAKE_OPTS[@]}" "${USB_CMAKE_OPTS[@]}"
 
 echo
 echo "Building littleOS..."
@@ -397,6 +315,4 @@ else
 fi
 echo "Board: $BOARD"
 echo "Firmware: ./littleos.uf2"
-if [[ -n "$FAT_IMG" ]]; then
-    echo "FAT image: FAT${FAT_TYPE}, ${FAT_SECTORS} sectors ($((FAT_SECTORS * 512)) bytes)"
-fi
+echo "FAT: flash-backed, format with 'fat init <12|16>'"

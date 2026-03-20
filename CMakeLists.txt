@@ -84,44 +84,8 @@ else()
     message(STATUS "WiFi: Disabled")
 endif()
 
-# =============================================================================
-# FAT Filesystem Image (optional, embedded in flash)
-# =============================================================================
-set(LITTLEOS_FAT_IMAGE "" CACHE STRING "Path to FAT image file to embed in flash")
-set(LITTLEOS_FAT_TYPE "" CACHE STRING "FAT type (12 or 16)")
-set(LITTLEOS_FAT_SECTORS "0" CACHE STRING "Number of 512-byte sectors in FAT image")
-
-if(NOT "${LITTLEOS_FAT_IMAGE}" STREQUAL "")
-    if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/${LITTLEOS_FAT_IMAGE}")
-        set(FAT_IMAGE_PATH "${CMAKE_CURRENT_BINARY_DIR}/${LITTLEOS_FAT_IMAGE}")
-    elseif(EXISTS "${LITTLEOS_FAT_IMAGE}")
-        set(FAT_IMAGE_PATH "${LITTLEOS_FAT_IMAGE}")
-    else()
-        message(FATAL_ERROR "FAT image not found: ${LITTLEOS_FAT_IMAGE}")
-    endif()
-
-    # Convert binary image to C source + header using tools/gen_fat_image.py
-    set(FAT_IMAGE_C "${CMAKE_CURRENT_BINARY_DIR}/fat_image_data.c")
-    set(FAT_IMAGE_H "${CMAKE_CURRENT_BINARY_DIR}/fat_image_data.h")
-    set(FAT_GEN_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_fat_image.py")
-
-    add_custom_command(
-        OUTPUT "${FAT_IMAGE_C}" "${FAT_IMAGE_H}"
-        COMMAND python3 "${FAT_GEN_SCRIPT}" "${FAT_IMAGE_PATH}" "${FAT_IMAGE_C}" "${FAT_IMAGE_H}"
-        DEPENDS "${FAT_IMAGE_PATH}" "${FAT_GEN_SCRIPT}"
-        COMMENT "Generating FAT image C source from ${LITTLEOS_FAT_IMAGE}"
-        VERBATIM
-    )
-
-    add_compile_definitions(
-        LITTLEOS_HAS_FAT_IMAGE=1
-        LITTLEOS_FAT_IMAGE_TYPE=${LITTLEOS_FAT_TYPE}
-        LITTLEOS_FAT_IMAGE_SECTORS=${LITTLEOS_FAT_SECTORS}
-    )
-    message(STATUS "FAT image: FAT${LITTLEOS_FAT_TYPE}, ${LITTLEOS_FAT_SECTORS} sectors, embedded from ${LITTLEOS_FAT_IMAGE}")
-else()
-    message(STATUS "FAT image: None (RAM-only mode)")
-endif()
+# FAT12/FAT16: flash-backed, formatted at runtime via 'fat init'
+message(STATUS "FAT: flash-backed (partition at 0x180000)")
 
 # =============================================================================
 # User / Permissions Configuration
@@ -435,13 +399,6 @@ if(LITTLEOS_USB_HOST)
     )
     target_link_libraries(littleos_core PUBLIC tinyusb_host)
     message(STATUS "USB Host: HID keyboard ENABLED (device mode disabled)")
-endif()
-
-# FAT flash image (generated from build.sh)
-if(NOT "${LITTLEOS_FAT_IMAGE}" STREQUAL "")
-    target_sources(littleos_core PRIVATE "${FAT_IMAGE_C}")
-    target_include_directories(littleos_core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
-    message(STATUS "FAT flash image: linked (${LITTLEOS_FAT_SECTORS} sectors)")
 endif()
 
 # Add SageLang embedding if available

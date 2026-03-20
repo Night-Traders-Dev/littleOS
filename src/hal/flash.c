@@ -274,3 +274,109 @@ uint32_t flash_backend_get_total_blocks(void) {
 uint32_t flash_backend_get_partition_size(void) {
     return flash_ctx.partition_size;
 }
+
+/* ================================================================== */
+/*  FAT Flash Backend                                                  */
+/*                                                                     */
+/*  Uses the same flash_safe_* primitives as the F2FS backend but     */
+/*  operates on the FAT partition (FLASH_FAT_PARTITION_OFFSET).       */
+/*  Sector size for FAT is 512 bytes (standard FAT sector).           */
+/* ================================================================== */
+
+static struct {
+    uint32_t partition_offset;
+    uint32_t partition_size;
+    uint32_t total_sectors;
+    bool     initialized;
+} fat_flash_ctx;
+
+static uint8_t fat_sector_buf[FLASH_FS_SECTOR_SIZE]; /* 4KB erase sector */
+
+int flash_fat_init(void) {
+    fat_flash_ctx.partition_offset = FLASH_FAT_PARTITION_OFFSET;
+    fat_flash_ctx.partition_size   = FLASH_FAT_PARTITION_SIZE;
+    fat_flash_ctx.total_sectors    = FLASH_FAT_PARTITION_SIZE / 512u;
+    fat_flash_ctx.initialized      = true;
+
+    dmesg_info("flash_fat: partition at 0x%06X, %uKB, %u sectors",
+               FLASH_FAT_PARTITION_OFFSET,
+               FLASH_FAT_PARTITION_SIZE / 1024,
+               fat_flash_ctx.total_sectors);
+    return 0;
+}
+
+int flash_fat_read_sector(void *ctx, uint32_t sector, uint8_t *buf) {
+    (void)ctx;
+    if (!fat_flash_ctx.initialized || !buf) return -1;
+    if (sector >= fat_flash_ctx.total_sectors) return -1;
+
+#ifdef PICO_BUILD
+    const uint8_t *src = (const uint8_t *)(XIP_BASE +
+                          fat_flash_ctx.partition_offset +
+                          sector * 512u);
+    memcpy(buf, src, 512);
+#else
+    memset(buf, 0xFF, 512);
+#endif
+    return 0;
+}
+
+#ifdef PICO_BUILD
+int __not_in_flash_func(flash_fat_write_sector)(void *ctx,
+                                                 uint32_t sector,
+                                                 const uint8_t *buf) {
+#else
+int flash_fat_write_sector(void *ctx, uint32_t sector, const uint8_t *buf) {
+#endif
+    (void)ctx;
+    if (!fat_flash_ctx.initialized || !buf) return -1;
+    if (sector >= fat_flash_ctx.total_sectors) return -1;
+
+#ifdef PICO_BUILD
+    /* Byte offset of the FAT sector within the partition */
+    uint32_t byte_offset = sector * 512u;
+
+    /* Align down to the enclosing 4KB erase sector */
+    uint32_t erase_offset = byte_offset & ~(FLASH_FS_SECTOR_SIZE - 1u);
+    uint32_t offset_in_erase = byte_offset - erase_offset;
+
+    /* Absolute flash offset */
+    uint32_t flash_addr = fat_flash_ctx.partition_offset + erase_offset;
+
+    /* Read the full 4KB erase sector */
+    const uint8_t *src = (const uint8_t *)(XIP_BASE + flash_addr);
+    memcpy(fat_sector_buf, src, FLASH_FS_SECTOR_SIZE);
+
+    /* Patch the 512-byte FAT sector */
+    memcpy(fat_sector_buf + offset_in_erase, buf, 512);
+
+    /* Erase + reprogram */
+    if (flash_safe_erase_and_program(flash_addr,
+                                     FLASH_FS_SECTOR_SIZE,
+                                     fat_sector_buf,
+                                     FLASH_FS_SECTOR_SIZE) != 0) {
+        return -1;
+    }
+#else
+    (void)buf;
+#endif
+    return 0;
+}
+
+int flash_fat_erase_all(void) {
+    if (!fat_flash_ctx.initialized) return -1;
+
+#ifdef PICO_BUILD
+    if (flash_safe_erase_range(fat_flash_ctx.partition_offset,
+                                fat_flash_ctx.partition_size) != 0) {
+        return -1;
+    }
+#endif
+
+    dmesg_info("flash_fat: erased entire FAT partition");
+    return 0;
+}
+
+uint32_t flash_fat_get_total_sectors(void) {
+    return fat_flash_ctx.total_sectors;
+}
