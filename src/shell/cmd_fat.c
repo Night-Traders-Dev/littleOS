@@ -14,11 +14,31 @@
  * RAM backend
  * ========================= */
 
+/* RAM budget per chip:
+ *   RP2040       264KB SRAM, ~151KB free (no WiFi), ~121KB free (Pico W)
+ *   RP2350       520KB SRAM, ~350KB+ free
+ *
+ * Cap the FAT RAM backend to fit safely alongside the rest of the OS.
+ * The flash image can be larger; only the mountable portion lives in RAM. */
+#if defined(PICO_RP2350)
+#define FAT_MAX_RAM_SECTORS  256   /* 128KB - RP2350 has room */
+#elif defined(PICO_W)
+#define FAT_MAX_RAM_SECTORS  48    /* 24KB  - Pico W is tight on RAM */
+#else
+#define FAT_MAX_RAM_SECTORS  64    /* 32KB  - standard Pico */
+#endif
+
 #ifdef LITTLEOS_HAS_FAT_IMAGE
+/* Use the smaller of the image size and the RAM cap */
+#if LITTLEOS_FAT_IMAGE_SECTORS <= FAT_MAX_RAM_SECTORS
 #define FAT_BACKEND_SECTORS  LITTLEOS_FAT_IMAGE_SECTORS
 #else
-#define FAT_BACKEND_SECTORS  64   /* 32KB default (64 * 512) */
+#define FAT_BACKEND_SECTORS  FAT_MAX_RAM_SECTORS
 #endif
+#else
+#define FAT_BACKEND_SECTORS  FAT_MAX_RAM_SECTORS
+#endif
+
 #define FAT_BACKEND_SIZE     (FAT_BACKEND_SECTORS * FAT_SECTOR_SIZE)
 
 #define NOINIT __attribute__((section(".uninitialized_data"), used, retain))

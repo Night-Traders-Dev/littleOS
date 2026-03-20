@@ -271,29 +271,58 @@ fi
 
 # FAT filesystem image
 echo
+# Determine RAM budget for FAT based on board
+case "$BOARD" in
+    pico2*|adafruit_feather*)
+        FAT_RAM_LIMIT=256   # RP2350: 128KB max
+        FAT_RAM_LABEL="128KB (RP2350)"
+        ;;
+    pico_w)
+        FAT_RAM_LIMIT=48    # Pico W: 24KB max (WiFi uses a lot of RAM)
+        FAT_RAM_LABEL="24KB (Pico W — WiFi reserves RAM)"
+        ;;
+    *)
+        FAT_RAM_LIMIT=64    # Pico: 32KB max
+        FAT_RAM_LABEL="32KB (RP2040)"
+        ;;
+esac
+
+echo
 echo "Embed a FAT filesystem image in flash?"
-echo "  This creates a pre-formatted FAT12 or FAT16 volume that"
-echo "  persists across power cycles (stored in flash after firmware)."
+echo "  This creates a pre-formatted FAT volume stored in flash."
+echo "  RAM backend limit for $BOARD: $FAT_RAM_LABEL"
 echo "  1) None (default — FAT available in RAM only)"
-echo "  2) FAT12 (small, up to 32KB)"
-echo "  3) FAT16 (larger, up to 128KB)"
+echo "  2) FAT12 (small volumes)"
+echo "  3) FAT16 (larger volumes)"
 read -rp "FAT image [1]: " fat_choice
 FAT_CMAKE_OPTS=()
 FAT_IMG=""
 case "$fat_choice" in
     2)
         FAT_TYPE="12"
-        FAT_SECTORS=64
-        read -rp "  FAT12 sectors (32=16KB, 64=32KB) [$FAT_SECTORS]: " fat_sec
+        FAT_SECTORS=$FAT_RAM_LIMIT
+        echo "  Max sectors for this board: $FAT_RAM_LIMIT ($((FAT_RAM_LIMIT * 512 / 1024))KB)"
+        read -rp "  FAT12 sectors [$FAT_SECTORS]: " fat_sec
         FAT_SECTORS=${fat_sec:-$FAT_SECTORS}
+        if [[ "$FAT_SECTORS" -gt "$FAT_RAM_LIMIT" ]]; then
+            echo "  WARNING: $FAT_SECTORS sectors > RAM limit of $FAT_RAM_LIMIT for $BOARD"
+            echo "  Clamping to $FAT_RAM_LIMIT sectors ($((FAT_RAM_LIMIT * 512 / 1024))KB)"
+            FAT_SECTORS=$FAT_RAM_LIMIT
+        fi
         FAT_IMG="fat_image.bin"
         echo "  Will create FAT12 image: ${FAT_SECTORS} sectors ($((FAT_SECTORS * 512)) bytes)"
         ;;
     3)
         FAT_TYPE="16"
-        FAT_SECTORS=256
-        read -rp "  FAT16 sectors (128=64KB, 256=128KB) [$FAT_SECTORS]: " fat_sec
+        FAT_SECTORS=$FAT_RAM_LIMIT
+        echo "  Max sectors for this board: $FAT_RAM_LIMIT ($((FAT_RAM_LIMIT * 512 / 1024))KB)"
+        read -rp "  FAT16 sectors [$FAT_SECTORS]: " fat_sec
         FAT_SECTORS=${fat_sec:-$FAT_SECTORS}
+        if [[ "$FAT_SECTORS" -gt "$FAT_RAM_LIMIT" ]]; then
+            echo "  WARNING: $FAT_SECTORS sectors > RAM limit of $FAT_RAM_LIMIT for $BOARD"
+            echo "  Clamping to $FAT_RAM_LIMIT sectors ($((FAT_RAM_LIMIT * 512 / 1024))KB)"
+            FAT_SECTORS=$FAT_RAM_LIMIT
+        fi
         FAT_IMG="fat_image.bin"
         echo "  Will create FAT16 image: ${FAT_SECTORS} sectors ($((FAT_SECTORS * 512)) bytes)"
         ;;
