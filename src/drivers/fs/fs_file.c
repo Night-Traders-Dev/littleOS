@@ -135,9 +135,10 @@ int fs_open(struct fs *fs, const char *path, uint16_t flags, struct fs_file *fd)
         struct fs_inode newi;
         memset(&newi, 0, sizeof(newi));
         newi.magic         = 0xFA;
-        newi.inode_version = 1;
+        newi.inode_version = 2;  /* v2: inline data support */
         newi.mode          = FS_MODE_REG;
         newi.size          = 0;
+        newi.inode_flags   = FS_IFLAG_INLINE_DATA;  /* start inline */
         newi.atime = newi.mtime = newi.ctime = (uint32_t)0;
         newi.link_count    = 1;
         newi.inode_num     = new_ino;
@@ -189,6 +190,18 @@ int fs_read(struct fs *fs, struct fs_file *fd, uint8_t *buf, uint32_t count) {
     uint32_t remaining = ino.size - fd->position;
     if (count > remaining) count = remaining;
 
+    /* Fast path: inline data (no block I/O needed) */
+    if (ino.inode_flags & FS_IFLAG_INLINE_DATA) {
+        if (fd->position + count > FS_INLINE_DATA_MAX)
+            count = (fd->position < FS_INLINE_DATA_MAX) ?
+                    FS_INLINE_DATA_MAX - fd->position : 0;
+        if (count == 0) return 0;
+        memcpy(buf, ino.inline_data + fd->position, count);
+        fd->position += count;
+        return (int)count;
+    }
+
+    /* Standard block-based read */
     uint32_t done = 0;
     uint8_t block_buf[FS_BLOCK_SIZE];
 
@@ -217,6 +230,58 @@ int fs_read(struct fs *fs, struct fs_file *fd, uint8_t *buf, uint32_t count) {
     return (int)done;
 }
 
+/* Promote an inline-data file to block-based storage.
+ * Called when a write would exceed FS_INLINE_DATA_MAX. */
+static int fs_promote_inline(struct fs *fs, struct fs_inode *ino) {
+    uint32_t old_size = ino->size;
+    uint8_t tmp[FS_INLINE_DATA_MAX];
+
+    if (old_size > 0) {
+        memcpy(tmp, ino->inline_data, old_size);
+    }
+
+    /* Clear inline flag and data */
+    ino->inode_flags &= (uint16_t)~FS_IFLAG_INLINE_DATA;
+    memset(ino->inline_data, 0, FS_INLINE_DATA_MAX);
+    ino->size = 0;
+
+    /* Write old data out to blocks */
+    if (old_size > 0) {
+        /* Temporarily store inode so bmap can allocate blocks */
+        int r = fs_store_inode(fs, ino);
+        if (r != FS_OK) return r;
+
+        /* Re-load to get fresh block address */
+        r = fs_load_inode(fs, ino->inode_num, ino);
+        if (r != FS_OK) return r;
+
+        uint32_t done = 0;
+        uint8_t block_buf[FS_BLOCK_SIZE];
+        while (done < old_size) {
+            uint32_t lb = done / FS_BLOCK_SIZE;
+            uint32_t off = done % FS_BLOCK_SIZE;
+            uint32_t chunk = FS_BLOCK_SIZE - off;
+            if (chunk > old_size - done) chunk = old_size - done;
+
+            uint32_t phys;
+            r = fs_bmap(fs, ino, lb, true, &phys);
+            if (r != FS_OK) return r;
+
+            if (chunk != FS_BLOCK_SIZE) {
+                memset(block_buf, 0, FS_BLOCK_SIZE);
+            }
+            memcpy(block_buf + off, tmp + done, chunk);
+            r = fs_write_block_i(fs, phys, block_buf);
+            if (r != FS_OK) return r;
+
+            done += chunk;
+        }
+        ino->size = old_size;
+    }
+
+    return FS_OK;
+}
+
 int fs_write(struct fs *fs, struct fs_file *fd, const uint8_t *buf, uint32_t count) {
     if (!fs || !fd || !buf) return FS_ERR_INVALID_ARG;
 
@@ -224,6 +289,36 @@ int fs_write(struct fs *fs, struct fs_file *fd, const uint8_t *buf, uint32_t cou
     int r = fs_load_inode(fs, fd->inode_num, &ino);
     if (r != FS_OK) return r;
 
+    /* Inline data fast path: write fits entirely within the inode */
+    if ((ino.inode_flags & FS_IFLAG_INLINE_DATA) ||
+        (ino.size == 0 && fd->position == 0 &&
+         !(ino.mode & FS_MODE_DIR) &&
+         fd->position + count <= FS_INLINE_DATA_MAX)) {
+
+        /* New file: auto-enable inline if it fits */
+        if (!(ino.inode_flags & FS_IFLAG_INLINE_DATA) && ino.size == 0) {
+            ino.inode_flags |= FS_IFLAG_INLINE_DATA;
+        }
+
+        if ((ino.inode_flags & FS_IFLAG_INLINE_DATA) &&
+            fd->position + count <= FS_INLINE_DATA_MAX) {
+            memcpy(ino.inline_data + fd->position, buf, count);
+            fd->position += count;
+            if (fd->position > ino.size) ino.size = fd->position;
+            ino.mtime = ino.ctime = (uint32_t)0;
+            r = fs_store_inode(fs, &ino);
+            if (r != FS_OK) return r;
+            return (int)count;
+        }
+
+        /* Inline data would overflow: promote to block-based */
+        if (ino.inode_flags & FS_IFLAG_INLINE_DATA) {
+            r = fs_promote_inline(fs, &ino);
+            if (r != FS_OK) return r;
+        }
+    }
+
+    /* Standard block-based write */
     uint32_t done = 0;
     uint8_t block_buf[FS_BLOCK_SIZE];
 

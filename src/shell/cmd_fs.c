@@ -109,10 +109,11 @@ static void cmd_fs_usage(void) {
     printf("  fs fsck                 - run filesystem check\n");
     printf("  fs sync                 - persist checkpoints\n");
     printf("  fs info                 - print superblock info\n");
-    printf("  fs status               - show persistence status (NEW)\n");
+    printf("  fs status               - show persistence status\n");
     printf("  fs touch <path>         - create empty file\n");
     printf("  fs cat <path>           - read file contents\n");
     printf("  fs write <path> <str>   - write string to file\n");
+    printf("  fs append <path> <str>  - append string to file\n");
     printf("  fs mkdir <path>         - create directory\n");
     printf("  fs ls [path]            - list directory (default /)\n");
     printf("  fs rm <path>            - delete file\n");
@@ -355,6 +356,40 @@ static int cmd_fs_write_str(const char *path, const char *str) {
     return FS_OK;
 }
 
+static int cmd_fs_append_str(const char *path, const char *str) {
+    if (!g_fs_initialized) {
+        printf("fs: filesystem not initialized/mounted\n");
+        return FS_ERR_INVALID_ARG;
+    }
+
+    struct fs_file fd;
+    int r = fs_open(&g_fs, path, FS_O_CREAT | FS_O_WRONLY | FS_O_APPEND, &fd);
+    if (r != FS_OK) {
+        printf("fs: open '%s' failed: %d\n", path, r);
+        return r;
+    }
+
+    /* Seek to end for append */
+    r = fs_seek(&g_fs, &fd, 0, FS_SEEK_END);
+    if (r != FS_OK) {
+        printf("fs: seek to end failed: %d\n", r);
+        fs_close(&g_fs, &fd);
+        return r;
+    }
+
+    uint32_t len = (uint32_t)strlen(str);
+    int n = fs_write(&g_fs, &fd, (const uint8_t *)str, len);
+    if (n < 0) {
+        printf("fs: append error: %d\n", n);
+        fs_close(&g_fs, &fd);
+        return n;
+    }
+
+    fs_close(&g_fs, &fd);
+    printf("fs: appended %u bytes to '%s'\n", len, path);
+    return FS_OK;
+}
+
 static int cmd_fs_mkdir_cmd(const char *path) {
     if (!g_fs_initialized) {
         printf("fs: filesystem not initialized/mounted\n");
@@ -469,9 +504,22 @@ static int cmd_fs_stat(const char *path) {
     const char *type = (inode.mode & FS_MODE_DIR) ? "directory" : "file";
     printf("File: %s\n", path);
     printf("  Type: %s\n", type);
-    printf("  Inode: %u\n", inode.inode_num);
+    printf("  Inode: %u (v%u)\n", inode.inode_num, inode.inode_version);
     printf("  Size: %u bytes\n", inode.size);
     printf("  Mode: 0x%04X\n", inode.mode);
+    printf("  Flags:");
+    if (inode.inode_flags & FS_IFLAG_INLINE_DATA) printf(" inline");
+    if (inode.inode_flags & FS_IFLAG_EXTENTS) printf(" extents");
+    if (inode.inode_flags & FS_IFLAG_COMPRESSED) printf(" compressed");
+    if (inode.inode_flags & FS_IFLAG_DEDUP) printf(" dedup");
+    if (inode.inode_flags == 0) printf(" (none)");
+    printf("\n");
+    if (inode.inode_flags & FS_IFLAG_INLINE_DATA) {
+        printf("  Storage: inline (%u/%u bytes used)\n",
+               inode.size, FS_INLINE_DATA_MAX);
+    } else {
+        printf("  Storage: block-based\n");
+    }
     printf("  Links: %u\n", inode.link_count);
     printf("  Parent: %u\n", inode.parent_inode);
     printf("  Created: %u\n", inode.ctime);
@@ -584,6 +632,14 @@ int cmd_fs(int argc, char **argv) {
             return -1;
         }
         return cmd_fs_write_str(argv[2], argv[3]);
+    }
+
+    if (strcmp(sub, "append") == 0) {
+        if (argc < 4) {
+            printf("Usage: fs append <path> <string>\n");
+            return -1;
+        }
+        return cmd_fs_append_str(argv[2], argv[3]);
     }
 
     if (strcmp(sub, "mkdir") == 0) {

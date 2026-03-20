@@ -31,7 +31,7 @@ littleOS brings a **Unix-like shell environment** to **bare-metal RP2040 and RP2
 | **Shell** | 64+ commands, pipes, aliases, env vars, tab completion, history, man pages |
 | **Networking** | WiFi (Pico W / Pico 2 W), TCP/UDP sockets, DNS, MQTT, ping, HTTP, remote shell, OTA |
 | **Hardware** | GPIO, I2C, SPI, PWM, ADC, DMA, PIO, NeoPixel, OLED display, DVI output (RP2350) |
-| **Filesystem** | F2FS-inspired RAM FS with crash recovery, procfs, devfs |
+| **Filesystem** | F2FS-inspired RAM FS with crash recovery, FAT12/FAT16, procfs, devfs |
 | **Scripting** | SageLang REPL + bytecode VM, linter, flash script storage, auto-boot scripts |
 | **System** | Watchdog, multicore supervisor, multi-policy scheduler, command timeouts, cron, IPC, power management |
 | **Debug** | logcat, trace, watchpoints, benchmarks, selftest, coredump, syslog |
@@ -157,7 +157,8 @@ perms             # Permission utilities (check|decode|presets)
 
 ### Filesystem & Text
 ```bash
-fs                # F2FS-style filesystem (init|mount|mkdir|touch|cat|write|ls|sync|info|fsck)
+fs                # F2FS-style filesystem (init|mount|mkdir|touch|cat|write|append|ls|sync|info|fsck)
+fat               # FAT12/FAT16 filesystem (init|mount|ls|cat|write|mkdir|rm|touch|info)
 cat <file>        # Display file contents
 echo <text>       # Print text (supports > redirect)
 head <file>       # Show first lines

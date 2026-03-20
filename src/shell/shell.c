@@ -32,6 +32,7 @@ extern int  cmd_perms(int argc, char *argv[]);
 extern int  cmd_tasks(int argc, char *argv[]);
 extern int  cmd_memory(int argc, char *argv[]);
 extern int  cmd_fs(int argc, char *argv[]);
+extern int  cmd_fat(int argc, char *argv[]);
 extern int  cmd_ipc(int argc, char *argv[]);
 extern int  cmd_hw(int argc, char *argv[]);
 extern int  cmd_net(int argc, char *argv[]);
@@ -154,6 +155,7 @@ static const shell_cmd_t cmd_table[] = {
     { "profile",    cmd_profile,     "Runtime profiling" },
     // Filesystem & text
     { "fs",         cmd_fs,          "Filesystem tools" },
+    { "fat",        cmd_fat,         "FAT12/FAT16 filesystem" },
     { "cat",        cmd_cat,         "Display file contents" },
     { "echo",       cmd_echo,        "Print text" },
     { "head",       cmd_head,        "Show first lines of file" },
@@ -1034,7 +1036,7 @@ static int execute_single(int argc, char *argv[]) {
         printf("\r\n  \033[1mUsers & Security:\033[0m\r\n");
         printf("    users perms\r\n");
         printf("\r\n  \033[1mFilesystem & Text:\033[0m\r\n");
-        printf("    fs cat echo head tail wc grep hexdump tee\r\n");
+        printf("    fs fat cat echo head tail wc grep hexdump tee\r\n");
         printf("\r\n  \033[1mVirtual Filesystems:\033[0m\r\n");
         printf("    proc dev\r\n");
         printf("\r\n  \033[1mHardware:\033[0m\r\n");

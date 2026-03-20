@@ -42,6 +42,18 @@ extern "C" {
 #define FS_MODE_REG             0x8000u
 #define FS_MODE_DIR             0x4000u
 
+/* Inode flags (stored in fs_inode.inode_flags) */
+#define FS_IFLAG_INLINE_DATA    0x0001u  /* data stored in inode body */
+#define FS_IFLAG_EXTENTS        0x0002u  /* extent-based allocation */
+#define FS_IFLAG_COMPRESSED     0x0004u  /* RLE-compressed blocks */
+#define FS_IFLAG_DEDUP          0x0008u  /* content-addressed blocks */
+
+/* Inline data: max bytes storable in the inode reserved area */
+#define FS_INLINE_DATA_MAX      384u
+
+/* Extent record: contiguous block run */
+#define FS_MAX_EXTENTS          8u
+
 /* Open flags */
 #define FS_O_RDONLY             0x0000u
 #define FS_O_WRONLY             0x0001u
@@ -157,6 +169,16 @@ struct fs_checkpoint {
 _Static_assert(sizeof(struct fs_checkpoint) == FS_BLOCK_SIZE,
                "checkpoint must be 512 bytes");
 
+/* Extent record: (logical_start, physical_start, length) in blocks */
+struct fs_extent {
+    uint32_t logical;       /* starting logical block */
+    uint32_t physical;      /* starting physical block */
+    uint16_t length;        /* number of contiguous blocks */
+    uint16_t _pad;
+};
+_Static_assert(sizeof(struct fs_extent) == 12,
+               "extent must be 12 bytes");
+
 /* Inode (512 bytes) */
 struct fs_inode {
     uint8_t  magic;
@@ -170,7 +192,7 @@ struct fs_inode {
     uint32_t ctime;
 
     uint16_t link_count;
-    uint16_t _pad0;
+    uint16_t inode_flags;       /* FS_IFLAG_* bitmask */
 
     uint32_t direct[FS_DIRECT_BLOCKS];
 
@@ -183,7 +205,26 @@ struct fs_inode {
     uint32_t generation;
     uint32_t inode_crc32;
 
-    uint8_t  reserved[FS_BLOCK_SIZE - 88];
+    /* --- New v2 fields (uses former reserved area) --- */
+
+    /* Inline data: for files <= FS_INLINE_DATA_MAX bytes.
+     * When FS_IFLAG_INLINE_DATA is set, direct[]/indirect are unused
+     * and the file data lives here. Avoids block allocation entirely. */
+    uint8_t  inline_data[FS_INLINE_DATA_MAX];
+
+    /* Extent tree: for files with FS_IFLAG_EXTENTS set.
+     * Tracks contiguous block runs for O(log n) lookup and
+     * sequential-read optimization. */
+    uint8_t  extent_count;
+    uint8_t  _pad_ext[3];
+
+    /* Content hash for dedup (CRC32 of full file content) */
+    uint32_t content_hash;
+
+    /* Compressed size (original size in .size, compressed in .comp_size) */
+    uint32_t comp_size;
+
+    uint8_t  reserved2[FS_BLOCK_SIZE - 88 - FS_INLINE_DATA_MAX - 12];
 };
 _Static_assert(sizeof(struct fs_inode) == FS_BLOCK_SIZE,
                "inode must be 512 bytes");

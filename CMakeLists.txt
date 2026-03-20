@@ -230,6 +230,8 @@ add_library(littleos_core STATIC
     src/shell/cmd_perms.c
     src/shell/cmd_users.c
     src/shell/cmd_fs.c
+    src/shell/cmd_fat.c
+    src/drivers/fs/fat.c
     src/shell/cmd_memory.c
     src/shell/cmd_sage.c
     src/shell/cmd_script.c

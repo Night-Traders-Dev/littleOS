@@ -1,0 +1,317 @@
+/* cmd_fat.c - FAT12/FAT16 shell commands for littleOS */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "fat.h"
+
+/* =========================
+ * RAM backend
+ * ========================= */
+
+#define FAT_BACKEND_SECTORS  64   /* 32KB default (64 * 512) */
+#define FAT_BACKEND_SIZE     (FAT_BACKEND_SECTORS * FAT_SECTOR_SIZE)
+
+#define NOINIT __attribute__((section(".uninitialized_data"), used, retain))
+
+NOINIT static uint8_t fat_storage[FAT_BACKEND_SIZE];
+NOINIT static uint32_t fat_storage_valid;
+
+static fat_vol_t g_fat_vol = {0};
+static bool g_fat_ready = false;
+
+struct fat_ram_backend {
+    uint8_t *data;
+    uint32_t sectors;
+};
+
+static struct fat_ram_backend g_fat_rb = {0};
+
+static int fat_ram_read(void *ctx, uint32_t sector, uint8_t *buf) {
+    struct fat_ram_backend *rb = (struct fat_ram_backend *)ctx;
+    if (!rb || !buf || sector >= rb->sectors) return FAT_ERR_IO;
+    memcpy(buf, rb->data + (size_t)sector * FAT_SECTOR_SIZE, FAT_SECTOR_SIZE);
+    return FAT_OK;
+}
+
+static int fat_ram_write(void *ctx, uint32_t sector, const uint8_t *buf) {
+    struct fat_ram_backend *rb = (struct fat_ram_backend *)ctx;
+    if (!rb || !buf || sector >= rb->sectors) return FAT_ERR_IO;
+    memcpy(rb->data + (size_t)sector * FAT_SECTOR_SIZE, buf, FAT_SECTOR_SIZE);
+    return FAT_OK;
+}
+
+static void fat_setup_backend(uint32_t sectors) {
+    g_fat_rb.data = fat_storage;
+    g_fat_rb.sectors = sectors;
+    fat_set_backend(&g_fat_vol, &g_fat_rb, fat_ram_read, fat_ram_write);
+}
+
+/* =========================
+ * Shell command
+ * ========================= */
+
+int cmd_fat(int argc, char *argv[]) {
+    if (argc < 2) {
+        printf("FAT12/FAT16 filesystem\r\n\r\n");
+        printf("Usage: fat <command> [args...]\r\n\r\n");
+        printf("  fat init <12|16> [sectors]   Format volume (default %d sectors)\r\n",
+               FAT_BACKEND_SECTORS);
+        printf("  fat mount                    Mount existing volume\r\n");
+        printf("  fat unmount                  Unmount volume\r\n");
+        printf("  fat info                     Volume information\r\n");
+        printf("  fat ls [path]                List directory\r\n");
+        printf("  fat cat <file>               Read file\r\n");
+        printf("  fat write <file> <text>      Write text to file\r\n");
+        printf("  fat mkdir <path>             Create directory\r\n");
+        printf("  fat rm <file>                Delete file\r\n");
+        printf("  fat touch <file>             Create empty file\r\n");
+        return 0;
+    }
+
+    /* fat init <12|16> [sectors] */
+    if (strcmp(argv[1], "init") == 0) {
+        if (argc < 3) {
+            printf("Usage: fat init <12|16> [sectors]\r\n");
+            return 1;
+        }
+
+        fat_type_t type;
+        if (strcmp(argv[2], "12") == 0) type = FAT_TYPE_12;
+        else if (strcmp(argv[2], "16") == 0) type = FAT_TYPE_16;
+        else {
+            printf("Invalid type: %s (use 12 or 16)\r\n", argv[2]);
+            return 1;
+        }
+
+        uint32_t sectors = FAT_BACKEND_SECTORS;
+        if (argc >= 4) {
+            sectors = (uint32_t)atoi(argv[3]);
+            if (sectors < 16 || sectors > FAT_BACKEND_SECTORS) {
+                printf("Sectors must be 16-%d\r\n", FAT_BACKEND_SECTORS);
+                return 1;
+            }
+        }
+
+        if (g_fat_ready) {
+            fat_unmount(&g_fat_vol);
+            g_fat_ready = false;
+        }
+
+        memset(fat_storage, 0, FAT_BACKEND_SIZE);
+        fat_setup_backend(sectors);
+
+        int r = fat_format(&g_fat_vol, sectors, type, "LITTLEOS");
+        if (r != FAT_OK) {
+            printf("Format failed: %d\r\n", r);
+            return 1;
+        }
+
+        r = fat_mount(&g_fat_vol);
+        if (r != FAT_OK) {
+            printf("Mount after format failed: %d\r\n", r);
+            return 1;
+        }
+
+        fat_storage_valid = 0xFA700000u | (uint32_t)type;
+        g_fat_ready = true;
+
+        uint32_t total, avail;
+        fat_stat(&g_fat_vol, &total, &avail);
+        printf("Formatted %s: %lu sectors, %lu bytes total, %lu bytes free\r\n",
+               fat_type_str(type), (unsigned long)sectors,
+               (unsigned long)total, (unsigned long)avail);
+        return 0;
+    }
+
+    /* fat mount */
+    if (strcmp(argv[1], "mount") == 0) {
+        if (g_fat_ready) {
+            printf("Already mounted\r\n");
+            return 0;
+        }
+
+        if ((fat_storage_valid & 0xFFF00000u) != 0xFA700000u) {
+            printf("No valid FAT volume found. Use 'fat init' first.\r\n");
+            return 1;
+        }
+
+        fat_setup_backend(FAT_BACKEND_SECTORS);
+        int r = fat_mount(&g_fat_vol);
+        if (r != FAT_OK) {
+            printf("Mount failed: %d\r\n", r);
+            return 1;
+        }
+
+        g_fat_ready = true;
+        printf("Mounted %s volume\r\n", fat_type_str(g_fat_vol.type));
+        return 0;
+    }
+
+    /* fat unmount */
+    if (strcmp(argv[1], "unmount") == 0) {
+        if (!g_fat_ready) {
+            printf("Not mounted\r\n");
+            return 1;
+        }
+        fat_unmount(&g_fat_vol);
+        g_fat_ready = false;
+        printf("Unmounted\r\n");
+        return 0;
+    }
+
+    /* All remaining commands require a mounted volume */
+    if (!g_fat_ready) {
+        printf("No FAT volume mounted. Use 'fat init' or 'fat mount'.\r\n");
+        return 1;
+    }
+
+    /* fat info */
+    if (strcmp(argv[1], "info") == 0) {
+        uint32_t total, avail;
+        fat_stat(&g_fat_vol, &total, &avail);
+
+        printf("FAT Volume Information:\r\n");
+        printf("  Type:           %s\r\n", fat_type_str(g_fat_vol.type));
+        printf("  OEM:            %.8s\r\n", g_fat_vol.bpb.oem_name);
+        printf("  Label:          %.11s\r\n", g_fat_vol.bpb.volume_label);
+        printf("  Sector size:    %u\r\n", g_fat_vol.bpb.bytes_per_sector);
+        printf("  Cluster size:   %u sectors (%u bytes)\r\n",
+               g_fat_vol.bpb.sectors_per_cluster,
+               (unsigned)g_fat_vol.bpb.sectors_per_cluster * FAT_SECTOR_SIZE);
+        printf("  Total sectors:  %lu\r\n", (unsigned long)g_fat_vol.total_sectors);
+        printf("  Total clusters: %lu\r\n", (unsigned long)g_fat_vol.total_clusters);
+        printf("  Data start:     sector %lu\r\n", (unsigned long)g_fat_vol.data_start);
+        printf("  Total:          %lu bytes\r\n", (unsigned long)total);
+        printf("  Free:           %lu bytes\r\n", (unsigned long)avail);
+        printf("  Used:           %lu bytes\r\n", (unsigned long)(total - avail));
+        return 0;
+    }
+
+    /* fat ls [path] */
+    if (strcmp(argv[1], "ls") == 0) {
+        const char *path = (argc >= 3) ? argv[2] : "/";
+
+        fat_file_t dir;
+        int r = fat_opendir(&g_fat_vol, path, &dir);
+        if (r != FAT_OK) {
+            printf("Cannot open directory: %s (%d)\r\n", path, r);
+            return 1;
+        }
+
+        fat_dir_entry_t entry;
+        int count = 0;
+        while (fat_readdir(&g_fat_vol, &dir, &entry) == FAT_OK) {
+            if (entry.attr & FAT_ATTR_DIRECTORY) {
+                printf("  <DIR>  %s\r\n", entry.name);
+            } else {
+                printf("  %5lu  %s\r\n", (unsigned long)entry.file_size, entry.name);
+            }
+            count++;
+        }
+
+        fat_close(&g_fat_vol, &dir);
+        printf("%d entries\r\n", count);
+        return 0;
+    }
+
+    /* fat cat <file> */
+    if (strcmp(argv[1], "cat") == 0) {
+        if (argc < 3) { printf("Usage: fat cat <file>\r\n"); return 1; }
+
+        fat_file_t fd;
+        int r = fat_open(&g_fat_vol, argv[2], &fd, false);
+        if (r != FAT_OK) {
+            printf("Cannot open: %s (%d)\r\n", argv[2], r);
+            return 1;
+        }
+
+        uint8_t buf[64];
+        int n;
+        while ((n = fat_read(&g_fat_vol, &fd, buf, sizeof(buf) - 1)) > 0) {
+            buf[n] = '\0';
+            printf("%s", (char *)buf);
+        }
+        printf("\r\n");
+
+        fat_close(&g_fat_vol, &fd);
+        return 0;
+    }
+
+    /* fat write <file> <text> */
+    if (strcmp(argv[1], "write") == 0) {
+        if (argc < 4) { printf("Usage: fat write <file> <text>\r\n"); return 1; }
+
+        fat_file_t fd;
+        int r = fat_open(&g_fat_vol, argv[2], &fd, true);
+        if (r != FAT_OK) {
+            printf("Cannot open: %s (%d)\r\n", argv[2], r);
+            return 1;
+        }
+
+        /* Concatenate remaining args as text */
+        char text[256];
+        text[0] = '\0';
+        for (int i = 3; i < argc; i++) {
+            if (i > 3) strncat(text, " ", sizeof(text) - strlen(text) - 1);
+            strncat(text, argv[i], sizeof(text) - strlen(text) - 1);
+        }
+
+        int written = fat_write(&g_fat_vol, &fd, (const uint8_t *)text, (uint32_t)strlen(text));
+        fat_close(&g_fat_vol, &fd);
+        fat_sync(&g_fat_vol);
+
+        if (written > 0)
+            printf("Wrote %d bytes to %s\r\n", written, argv[2]);
+        else
+            printf("Write failed: %d\r\n", written);
+        return 0;
+    }
+
+    /* fat mkdir <path> */
+    if (strcmp(argv[1], "mkdir") == 0) {
+        if (argc < 3) { printf("Usage: fat mkdir <path>\r\n"); return 1; }
+
+        int r = fat_mkdir(&g_fat_vol, argv[2]);
+        if (r != FAT_OK) {
+            printf("mkdir failed: %d\r\n", r);
+            return 1;
+        }
+        fat_sync(&g_fat_vol);
+        printf("Created directory: %s\r\n", argv[2]);
+        return 0;
+    }
+
+    /* fat rm <file> */
+    if (strcmp(argv[1], "rm") == 0) {
+        if (argc < 3) { printf("Usage: fat rm <file>\r\n"); return 1; }
+
+        int r = fat_unlink(&g_fat_vol, argv[2]);
+        if (r != FAT_OK) {
+            printf("rm failed: %d\r\n", r);
+            return 1;
+        }
+        fat_sync(&g_fat_vol);
+        printf("Deleted: %s\r\n", argv[2]);
+        return 0;
+    }
+
+    /* fat touch <file> */
+    if (strcmp(argv[1], "touch") == 0) {
+        if (argc < 3) { printf("Usage: fat touch <file>\r\n"); return 1; }
+
+        fat_file_t fd;
+        int r = fat_open(&g_fat_vol, argv[2], &fd, true);
+        if (r != FAT_OK) {
+            printf("touch failed: %d\r\n", r);
+            return 1;
+        }
+        fat_close(&g_fat_vol, &fd);
+        printf("Created: %s\r\n", argv[2]);
+        return 0;
+    }
+
+    printf("Unknown subcommand: %s\r\n", argv[1]);
+    printf("Type 'fat' for usage.\r\n");
+    return 1;
+}

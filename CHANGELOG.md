@@ -4,6 +4,24 @@ All notable changes to littleOS. Format based on [Keep a Changelog](https://keep
 
 ## [0.8.0] - 2026-03-20
 
+### Added - F2FS Inline Data and Append
+
+- **Inline data** for small files (<= 384 bytes): data stored directly in the inode body, zero block allocation overhead. Transparent to the user — files auto-promote to block-based when they grow past 384 bytes.
+- **`fs append <path> <text>`** command for appending to existing files
+- **`fs stat`** now shows inode version, flags (inline/extents/compressed/dedup), and storage mode
+- New inode v2 fields: `inode_flags`, `inline_data[384]`, `extent_count`, `content_hash`, `comp_size`
+- Backward-compatible: v1 inodes (inode_flags=0) continue to work with block-based I/O
+
+### Added - FAT12/FAT16 Filesystem
+
+- **`fat` shell command** - Full FAT12 and FAT16 filesystem alongside the existing F2FS-style FS
+- **Subcommands**: `fat init <12|16> [sectors]`, `fat mount`, `fat unmount`, `fat info`, `fat ls`, `fat cat`, `fat write`, `fat mkdir`, `fat rm`, `fat touch`
+- RAM-backed with `.uninitialized_data` persistence (survives soft reboot)
+- Standard BPB, 8.3 filenames, dual FAT copies, subdirectories with `.` and `..`
+- FAT12 for small volumes (< 4085 clusters), FAT16 for larger volumes
+- In-memory FAT table for O(1) cluster lookup
+- Separate from the F2FS-style FS: both can be mounted simultaneously
+
 ### Added - Command Timeout System
 
 - **`timeout` shell command** - View or set command execution timeout (`timeout <ms>`, 0 to disable)
