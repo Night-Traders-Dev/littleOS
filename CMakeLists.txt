@@ -100,28 +100,15 @@ if(NOT "${LITTLEOS_FAT_IMAGE}" STREQUAL "")
         message(FATAL_ERROR "FAT image not found: ${LITTLEOS_FAT_IMAGE}")
     endif()
 
-    # Convert binary image to a C array using xxd or python
+    # Convert binary image to C source + header using tools/gen_fat_image.py
     set(FAT_IMAGE_C "${CMAKE_CURRENT_BINARY_DIR}/fat_image_data.c")
     set(FAT_IMAGE_H "${CMAKE_CURRENT_BINARY_DIR}/fat_image_data.h")
+    set(FAT_GEN_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_fat_image.py")
 
     add_custom_command(
         OUTPUT "${FAT_IMAGE_C}" "${FAT_IMAGE_H}"
-        COMMAND ${CMAKE_COMMAND} -E echo
-            "/* Auto-generated FAT image data */"
-            > "${FAT_IMAGE_H}"
-        COMMAND ${CMAKE_COMMAND} -E echo
-            "#include <stdint.h>"
-            >> "${FAT_IMAGE_H}"
-        COMMAND ${CMAKE_COMMAND} -E echo
-            "extern const uint8_t fat_flash_image[]\\;"
-            >> "${FAT_IMAGE_H}"
-        COMMAND ${CMAKE_COMMAND} -E echo
-            "extern const uint32_t fat_flash_image_size\\;"
-            >> "${FAT_IMAGE_H}"
-        COMMAND python3 -c
-            "import sys; data=open(sys.argv[1],'rb').read(); f=open(sys.argv[2],'w'); f.write('#include <stdint.h>\\n'); f.write('const uint8_t fat_flash_image[] __attribute__((section(\".rodata\"))) = {'); f.write(','.join(str(b) for b in data)); f.write('};\\n'); f.write('const uint32_t fat_flash_image_size = %d;\\n' % len(data)); f.close()"
-            "${FAT_IMAGE_PATH}" "${FAT_IMAGE_C}"
-        DEPENDS "${FAT_IMAGE_PATH}"
+        COMMAND python3 "${FAT_GEN_SCRIPT}" "${FAT_IMAGE_PATH}" "${FAT_IMAGE_C}" "${FAT_IMAGE_H}"
+        DEPENDS "${FAT_IMAGE_PATH}" "${FAT_GEN_SCRIPT}"
         COMMENT "Generating FAT image C source from ${LITTLEOS_FAT_IMAGE}"
         VERBATIM
     )
