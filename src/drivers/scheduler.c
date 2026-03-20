@@ -139,35 +139,38 @@ static uint32_t get_timestamp_ms(void) {
 
 /**
  * Fixed-priority scheduler: always picks the highest-priority ready task.
- * Among equal priority, round-robins via current_index.
+ * Among equal priority, round-robins via current_index so tasks at the
+ * same level get fair rotation.
  */
 static uint16_t select_priority(task_queue_t *queue) {
+    if (!queue || queue->count == 0) return 0;
+
+    /* First pass: find the highest priority among ready tasks */
     int best_priority = -1;
-    uint16_t selected_task = 0;
-    uint16_t selected_index = 0;
-
-    uint16_t start = (queue->count > 0) ? (queue->current_index % queue->count) : 0;
-
-    for (uint16_t offset = 0; offset < queue->count; offset++) {
-        uint16_t idx = (uint16_t)((start + offset) % queue->count);
-        uint16_t task_id = queue->tasks[idx];
-        task_descriptor_t *task = find_task(task_id);
-
+    for (uint16_t i = 0; i < queue->count; i++) {
+        task_descriptor_t *task = find_task(queue->tasks[i]);
         if (!task) continue;
         if (task->state != TASK_STATE_READY && task->state != TASK_STATE_RUNNING) continue;
-
         if ((int)task->priority > best_priority) {
             best_priority = (int)task->priority;
-            selected_task = task_id;
-            selected_index = idx;
+        }
+    }
+    if (best_priority < 0) return 0;
+
+    /* Second pass: round-robin among tasks at that priority level */
+    uint16_t start = queue->current_index % queue->count;
+    for (uint16_t offset = 0; offset < queue->count; offset++) {
+        uint16_t idx = (uint16_t)((start + offset) % queue->count);
+        task_descriptor_t *task = find_task(queue->tasks[idx]);
+        if (!task) continue;
+        if (task->state != TASK_STATE_READY && task->state != TASK_STATE_RUNNING) continue;
+        if ((int)task->priority == best_priority) {
+            queue->current_index = (uint16_t)((idx + 1) % queue->count);
+            return queue->tasks[idx];
         }
     }
 
-    if (selected_task != 0 && queue->count > 0) {
-        queue->current_index = (uint16_t)((selected_index + 1) % queue->count);
-    }
-
-    return selected_task;
+    return 0;
 }
 
 /**
@@ -311,7 +314,24 @@ uint16_t task_create(const char *name, task_entry_t entry, void *arg,
     task->context_switches   = 0;
     task->memory_allocated   = 0;
     task->memory_peak        = 0;
-    task->vruntime           = 0;
+
+    /* CFS: new tasks start at the minimum vruntime of existing ready
+     * tasks.  Starting at 0 would starve all other tasks until this
+     * task's vruntime catches up. */
+    uint64_t min_vrt = 0;
+    if (active_policy == SCHED_POLICY_CFS && task_count > 0) {
+        min_vrt = UINT64_MAX;
+        for (uint16_t vi = 0; vi < task_count; vi++) {
+            if (task_table[vi].state == TASK_STATE_READY ||
+                task_table[vi].state == TASK_STATE_RUNNING) {
+                if (task_table[vi].vruntime < min_vrt) {
+                    min_vrt = task_table[vi].vruntime;
+                }
+            }
+        }
+        if (min_vrt == UINT64_MAX) min_vrt = 0;
+    }
+    task->vruntime = min_vrt;
 
     /* Set time slice based on policy */
     uint32_t timeslice;
@@ -579,7 +599,7 @@ bool scheduler_set_policy(sched_policy_t policy) {
     }
     active_policy = policy;
 
-    /* Adjust time slices for new policy */
+    /* Adjust time slices and reset CFS state for new policy */
     for (uint16_t i = 0; i < task_count; i++) {
         task_descriptor_t *task = &task_table[i];
         if (policy == SCHED_POLICY_ROUND_ROBIN) {
@@ -588,6 +608,11 @@ bool scheduler_set_policy(sched_policy_t policy) {
             task->time_slice_ms = default_timeslice[task->priority];
         }
         task->time_remaining_ms = task->time_slice_ms;
+
+        /* Reset virtual runtimes so all tasks start fair under CFS */
+        if (policy == SCHED_POLICY_CFS) {
+            task->vruntime = 0;
+        }
     }
 
     printf("Scheduler policy: %s\r\n", policy_names[policy]);
@@ -706,7 +731,10 @@ void scheduler_context_switch(void) {
         current->context_switches++;
     }
 
-    /* Select next task using active policy */
+    /* Select next task using active policy.
+     * Use find_task once here rather than in the ISR-hot path repeatedly.
+     * scheduler_next_task_core0() already calls scheduler_select_next()
+     * which walks the queue — we look up the result once. */
     uint16_t next_id = scheduler_next_task_core0();
     if (next_id == 0) {
         /* No ready tasks; keep running current if available */
@@ -716,6 +744,8 @@ void scheduler_context_switch(void) {
         return;
     }
 
+    /* Cache the descriptor pointer to avoid repeated O(n) find_task
+     * calls from the SysTick handler. */
     task_descriptor_t *next = find_task(next_id);
     if (!next) {
         return;
