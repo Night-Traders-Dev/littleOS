@@ -335,6 +335,13 @@ int net_get_info(net_info_t *info) {
     if (!info) return NET_ERR_INVALID;
     if (!net_initialized) return NET_ERR_INIT;
 
+    /* Lazy init: allow 'net status' to probe even before 'net connect'.
+     * On TAP/emulator, the CYW43 driver may already have an IP. */
+    if (!cyw43_hw_initialized) {
+        int hw_err = net_hw_init();
+        if (hw_err != NET_OK) return hw_err;
+    }
+
     memset(info, 0, sizeof(*info));
 
     info->status = net_get_status();
@@ -370,12 +377,22 @@ int net_get_info(net_info_t *info) {
         info->gateway.addr[3] = (gw_raw >> 24) & 0xFF;
 
         memcpy(info->mac, netif_default->hwaddr, 6);
+
+        /* If netif has an IP but CYW43 link says DOWN, we're on TAP */
+        if (ip_raw != 0 && info->status == NET_STATUS_DOWN) {
+            info->status = NET_STATUS_GOT_IP;
+            strncpy(info->ssid, "(TAP bridge)", NET_SSID_MAX - 1);
+        }
     }
 
-    /* Get RSSI */
-    int32_t rssi = 0;
-    cyw43_wifi_get_rssi(&cyw43_state, &rssi);
-    info->rssi = (int8_t)rssi;
+    /* Get RSSI — only if CYW43 reports a real WiFi link.
+     * On TAP/emulator there's no radio, so RSSI would be garbage. */
+    if (info->status >= NET_STATUS_CONNECTED &&
+        info->ssid[0] != '(') {
+        int32_t rssi = 0;
+        cyw43_wifi_get_rssi(&cyw43_state, &rssi);
+        info->rssi = (int8_t)rssi;
+    }
 
     return NET_OK;
 }
@@ -383,9 +400,22 @@ int net_get_info(net_info_t *info) {
 net_status_t net_get_status(void) {
     if (!net_initialized) return NET_STATUS_DOWN;
 
+    /* If CYW43 hardware isn't up yet, check if netif has an IP anyway
+     * (possible on TAP where the emulator pre-configures the interface) */
+    if (!cyw43_hw_initialized) {
+        return NET_STATUS_DOWN;
+    }
+
+    /* Check CYW43 WiFi link status first */
     int link = cyw43_wifi_link_status(&cyw43_state, CYW43_ITF_STA);
     switch (link) {
-        case CYW43_LINK_DOWN:       return NET_STATUS_DOWN;
+        case CYW43_LINK_DOWN:
+            /* CYW43 says down, but check if lwIP netif has an IP (TAP mode) */
+            if (netif_default != NULL) {
+                uint32_t ip_raw = ip4_addr_get_u32(netif_ip4_addr(netif_default));
+                if (ip_raw != 0) return NET_STATUS_GOT_IP;
+            }
+            return NET_STATUS_DOWN;
         case CYW43_LINK_JOIN:       return NET_STATUS_CONNECTING;
         case CYW43_LINK_NOIP:       return NET_STATUS_CONNECTED;
         case CYW43_LINK_UP:         return NET_STATUS_GOT_IP;

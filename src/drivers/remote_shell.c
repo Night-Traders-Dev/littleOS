@@ -985,13 +985,23 @@ static err_t rshell_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err) {
     tcp_recv(newpcb, rshell_recv_cb);
     tcp_err(newpcb, rshell_err_cb);
 
+    uint8_t ip0 = (client->client_ip >>  0) & 0xFF;
+    uint8_t ip1 = (client->client_ip >>  8) & 0xFF;
+    uint8_t ip2 = (client->client_ip >> 16) & 0xFF;
+    uint8_t ip3 = (client->client_ip >> 24) & 0xFF;
+
     dmesg_info("rshell: client %d connected from %d.%d.%d.%d:%u",
-               slot,
-               (client->client_ip >>  0) & 0xFF,
-               (client->client_ip >>  8) & 0xFF,
-               (client->client_ip >> 16) & 0xFF,
-               (client->client_ip >> 24) & 0xFF,
-               client->client_port);
+               slot, ip0, ip1, ip2, ip3, client->client_port);
+
+    /* Security: log non-local connections (TAP bridge exposes to host network) */
+    bool is_local = (ip0 == 127) ||
+                    (ip0 == 10) ||
+                    (ip0 == 192 && ip1 == 168) ||
+                    (ip0 == 172 && ip1 >= 16 && ip1 <= 31);
+    if (!is_local) {
+        dmesg_warn("rshell: SECURITY: non-local connection from %d.%d.%d.%d "
+                   "(auth token required)", ip0, ip1, ip2, ip3);
+    }
 
     /* Send welcome banner and prompt */
     {

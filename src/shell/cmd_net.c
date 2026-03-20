@@ -36,17 +36,27 @@ int cmd_net(int argc, char *argv[]) {
             net_ip4_to_str(info.ip, ip_str, sizeof(ip_str));
             net_ip4_to_str(info.gateway, gw_str, sizeof(gw_str));
             net_ip4_to_str(info.netmask, nm_str, sizeof(nm_str));
-            printf("  SSID:     %s\r\n", info.ssid);
+
+            bool is_tap = (info.ssid[0] == '(');
+            printf("  Mode:     %s\r\n", is_tap ? "TAP bridge" : "WiFi");
+            if (!is_tap) {
+                printf("  SSID:     %s\r\n", info.ssid);
+            }
             printf("  IP:       %s\r\n", ip_str);
             printf("  Gateway:  %s\r\n", gw_str);
             printf("  Netmask:  %s\r\n", nm_str);
-            printf("  RSSI:     %d dBm\r\n", info.rssi);
+            if (!is_tap && info.rssi != 0) {
+                printf("  RSSI:     %d dBm\r\n", info.rssi);
+            }
             printf("  Hostname: %s\r\n", info.hostname);
             printf("  MAC:      %02X:%02X:%02X:%02X:%02X:%02X\r\n",
                    info.mac[0], info.mac[1], info.mac[2],
                    info.mac[3], info.mac[4], info.mac[5]);
             printf("  TX: %lu bytes  RX: %lu bytes\r\n",
                    (unsigned long)info.tx_bytes, (unsigned long)info.rx_bytes);
+            if (is_tap) {
+                printf("  Security: TAP bridge (host-side firewall applies)\r\n");
+            }
         }
         return 0;
     }
