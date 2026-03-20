@@ -459,6 +459,7 @@ endif()
 # Final ELF image - this contains your main() function
 add_executable(littleos
     boot/boot.c
+    src/kernel/syscalls.c
 )
 
 # Link your final executable against the core OS library and hardware libraries
