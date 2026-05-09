@@ -225,7 +225,7 @@ if(EXISTS ${SAGELANG_DIR})
     )
 
     # Define PICO_BUILD for platform detection
-    target_compile_definitions(sagelang PUBLIC PICO_BUILD=1 SAGE_NO_FFI=1)
+    target_compile_definitions(sagelang PUBLIC PICO_BUILD=1 SAGE_NO_FFI=1 SAGE_VERSION_STR="0.1.0")
     target_compile_options(sagelang PRIVATE
         $<$<COMPILE_LANGUAGE:C>:-include${CMAKE_SOURCE_DIR}/src/sage/sage_compat.h>
     )
@@ -267,6 +267,7 @@ add_library(littleos_core STATIC
     src/drivers/supervisor.c
     src/drivers/scheduler.c
     src/drivers/sensor_validation.c
+    src/drivers/multicore.c
     src/drivers/fs/fs_core.c
     src/drivers/fs/fs_dir.c
     src/drivers/fs/fs_file.c

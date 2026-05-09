@@ -11,12 +11,28 @@
 #include <stdio.h>
 #include <string.h>
 
+
 #ifdef PICO_BUILD
 #include "pico/stdlib.h"
+#include "hardware/sync.h"
 #define IPC_TIMESTAMP_MS()  to_ms_since_boot(get_absolute_time())
 #else
 #define IPC_TIMESTAMP_MS()  0
 #endif
+
+#ifdef PICO_BUILD
+static spin_lock_t *ipc_lock;
+#define IPC_LOCK() uint32_t __save = spin_lock_blocking(ipc_lock)
+#define IPC_UNLOCK() spin_unlock(ipc_lock, __save)
+#define IPC_RETURN(val) do { int __ret = (val); IPC_UNLOCK(); return __ret; } while(0)
+#define IPC_RETURN_PTR(val) do { void *__ret = (val); IPC_UNLOCK(); return __ret; } while(0)
+#else
+#define IPC_LOCK()
+#define IPC_UNLOCK()
+#define IPC_RETURN(val) return (val)
+#define IPC_RETURN_PTR(val) return (val)
+#endif
+
 
 /* ============================================================================
  * Internal Data Structures
@@ -42,6 +58,9 @@ static ipc_shmem_t     shmem_regions[IPC_MAX_SHMEM_REGIONS];
 
 void ipc_init(void)
 {
+#ifdef PICO_BUILD
+    ipc_lock = spin_lock_instance(spin_lock_claim_unused(true));
+#endif
     memset(channels, 0, sizeof(channels));
     memset(semaphores, 0, sizeof(semaphores));
     memset(shmem_regions, 0, sizeof(shmem_regions));
@@ -55,7 +74,9 @@ void ipc_init(void)
 
 int ipc_channel_create(const char *name)
 {
-    if (!name) return IPC_ERR_INVALID;
+    IPC_LOCK();
+
+    if (!name) IPC_RETURN(IPC_ERR_INVALID);
 
     for (int i = 0; i < IPC_MAX_CHANNELS; i++) {
         if (!channels[i].used) {
@@ -64,35 +85,43 @@ int ipc_channel_create(const char *name)
             channels[i].name[IPC_CHANNEL_NAME_LEN - 1] = '\0';
             channels[i].used = true;
             dmesg_info("IPC: channel '%s' created (id=%d)", channels[i].name, i);
-            return i;
+            IPC_RETURN(i);
         }
     }
-    return IPC_ERR_NO_RESOURCE;
+    IPC_RETURN(IPC_ERR_NO_RESOURCE);
+
+    IPC_UNLOCK();
 }
 
 int ipc_channel_destroy(int channel_id)
 {
-    if (channel_id < 0 || channel_id >= IPC_MAX_CHANNELS) return IPC_ERR_INVALID;
-    if (!channels[channel_id].used) return IPC_ERR_NOT_FOUND;
+    IPC_LOCK();
+
+    if (channel_id < 0 || channel_id >= IPC_MAX_CHANNELS) IPC_RETURN(IPC_ERR_INVALID);
+    if (!channels[channel_id].used) IPC_RETURN(IPC_ERR_NOT_FOUND);
 
     dmesg_info("IPC: channel '%s' destroyed (id=%d)", channels[channel_id].name, channel_id);
     memset(&channels[channel_id], 0, sizeof(ipc_channel_t));
-    return IPC_OK;
+    IPC_RETURN(IPC_OK);
+
+    IPC_UNLOCK();
 }
 
 int ipc_send(int channel_id, uint16_t sender_task, uint16_t msg_type,
              const void *payload, uint16_t payload_len, ipc_priority_t priority)
 {
-    if (channel_id < 0 || channel_id >= IPC_MAX_CHANNELS) return IPC_ERR_INVALID;
+    IPC_LOCK();
+
+    if (channel_id < 0 || channel_id >= IPC_MAX_CHANNELS) IPC_RETURN(IPC_ERR_INVALID);
 
     ipc_channel_t *ch = &channels[channel_id];
-    if (!ch->used) return IPC_ERR_NOT_FOUND;
+    if (!ch->used) IPC_RETURN(IPC_ERR_NOT_FOUND);
 
-    if (payload_len > IPC_MAX_MSG_SIZE) return IPC_ERR_INVALID;
+    if (payload_len > IPC_MAX_MSG_SIZE) IPC_RETURN(IPC_ERR_INVALID);
 
     if (ch->count >= IPC_CHANNEL_DEPTH) {
         ch->stats.messages_dropped++;
-        return IPC_ERR_FULL;
+        IPC_RETURN(IPC_ERR_FULL);
     }
 
     /* Build the message */
@@ -131,68 +160,90 @@ int ipc_send(int channel_id, uint16_t sender_task, uint16_t msg_type,
     ch->stats.messages_sent++;
     ch->stats.bytes_transferred += payload_len;
 
-    return IPC_OK;
+    IPC_RETURN(IPC_OK);
+
+    IPC_UNLOCK();
 }
 
 int ipc_recv(int channel_id, ipc_message_t *msg)
 {
-    if (channel_id < 0 || channel_id >= IPC_MAX_CHANNELS) return IPC_ERR_INVALID;
-    if (!msg) return IPC_ERR_INVALID;
+    IPC_LOCK();
+
+    if (channel_id < 0 || channel_id >= IPC_MAX_CHANNELS) IPC_RETURN(IPC_ERR_INVALID);
+    if (!msg) IPC_RETURN(IPC_ERR_INVALID);
 
     ipc_channel_t *ch = &channels[channel_id];
-    if (!ch->used) return IPC_ERR_NOT_FOUND;
+    if (!ch->used) IPC_RETURN(IPC_ERR_NOT_FOUND);
 
-    if (ch->count == 0) return IPC_ERR_EMPTY;
+    if (ch->count == 0) IPC_RETURN(IPC_ERR_EMPTY);
 
     *msg = ch->queue[ch->head];
     ch->head = (ch->head + 1) % IPC_CHANNEL_DEPTH;
     ch->count--;
     ch->stats.messages_received++;
 
-    return IPC_OK;
+    IPC_RETURN(IPC_OK);
+
+    IPC_UNLOCK();
 }
 
 int ipc_peek(int channel_id, ipc_message_t *msg)
 {
-    if (channel_id < 0 || channel_id >= IPC_MAX_CHANNELS) return IPC_ERR_INVALID;
-    if (!msg) return IPC_ERR_INVALID;
+    IPC_LOCK();
+
+    if (channel_id < 0 || channel_id >= IPC_MAX_CHANNELS) IPC_RETURN(IPC_ERR_INVALID);
+    if (!msg) IPC_RETURN(IPC_ERR_INVALID);
 
     ipc_channel_t *ch = &channels[channel_id];
-    if (!ch->used) return IPC_ERR_NOT_FOUND;
+    if (!ch->used) IPC_RETURN(IPC_ERR_NOT_FOUND);
 
-    if (ch->count == 0) return IPC_ERR_EMPTY;
+    if (ch->count == 0) IPC_RETURN(IPC_ERR_EMPTY);
 
     *msg = ch->queue[ch->head];
-    return IPC_OK;
+    IPC_RETURN(IPC_OK);
+
+    IPC_UNLOCK();
 }
 
 int ipc_pending(int channel_id)
 {
-    if (channel_id < 0 || channel_id >= IPC_MAX_CHANNELS) return IPC_ERR_INVALID;
-    if (!channels[channel_id].used) return IPC_ERR_NOT_FOUND;
-    return (int)channels[channel_id].count;
+    IPC_LOCK();
+
+    if (channel_id < 0 || channel_id >= IPC_MAX_CHANNELS) IPC_RETURN(IPC_ERR_INVALID);
+    if (!channels[channel_id].used) IPC_RETURN(IPC_ERR_NOT_FOUND);
+    IPC_RETURN((int)channels[channel_id].count);
+
+    IPC_UNLOCK();
 }
 
 int ipc_channel_find(const char *name)
 {
-    if (!name) return IPC_ERR_INVALID;
+    IPC_LOCK();
+
+    if (!name) IPC_RETURN(IPC_ERR_INVALID);
 
     for (int i = 0; i < IPC_MAX_CHANNELS; i++) {
         if (channels[i].used && strncmp(channels[i].name, name, IPC_CHANNEL_NAME_LEN) == 0) {
-            return i;
+            IPC_RETURN(i);
         }
     }
-    return IPC_ERR_NOT_FOUND;
+    IPC_RETURN(IPC_ERR_NOT_FOUND);
+
+    IPC_UNLOCK();
 }
 
 int ipc_channel_stats(int channel_id, ipc_channel_stats_t *stats)
 {
-    if (channel_id < 0 || channel_id >= IPC_MAX_CHANNELS) return IPC_ERR_INVALID;
-    if (!stats) return IPC_ERR_INVALID;
-    if (!channels[channel_id].used) return IPC_ERR_NOT_FOUND;
+    IPC_LOCK();
+
+    if (channel_id < 0 || channel_id >= IPC_MAX_CHANNELS) IPC_RETURN(IPC_ERR_INVALID);
+    if (!stats) IPC_RETURN(IPC_ERR_INVALID);
+    if (!channels[channel_id].used) IPC_RETURN(IPC_ERR_NOT_FOUND);
 
     *stats = channels[channel_id].stats;
-    return IPC_OK;
+    IPC_RETURN(IPC_OK);
+
+    IPC_UNLOCK();
 }
 
 /* ============================================================================
@@ -201,8 +252,10 @@ int ipc_channel_stats(int channel_id, ipc_channel_stats_t *stats)
 
 int ipc_sem_create(const char *name, int32_t initial_count, int32_t max_count)
 {
+    IPC_LOCK();
+
     if (!name || initial_count < 0 || max_count < 1 || initial_count > max_count) {
-        return IPC_ERR_INVALID;
+        IPC_RETURN(IPC_ERR_INVALID);
     }
 
     for (int i = 0; i < IPC_MAX_SEMAPHORES; i++) {
@@ -215,32 +268,40 @@ int ipc_sem_create(const char *name, int32_t initial_count, int32_t max_count)
             semaphores[i].initialized = true;
             dmesg_info("IPC: semaphore '%s' created (id=%d, count=%d, max=%d)",
                        semaphores[i].name, i, (int)initial_count, (int)max_count);
-            return i;
+            IPC_RETURN(i);
         }
     }
-    return IPC_ERR_NO_RESOURCE;
+    IPC_RETURN(IPC_ERR_NO_RESOURCE);
+
+    IPC_UNLOCK();
 }
 
 int ipc_sem_destroy(int sem_id)
 {
-    if (sem_id < 0 || sem_id >= IPC_MAX_SEMAPHORES) return IPC_ERR_INVALID;
-    if (!semaphores[sem_id].initialized) return IPC_ERR_NOT_FOUND;
+    IPC_LOCK();
+
+    if (sem_id < 0 || sem_id >= IPC_MAX_SEMAPHORES) IPC_RETURN(IPC_ERR_INVALID);
+    if (!semaphores[sem_id].initialized) IPC_RETURN(IPC_ERR_NOT_FOUND);
 
     dmesg_info("IPC: semaphore '%s' destroyed (id=%d)", semaphores[sem_id].name, sem_id);
     memset(&semaphores[sem_id], 0, sizeof(ipc_semaphore_t));
-    return IPC_OK;
+    IPC_RETURN(IPC_OK);
+
+    IPC_UNLOCK();
 }
 
 int ipc_sem_wait(int sem_id, uint16_t task_id)
 {
-    if (sem_id < 0 || sem_id >= IPC_MAX_SEMAPHORES) return IPC_ERR_INVALID;
-    if (!semaphores[sem_id].initialized) return IPC_ERR_NOT_FOUND;
+    IPC_LOCK();
+
+    if (sem_id < 0 || sem_id >= IPC_MAX_SEMAPHORES) IPC_RETURN(IPC_ERR_INVALID);
+    if (!semaphores[sem_id].initialized) IPC_RETURN(IPC_ERR_NOT_FOUND);
 
     ipc_semaphore_t *sem = &semaphores[sem_id];
 
     if (sem->count > 0) {
         sem->count--;
-        return IPC_OK;
+        IPC_RETURN(IPC_OK);
     }
 
     /*
@@ -251,18 +312,22 @@ int ipc_sem_wait(int sem_id, uint16_t task_id)
     if (sem->waiting_count < LITTLEOS_MAX_TASKS) {
         sem->waiting_tasks[sem->waiting_count++] = task_id;
     }
-    return IPC_ERR_LOCKED;
+    IPC_RETURN(IPC_ERR_LOCKED);
+
+    IPC_UNLOCK();
 }
 
 int ipc_sem_post(int sem_id)
 {
-    if (sem_id < 0 || sem_id >= IPC_MAX_SEMAPHORES) return IPC_ERR_INVALID;
-    if (!semaphores[sem_id].initialized) return IPC_ERR_NOT_FOUND;
+    IPC_LOCK();
+
+    if (sem_id < 0 || sem_id >= IPC_MAX_SEMAPHORES) IPC_RETURN(IPC_ERR_INVALID);
+    if (!semaphores[sem_id].initialized) IPC_RETURN(IPC_ERR_NOT_FOUND);
 
     ipc_semaphore_t *sem = &semaphores[sem_id];
 
     if (sem->count >= sem->max_count) {
-        return IPC_ERR_FULL;
+        IPC_RETURN(IPC_ERR_FULL);
     }
 
     sem->count++;
@@ -276,30 +341,40 @@ int ipc_sem_post(int sem_id)
         sem->waiting_count--;
     }
 
-    return IPC_OK;
+    IPC_RETURN(IPC_OK);
+
+    IPC_UNLOCK();
 }
 
 int ipc_sem_trywait(int sem_id, uint16_t task_id)
 {
+    IPC_LOCK();
+
     (void)task_id;
 
-    if (sem_id < 0 || sem_id >= IPC_MAX_SEMAPHORES) return IPC_ERR_INVALID;
-    if (!semaphores[sem_id].initialized) return IPC_ERR_NOT_FOUND;
+    if (sem_id < 0 || sem_id >= IPC_MAX_SEMAPHORES) IPC_RETURN(IPC_ERR_INVALID);
+    if (!semaphores[sem_id].initialized) IPC_RETURN(IPC_ERR_NOT_FOUND);
 
     if (semaphores[sem_id].count > 0) {
         semaphores[sem_id].count--;
-        return IPC_OK;
+        IPC_RETURN(IPC_OK);
     }
 
-    return IPC_ERR_LOCKED;
+    IPC_RETURN(IPC_ERR_LOCKED);
+
+    IPC_UNLOCK();
 }
 
 int ipc_sem_getvalue(int sem_id)
 {
-    if (sem_id < 0 || sem_id >= IPC_MAX_SEMAPHORES) return IPC_ERR_INVALID;
-    if (!semaphores[sem_id].initialized) return IPC_ERR_NOT_FOUND;
+    IPC_LOCK();
 
-    return (int)semaphores[sem_id].count;
+    if (sem_id < 0 || sem_id >= IPC_MAX_SEMAPHORES) IPC_RETURN(IPC_ERR_INVALID);
+    if (!semaphores[sem_id].initialized) IPC_RETURN(IPC_ERR_NOT_FOUND);
+
+    IPC_RETURN((int)semaphores[sem_id].count);
+
+    IPC_UNLOCK();
 }
 
 /* ============================================================================
@@ -308,7 +383,9 @@ int ipc_sem_getvalue(int sem_id)
 
 int ipc_shmem_create(const char *name, uint32_t size, uint16_t owner_task)
 {
-    if (!name || size == 0 || size > IPC_SHMEM_MAX_SIZE) return IPC_ERR_INVALID;
+    IPC_LOCK();
+
+    if (!name || size == 0 || size > IPC_SHMEM_MAX_SIZE) IPC_RETURN(IPC_ERR_INVALID);
 
     for (int i = 0; i < IPC_MAX_SHMEM_REGIONS; i++) {
         if (!shmem_regions[i].initialized) {
@@ -321,21 +398,27 @@ int ipc_shmem_create(const char *name, uint32_t size, uint16_t owner_task)
             shmem_regions[i].locked = false;
             dmesg_info("IPC: shmem '%s' created (id=%d, size=%u, owner=%u)",
                        shmem_regions[i].name, i, (unsigned)size, (unsigned)owner_task);
-            return i;
+            IPC_RETURN(i);
         }
     }
-    return IPC_ERR_NO_RESOURCE;
+    IPC_RETURN(IPC_ERR_NO_RESOURCE);
+
+    IPC_UNLOCK();
 }
 
 int ipc_shmem_destroy(int shm_id)
 {
-    if (shm_id < 0 || shm_id >= IPC_MAX_SHMEM_REGIONS) return IPC_ERR_INVALID;
-    if (!shmem_regions[shm_id].initialized) return IPC_ERR_NOT_FOUND;
-    if (shmem_regions[shm_id].locked) return IPC_ERR_LOCKED;
+    IPC_LOCK();
+
+    if (shm_id < 0 || shm_id >= IPC_MAX_SHMEM_REGIONS) IPC_RETURN(IPC_ERR_INVALID);
+    if (!shmem_regions[shm_id].initialized) IPC_RETURN(IPC_ERR_NOT_FOUND);
+    if (shmem_regions[shm_id].locked) IPC_RETURN(IPC_ERR_LOCKED);
 
     dmesg_info("IPC: shmem '%s' destroyed (id=%d)", shmem_regions[shm_id].name, shm_id);
     memset(&shmem_regions[shm_id], 0, sizeof(ipc_shmem_t));
-    return IPC_OK;
+    IPC_RETURN(IPC_OK);
+
+    IPC_UNLOCK();
 }
 
 static bool ipc_shmem_is_privileged(const ipc_shmem_t *shm, uint16_t caller_id)
@@ -364,80 +447,100 @@ static bool ipc_shmem_can_access(const ipc_shmem_t *shm,
 
 void *ipc_shmem_attach(int shm_id, uint16_t caller_id)
 {
-    if (shm_id < 0 || shm_id >= IPC_MAX_SHMEM_REGIONS) return NULL;
-    if (!shmem_regions[shm_id].initialized) return NULL;
-    if (!ipc_shmem_can_access(&shmem_regions[shm_id], caller_id, false)) return NULL;
+    IPC_LOCK();
 
-    return (void *)shmem_regions[shm_id].data;
+    if (shm_id < 0 || shm_id >= IPC_MAX_SHMEM_REGIONS) IPC_RETURN_PTR(NULL);
+    if (!shmem_regions[shm_id].initialized) IPC_RETURN_PTR(NULL);
+    if (!ipc_shmem_can_access(&shmem_regions[shm_id], caller_id, false)) IPC_RETURN_PTR(NULL);
+
+    IPC_RETURN_PTR((void *)shmem_regions[shm_id].data);
+
+    IPC_UNLOCK();
 }
 
 int ipc_shmem_lock(int shm_id, uint16_t task_id)
 {
-    if (shm_id < 0 || shm_id >= IPC_MAX_SHMEM_REGIONS) return IPC_ERR_INVALID;
-    if (!shmem_regions[shm_id].initialized) return IPC_ERR_NOT_FOUND;
+    IPC_LOCK();
+
+    if (shm_id < 0 || shm_id >= IPC_MAX_SHMEM_REGIONS) IPC_RETURN(IPC_ERR_INVALID);
+    if (!shmem_regions[shm_id].initialized) IPC_RETURN(IPC_ERR_NOT_FOUND);
 
     ipc_shmem_t *shm = &shmem_regions[shm_id];
 
     if (shm->locked) {
         if (shm->lock_holder == task_id) {
-            return IPC_OK;  /* Already held by this task */
+            IPC_RETURN(IPC_OK);  /* Already held by this task */
         }
-        return IPC_ERR_LOCKED;
+        IPC_RETURN(IPC_ERR_LOCKED);
     }
 
     shm->locked = true;
     shm->lock_holder = task_id;
-    return IPC_OK;
+    IPC_RETURN(IPC_OK);
+
+    IPC_UNLOCK();
 }
 
 int ipc_shmem_unlock(int shm_id, uint16_t task_id)
 {
-    if (shm_id < 0 || shm_id >= IPC_MAX_SHMEM_REGIONS) return IPC_ERR_INVALID;
-    if (!shmem_regions[shm_id].initialized) return IPC_ERR_NOT_FOUND;
+    IPC_LOCK();
+
+    if (shm_id < 0 || shm_id >= IPC_MAX_SHMEM_REGIONS) IPC_RETURN(IPC_ERR_INVALID);
+    if (!shmem_regions[shm_id].initialized) IPC_RETURN(IPC_ERR_NOT_FOUND);
 
     ipc_shmem_t *shm = &shmem_regions[shm_id];
 
-    if (!shm->locked) return IPC_OK;
+    if (!shm->locked) IPC_RETURN(IPC_OK);
 
     if (shm->lock_holder != task_id) {
-        return IPC_ERR_PERMISSION;
+        IPC_RETURN(IPC_ERR_PERMISSION);
     }
 
     shm->locked = false;
     shm->lock_holder = 0;
-    return IPC_OK;
+    IPC_RETURN(IPC_OK);
+
+    IPC_UNLOCK();
 }
 
 int ipc_shmem_write(int shm_id, uint16_t caller_id, uint32_t offset,
                     const void *data, uint32_t len)
 {
-    if (shm_id < 0 || shm_id >= IPC_MAX_SHMEM_REGIONS) return IPC_ERR_INVALID;
-    if (!data) return IPC_ERR_INVALID;
+    IPC_LOCK();
+
+    if (shm_id < 0 || shm_id >= IPC_MAX_SHMEM_REGIONS) IPC_RETURN(IPC_ERR_INVALID);
+    if (!data) IPC_RETURN(IPC_ERR_INVALID);
 
     ipc_shmem_t *shm = &shmem_regions[shm_id];
-    if (!shm->initialized) return IPC_ERR_NOT_FOUND;
-    if (!ipc_shmem_can_access(shm, caller_id, true)) return IPC_ERR_PERMISSION;
+    if (!shm->initialized) IPC_RETURN(IPC_ERR_NOT_FOUND);
+    if (!ipc_shmem_can_access(shm, caller_id, true)) IPC_RETURN(IPC_ERR_PERMISSION);
 
-    if (offset + len > shm->size) return IPC_ERR_INVALID;
+    if (offset + len > shm->size) IPC_RETURN(IPC_ERR_INVALID);
 
     memcpy(shm->data + offset, data, len);
-    return IPC_OK;
+    IPC_RETURN(IPC_OK);
+
+    IPC_UNLOCK();
 }
 
 int ipc_shmem_read(int shm_id, uint16_t caller_id, uint32_t offset,
                    void *data, uint32_t len)
 {
-    if (shm_id < 0 || shm_id >= IPC_MAX_SHMEM_REGIONS) return IPC_ERR_INVALID;
-    if (!data) return IPC_ERR_INVALID;
+    IPC_LOCK();
+
+    if (shm_id < 0 || shm_id >= IPC_MAX_SHMEM_REGIONS) IPC_RETURN(IPC_ERR_INVALID);
+    if (!data) IPC_RETURN(IPC_ERR_INVALID);
 
     ipc_shmem_t *shm = &shmem_regions[shm_id];
-    if (!shm->initialized) return IPC_ERR_NOT_FOUND;
-    if (!ipc_shmem_can_access(shm, caller_id, false)) return IPC_ERR_PERMISSION;
+    if (!shm->initialized) IPC_RETURN(IPC_ERR_NOT_FOUND);
+    if (!ipc_shmem_can_access(shm, caller_id, false)) IPC_RETURN(IPC_ERR_PERMISSION);
 
-    if (offset + len > shm->size) return IPC_ERR_INVALID;
+    if (offset + len > shm->size) IPC_RETURN(IPC_ERR_INVALID);
 
     memcpy(data, shm->data + offset, len);
-    return IPC_OK;
+    IPC_RETURN(IPC_OK);
+
+    IPC_UNLOCK();
 }
 
 /* ============================================================================

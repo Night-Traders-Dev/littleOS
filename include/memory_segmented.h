@@ -84,6 +84,12 @@ void *kernel_malloc_debug(size_t size, const char *file, int line);
 void *interpreter_malloc(size_t size);
 
 /**
+ * Free memory back to interpreter heap
+ * @param ptr Pointer to memory to free
+ */
+void interpreter_free(void *ptr);
+
+/**
  * Allocate and zero memory from interpreter heap
  * @param count Number of elements
  * @param size Size of each element

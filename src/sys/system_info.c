@@ -12,7 +12,7 @@
 #include <string.h>
 
 // Version information
-#define LITTLEOS_VERSION "0.8.0"
+#define LITTLEOS_VERSION "0.8.1"
 #define LITTLEOS_BUILD_DATE __DATE__ " " __TIME__
 
 // External symbols for heap tracking (defined by linker)

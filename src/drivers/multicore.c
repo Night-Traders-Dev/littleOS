@@ -2,6 +2,7 @@
 #include "sage_embed.h"
 #include "script_storage.h"
 #include "watchdog.h"
+#include "supervisor.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -89,6 +90,11 @@ bool multicore_launch_script(const char* script_name) {
         return false;
     }
 
+    if (supervisor_is_running()) {
+        printf("Error: Core 1 is reserved by Supervisor. Please run 'supervisor stop' first.\r\n");
+        return false;
+    }
+
     const char* script_code = script_load(script_name);
     if (!script_code) {
         printf("Error: Script not found: %s\r\n", script_name);
@@ -136,6 +142,11 @@ bool multicore_launch_code(const char* code) {
 
     if (core1_state == CORE1_STATE_RUNNING) {
         printf("Error: Core 1 already running\r\n");
+        return false;
+    }
+
+    if (supervisor_is_running()) {
+        printf("Error: Core 1 is reserved by Supervisor. Please run 'supervisor stop' first.\r\n");
         return false;
     }
 

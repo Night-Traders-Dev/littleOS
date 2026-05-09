@@ -1,6 +1,7 @@
 #include "supervisor.h"
 #include "watchdog.h"
 #include "dmesg.h"
+#include "multicore.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -275,6 +276,11 @@ void supervisor_init(void) {
 #ifdef PICO_BUILD
     if (supervisor_running) {
         printf("Supervisor already running\r\n");
+        return;
+    }
+
+    if (multicore_is_running()) {
+        printf("Cannot start Supervisor: Core 1 is currently running a script.\r\n");
         return;
     }
 

@@ -22,3 +22,15 @@ int sage_pico_nanosleep(const struct timespec* req, struct timespec* rem) {
     return -1;
 #endif
 }
+
+#ifdef PICO_BUILD
+int clock_gettime(int clk_id, struct timespec *tp) {
+    (void)clk_id; // Usually CLOCK_MONOTONIC
+    if (!tp) return -1;
+    
+    uint64_t us = time_us_64();
+    tp->tv_sec = us / 1000000;
+    tp->tv_nsec = (us % 1000000) * 1000;
+    return 0;
+}
+#endif

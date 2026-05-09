@@ -11,7 +11,24 @@
 #include "pico/stdlib.h"
 #include "hardware/structs/systick.h"
 #include "hardware/structs/scb.h"
+#include "hardware/sync.h"
 #endif
+
+#ifdef PICO_BUILD
+static spin_lock_t *sched_lock;
+#define SCHED_LOCK() uint32_t __save = spin_lock_blocking(sched_lock)
+#define SCHED_UNLOCK() spin_unlock(sched_lock, __save)
+#define SCHED_RETURN(val) do { int __ret = (val); SCHED_UNLOCK(); return __ret; } while(0)
+#define SCHED_RETURN_PTR(val) do { void *__ret = (val); SCHED_UNLOCK(); return __ret; } while(0)
+#define SCHED_RETURN_VOID() do { SCHED_UNLOCK(); return; } while(0)
+#else
+#define SCHED_LOCK()
+#define SCHED_UNLOCK()
+#define SCHED_RETURN(val) return (val)
+#define SCHED_RETURN_PTR(val) return (val)
+#define SCHED_RETURN_VOID() return
+#endif
+
 
 static task_descriptor_t task_table[LITTLEOS_MAX_TASKS];
 static uint16_t task_count         = 0;
@@ -64,31 +81,25 @@ static task_queue_t core1_queue = {0};
 static uint16_t alloc_task_id(void) {
     static uint16_t next_id = 1;
 
-    if (task_count >= LITTLEOS_MAX_TASKS - 1) {
-        for (uint16_t search_id = 1; search_id < 0xFFFF; search_id++) {
-            int found = 0;
-            for (uint16_t i = 0; i < task_count; i++) {
-                if (task_table[i].task_id == search_id) {
-                    found = 1;
-                    break;
-                }
-            }
-            if (!found) {
-                return search_id;
+    for (uint16_t search_id = 1; search_id < 0xFFFF; search_id++) {
+        uint16_t candidate = next_id++;
+        if (next_id == 0) next_id = 1;
+        int found = 0;
+        for (uint16_t i = 0; i < LITTLEOS_MAX_TASKS; i++) {
+            if (task_table[i].state != TASK_STATE_IDLE && task_table[i].state != TASK_STATE_TERMINATED && task_table[i].task_id == candidate) {
+                found = 1;
+                break;
             }
         }
+        if (!found) return candidate;
     }
-
-    uint16_t id = next_id++;
-    if (next_id == 0) {
-        next_id = 1;
-    }
-    return id;
+    return 1;
 }
 
 static task_descriptor_t *find_task(uint16_t task_id) {
-    for (uint16_t i = 0; i < task_count; i++) {
-        if (task_table[i].task_id == task_id) {
+    if (task_id == 0) return NULL;
+    for (uint16_t i = 0; i < LITTLEOS_MAX_TASKS; i++) {
+        if (task_table[i].state != TASK_STATE_IDLE && task_table[i].state != TASK_STATE_TERMINATED && task_table[i].task_id == task_id) {
             return &task_table[i];
         }
     }
@@ -96,8 +107,9 @@ static task_descriptor_t *find_task(uint16_t task_id) {
 }
 
 static int find_task_index(uint16_t task_id) {
-    for (uint16_t i = 0; i < task_count; i++) {
-        if (task_table[i].task_id == task_id) {
+    if (task_id == 0) return -1;
+    for (uint16_t i = 0; i < LITTLEOS_MAX_TASKS; i++) {
+        if (task_table[i].state != TASK_STATE_IDLE && task_table[i].state != TASK_STATE_TERMINATED && task_table[i].task_id == task_id) {
             return (int)i;
         }
     }
@@ -247,6 +259,9 @@ void scheduler_init(void) {
     if (scheduler_initialized) {
         return;
     }
+#ifdef PICO_BUILD
+    sched_lock = spin_lock_instance(spin_lock_claim_unused(true));
+#endif
 
     memset(task_table, 0, sizeof(task_table));
     task_count      = 0;
@@ -268,17 +283,31 @@ uint16_t task_create(const char *name, task_entry_t entry, void *arg,
         return 0xFFFF;
     }
 
-    if (task_count >= LITTLEOS_MAX_TASKS) {
-        printf("ERROR: Task table full\r\n");
-        return 0xFFFF;
-    }
-
     if (!entry) {
         printf("ERROR: Invalid entry function\r\n");
         return 0xFFFF;
     }
 
-    task_descriptor_t *task = &task_table[task_count];
+    SCHED_LOCK();
+    if (task_count >= LITTLEOS_MAX_TASKS) {
+        SCHED_UNLOCK();
+        printf("ERROR: Task table full\r\n");
+        return 0xFFFF;
+    }
+
+    task_descriptor_t *task = NULL;
+    for (uint16_t i = 0; i < LITTLEOS_MAX_TASKS; i++) {
+        if (task_table[i].state == TASK_STATE_IDLE || task_table[i].state == TASK_STATE_TERMINATED) {
+            task = &task_table[i];
+            break;
+        }
+    }
+
+    if (!task) {
+        SCHED_UNLOCK();
+        printf("ERROR: Task table full\r\n");
+        return 0xFFFF;
+    }
 
     task->task_id = alloc_task_id();
     strncpy(task->name, name ? name : "unnamed", LITTLEOS_MAX_TASK_NAME - 1);
@@ -301,14 +330,28 @@ uint16_t task_create(const char *name, task_entry_t entry, void *arg,
         task->sec_ctx.egid = GID_ROOT;
         task->sec_ctx.capabilities = CAP_ALL;
     }
+    
+    // Temporarily mark as blocked to reserve slot while mallocing
+    task->state = TASK_STATE_BLOCKED;
+    task_count++;
+    SCHED_UNLOCK();
 
     task->stack_base = (uint32_t)malloc(LITTLEOS_TASK_STACK_SIZE);
     task->stack_size = LITTLEOS_TASK_STACK_SIZE;
     if (!task->stack_base) {
+        {
+        SCHED_LOCK();
+        task->state = TASK_STATE_TERMINATED;
+        task_count--;
+        SCHED_UNLOCK();
+        }
         printf("ERROR: Failed to allocate task stack\r\n");
         return 0xFFFF;
     }
 
+        uint16_t ret_id;
+    {
+    SCHED_LOCK();
     task->created_at_ms      = get_timestamp_ms();
     task->total_runtime_ms   = 0;
     task->context_switches   = 0;
@@ -321,7 +364,7 @@ uint16_t task_create(const char *name, task_entry_t entry, void *arg,
     uint64_t min_vrt = 0;
     if (active_policy == SCHED_POLICY_CFS && task_count > 0) {
         min_vrt = UINT64_MAX;
-        for (uint16_t vi = 0; vi < task_count; vi++) {
+        for (uint16_t vi = 0; vi < LITTLEOS_MAX_TASKS; vi++) {
             if (task_table[vi].state == TASK_STATE_READY ||
                 task_table[vi].state == TASK_STATE_RUNNING) {
                 if (task_table[vi].vruntime < min_vrt) {
@@ -365,7 +408,7 @@ uint16_t task_create(const char *name, task_entry_t entry, void *arg,
     }
     task->stack_ptr = stack_top;
 
-    task_count++;
+    task->state = TASK_STATE_READY;
 
     if (core == 0) {
         add_to_queue(&core0_queue, task->task_id);
@@ -378,26 +421,30 @@ uint16_t task_create(const char *name, task_entry_t entry, void *arg,
             add_to_queue(&core1_queue, task->task_id);
         }
     }
+    ret_id = task->task_id;
+    SCHED_UNLOCK();
+    }
 
     printf("Created task: %s (ID=%d, uid=%d, priority=%d)\r\n",
-           task->name, task->task_id, uid, priority);
+           task->name, ret_id, uid, priority);
 
-    return task->task_id;
+    return ret_id;
 }
 
 bool task_terminate(uint16_t task_id) {
+    SCHED_LOCK();
     int idx = find_task_index(task_id);
     if (idx < 0) {
+        SCHED_UNLOCK();
         return false;
     }
 
     task_descriptor_t *task = &task_table[idx];
 
-    if (task->stack_base) {
-        free((void *)task->stack_base);
-        task->stack_base = 0;
-    }
-
+    // we must unlock to call free safely
+    uint32_t stack_base = task->stack_base;
+    task->stack_base = 0;
+    
     if (task->core_affinity == 0 || task->core_affinity == 2) {
         remove_from_queue(&core0_queue, task_id);
     }
@@ -408,33 +455,37 @@ bool task_terminate(uint16_t task_id) {
 
     task->state = TASK_STATE_TERMINATED;
 
-    /* Invalidate cached pointer if this was the running task */
     if (running_task_ptr == task) {
         running_task_ptr = NULL;
     }
 
-    if (idx < (int)task_count - 1) {
-        memcpy(task, &task_table[task_count - 1], sizeof(task_descriptor_t));
-    }
-
     task_count--;
+    SCHED_UNLOCK();
+
+    if (stack_base) {
+        free((void *)stack_base);
+    }
 
     printf("Terminated task: %s (ID=%d)\r\n", task->name, task_id);
     return true;
 }
 
 bool task_get_descriptor(uint16_t task_id, task_descriptor_t *desc) {
+    SCHED_LOCK();
+
     if (!desc) {
-        return false;
+        SCHED_RETURN(false);
     }
 
     task_descriptor_t *task = find_task(task_id);
     if (!task) {
-        return false;
+        SCHED_RETURN(false);
     }
 
     memcpy(desc, task, sizeof(task_descriptor_t));
-    return true;
+    SCHED_RETURN(true);
+
+    SCHED_UNLOCK();
 }
 
 int task_list(char *buffer, size_t buffer_size) {
@@ -457,8 +508,10 @@ int task_list(char *buffer, size_t buffer_size) {
     written += snprintf(buffer + written, buffer_size - written,
                         "==================================================================\r\n");
 
-    for (uint16_t i = 0; i < task_count; i++) {
+    SCHED_LOCK();
+    for (uint16_t i = 0; i < LITTLEOS_MAX_TASKS; i++) {
         task_descriptor_t *task = &task_table[i];
+        if (task->state == TASK_STATE_IDLE || task->state == TASK_STATE_TERMINATED) continue;
         const char *state = (task->state < 6) ? state_names[task->state] : "?";
         const char *core  = (task->core_affinity == 0) ? "0" :
                             (task->core_affinity == 1) ? "1" : "Any";
@@ -476,7 +529,7 @@ int task_list(char *buffer, size_t buffer_size) {
 
     written += snprintf(buffer + written, buffer_size - written,
                         "==================================================================\r\n");
-
+    SCHED_UNLOCK();
     return written;
 }
 
@@ -489,9 +542,11 @@ uint16_t task_get_count(void) {
 }
 
 void task_report_memory(uint16_t task_id, int allocated) {
+    SCHED_LOCK();
+
     task_descriptor_t *task = find_task(task_id);
     if (!task) {
-        return;
+        SCHED_RETURN_VOID();
     }
 
     if (allocated > 0) {
@@ -507,36 +562,46 @@ void task_report_memory(uint16_t task_id, int allocated) {
             task->memory_allocated = 0;
         }
     }
+
+    SCHED_UNLOCK();
 }
 
 bool task_suspend(uint16_t task_id) {
+    SCHED_LOCK();
+
     task_descriptor_t *task = find_task(task_id);
     if (!task) {
-        return false;
+        SCHED_RETURN(false);
     }
 
     if (task->state == TASK_STATE_RUNNING || task->state == TASK_STATE_READY) {
         task->state = TASK_STATE_SUSPENDED;
         printf("Suspended task: %s (ID=%d)\r\n", task->name, task_id);
-        return true;
+        SCHED_RETURN(true);
     }
 
-    return false;
+    SCHED_RETURN(false);
+
+    SCHED_UNLOCK();
 }
 
 bool task_resume(uint16_t task_id) {
+    SCHED_LOCK();
+
     task_descriptor_t *task = find_task(task_id);
     if (!task) {
-        return false;
+        SCHED_RETURN(false);
     }
 
     if (task->state == TASK_STATE_SUSPENDED) {
         task->state = TASK_STATE_READY;
         printf("Resumed task: %s (ID=%d)\r\n", task->name, task_id);
-        return true;
+        SCHED_RETURN(true);
     }
 
-    return false;
+    SCHED_RETURN(false);
+
+    SCHED_UNLOCK();
 }
 
 int task_get_stats(uint16_t task_id, char *buffer, size_t size) {
@@ -544,8 +609,10 @@ int task_get_stats(uint16_t task_id, char *buffer, size_t size) {
         return 0;
     }
 
+    SCHED_LOCK();
     task_descriptor_t *task = find_task(task_id);
     if (!task) {
+        SCHED_UNLOCK();
         return snprintf(buffer, size, "Task not found\r\n");
     }
 
@@ -555,7 +622,7 @@ int task_get_stats(uint16_t task_id, char *buffer, size_t size) {
 
     const char *state = (task->state < 6) ? state_names[task->state] : "?";
 
-    return snprintf(buffer, size,
+    int __ret = snprintf(buffer, size,
         "\r\n=== Task Statistics: %s ===\r\n"
         "Task ID: %d\r\n"
         "State: %s\r\n"
@@ -581,6 +648,8 @@ int task_get_stats(uint16_t task_id, char *buffer, size_t size) {
         (unsigned long)task->total_runtime_ms,
         (unsigned long)task->context_switches,
         (unsigned long)task->vruntime);
+    SCHED_UNLOCK();
+    return __ret;
 }
 
 /* ============================================================================
@@ -597,11 +666,13 @@ bool scheduler_set_policy(sched_policy_t policy) {
     if (policy >= SCHED_POLICY_COUNT) {
         return false;
     }
+    SCHED_LOCK();
     active_policy = policy;
 
     /* Adjust time slices and reset CFS state for new policy */
-    for (uint16_t i = 0; i < task_count; i++) {
+    for (uint16_t i = 0; i < LITTLEOS_MAX_TASKS; i++) {
         task_descriptor_t *task = &task_table[i];
+        if (task->state == TASK_STATE_IDLE || task->state == TASK_STATE_TERMINATED) continue;
         if (policy == SCHED_POLICY_ROUND_ROBIN) {
             task->time_slice_ms = RR_TIMESLICE_MS;
         } else {
@@ -615,6 +686,7 @@ bool scheduler_set_policy(sched_policy_t policy) {
         }
     }
 
+    SCHED_UNLOCK();
     printf("Scheduler policy: %s\r\n", policy_names[policy]);
     return true;
 }
@@ -655,21 +727,27 @@ uint16_t scheduler_next_task_core1(void) {
 }
 
 void scheduler_update_runtime(uint16_t task_id, uint32_t elapsed_ms) {
+    SCHED_LOCK();
+
     task_descriptor_t *task = find_task(task_id);
     if (task) {
         task->total_runtime_ms += elapsed_ms;
         task->context_switches++;
     }
+
+    SCHED_UNLOCK();
 }
 
 uint16_t scheduler_count_ready_tasks(void) {
     uint16_t count = 0;
-    for (uint16_t i = 0; i < task_count; i++) {
+    SCHED_LOCK();
+    for (uint16_t i = 0; i < LITTLEOS_MAX_TASKS; i++) {
         if (task_table[i].state == TASK_STATE_READY ||
             task_table[i].state == TASK_STATE_RUNNING) {
             count++;
         }
     }
+    SCHED_UNLOCK();
     return count;
 }
 
@@ -686,16 +764,18 @@ static inline void trigger_pendsv(void) {
 }
 
 void scheduler_tick(void) {
+    SCHED_LOCK();
+
     system_ticks++;
 
     if (!preemption_enabled) {
-        return;
+        SCHED_RETURN_VOID();
     }
 
     /* Use cached pointer to avoid O(n) lookup every 1ms tick */
     task_descriptor_t *task = (task_descriptor_t *)running_task_ptr;
     if (!task || task->state != TASK_STATE_RUNNING) {
-        return;
+        SCHED_RETURN_VOID();
     }
 
     /* Track runtime */
@@ -715,11 +795,15 @@ void scheduler_tick(void) {
             trigger_pendsv();
         }
     }
+
+    SCHED_UNLOCK();
 }
 
 void scheduler_context_switch(void) {
+    SCHED_LOCK();
+
     if (!preemption_enabled) {
-        return;
+        SCHED_RETURN_VOID();
     }
 
     task_descriptor_t *current = (task_descriptor_t *)running_task_ptr;
@@ -741,20 +825,22 @@ void scheduler_context_switch(void) {
         if (current) {
             current->state = TASK_STATE_RUNNING;
         }
-        return;
+        SCHED_RETURN_VOID();
     }
 
     /* Cache the descriptor pointer to avoid repeated O(n) find_task
      * calls from the SysTick handler. */
     task_descriptor_t *next = find_task(next_id);
     if (!next) {
-        return;
+        SCHED_RETURN_VOID();
     }
 
     running_task_core0 = next_id;
     running_task_ptr = next;
     next->state = TASK_STATE_RUNNING;
     next->time_remaining_ms = next->time_slice_ms;
+
+    SCHED_UNLOCK();
 }
 
 void scheduler_start(void) {
@@ -798,11 +884,15 @@ void scheduler_yield(void) {
 }
 
 void scheduler_set_timeslice(uint16_t task_id, uint32_t ms) {
+    SCHED_LOCK();
+
     task_descriptor_t *task = find_task(task_id);
     if (task) {
         task->time_slice_ms     = ms;
         task->time_remaining_ms = ms;
     }
+
+    SCHED_UNLOCK();
 }
 
 uint32_t scheduler_get_tick(void) {

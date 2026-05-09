@@ -429,11 +429,11 @@ int cmd_grep(int argc, char **argv) {
     }
 
     /* Read file and process line by line */
-    uint8_t filebuf[1024];
+    uint8_t filebuf[1025]; /* +1 for safe null-termination */
     int total = 0;
 
     for (;;) {
-        int space = (int)sizeof(filebuf) - total;
+        int space = (int)sizeof(filebuf) - 1 - total;
         if (space <= 0) break;
         int n = fs_read(g_fs, &fd, filebuf + total, (uint32_t)space);
         if (n < 0) {
@@ -456,12 +456,12 @@ int cmd_grep(int argc, char **argv) {
         if (j == total || filebuf[j] == '\n') {
             /* We have a line from line_start to j-1 */
             int line_len = j - line_start;
-            /* Null-terminate temporarily */
+            /* Null-terminate safely */
             char saved = 0;
             if (j < total) {
                 saved = (char)filebuf[j];
-                filebuf[j] = '\0';
             }
+            filebuf[j] = '\0';
 
             const char *line = (const char *)&filebuf[line_start];
             int matched;

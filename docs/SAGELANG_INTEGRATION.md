@@ -8,7 +8,7 @@
 
 ## Current Status
 
-**Version:** littleOS v0.8.0 with SageLang v0.13.0
+**Version:** littleOS v0.8.1 with SageLang v0.13.0
 
 All integration phases are complete:
 

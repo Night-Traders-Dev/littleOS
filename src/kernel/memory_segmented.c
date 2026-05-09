@@ -24,34 +24,36 @@
 #include "memory_segmented.h"
 
 /* ============================================================================
- * Linker-provided symbols (from Pico SDK memmap_default.ld)
- * ============================================================================ */
-
-extern char __end__;         /* End of BSS - first free byte in SRAM */
-extern char __HeapLimit;     /* Top of usable SRAM (ORIGIN(RAM) + LENGTH(RAM)) */
-extern char __StackTop;      /* Top of stack (in SCRATCH_Y on RP2040) */
-extern char __StackBottom;   /* Bottom of stack */
-
-/* ============================================================================
- * Heap sizing
+ * Heap sizing and allocation
  * ============================================================================ */
 
 #define KERNEL_HEAP_SIZE      (32 * 1024)    /* 32 KB */
 #define INTERPRETER_HEAP_SIZE (32 * 1024)    /* 32 KB */
 
+static uint8_t k_heap_area[KERNEL_HEAP_SIZE] __attribute__((aligned(8)));
+static uint8_t i_heap_area[INTERPRETER_HEAP_SIZE] __attribute__((aligned(8)));
+
+extern char __StackTop;      /* Top of stack (in SCRATCH_Y on RP2040) */
+extern char __StackBottom;   /* Bottom of stack */
+
 /* ============================================================================
  * Memory region structure
  * ============================================================================ */
 
+typedef struct MemBlock {
+    size_t size;
+    bool is_free;
+    struct MemBlock* next;
+} __attribute__((aligned(8))) MemBlock;
+
 typedef struct {
     uint8_t *start;              /* Start address of region */
-    uint8_t *end;                /* End address of region */
-    uint8_t *current;            /* Current allocation pointer (bump allocator) */
     size_t max_size;             /* Total region size */
     size_t used_size;            /* Currently allocated bytes */
     size_t peak_size;            /* Peak allocation */
     uint32_t allocation_count;   /* Number of allocations */
     const char *name;            /* Region name for debugging */
+    MemBlock *free_list;         /* Free list for first-fit allocator */
 } MemoryRegion;
 
 /* ============================================================================
@@ -63,51 +65,117 @@ static MemoryRegion interpreter_heap;
 static bool memory_initialized = false;
 
 /* ============================================================================
+ * Block Allocator Helpers
+ * ============================================================================ */
+
+static void* block_allocate(MemoryRegion *region, size_t size) {
+    if (size == 0 || size > SIZE_MAX - 7) return NULL;
+    size = (size + 7) & ~(size_t)7; // align to 8 bytes
+
+    MemBlock *curr = region->free_list;
+    MemBlock *best_fit = NULL;
+
+    while (curr != NULL) {
+        if (curr->is_free && curr->size >= size) {
+            best_fit = curr;
+            break;
+        }
+        curr = curr->next;
+    }
+
+    if (!best_fit) {
+        return NULL; // Out of memory
+    }
+
+    // Split block if there's enough space for another block header + at least 8 bytes
+    if (best_fit->size >= size + sizeof(MemBlock) + 8) {
+        MemBlock *new_block = (MemBlock *)((uint8_t *)best_fit + sizeof(MemBlock) + size);
+        new_block->size = best_fit->size - size - sizeof(MemBlock);
+        new_block->is_free = true;
+        new_block->next = best_fit->next;
+        
+        best_fit->size = size;
+        best_fit->next = new_block;
+    }
+
+    best_fit->is_free = false;
+    
+    // Update stats
+    region->used_size += size + sizeof(MemBlock);
+    region->allocation_count++;
+    if (region->used_size > region->peak_size) {
+        region->peak_size = region->used_size;
+    }
+
+    return (void *)((uint8_t *)best_fit + sizeof(MemBlock));
+}
+
+static void block_free(MemoryRegion *region, void *ptr) {
+    if (!ptr) return;
+
+    MemBlock *block = (MemBlock *)((uint8_t *)ptr - sizeof(MemBlock));
+    if (block->is_free) return; // double free
+
+    block->is_free = true;
+
+    // Update stats
+    if (region->used_size >= block->size + sizeof(MemBlock)) {
+        region->used_size -= (block->size + sizeof(MemBlock));
+    } else {
+        region->used_size = 0;
+    }
+    
+    if (region->allocation_count > 0) {
+        region->allocation_count--;
+    }
+
+    // Coalesce free blocks
+    MemBlock *curr = region->free_list;
+    while (curr != NULL) {
+        if (curr->is_free && curr->next != NULL && curr->next->is_free) {
+            curr->size += sizeof(MemBlock) + curr->next->size;
+            curr->next = curr->next->next;
+        } else {
+            curr = curr->next;
+        }
+    }
+}
+
+/* ============================================================================
  * Initialization
  * ============================================================================ */
 
 /**
  * Initialize memory management system.
  * MUST be called before any kernel_malloc/interpreter_malloc operations!
- * Places heaps after the linker's __end__ to avoid overlapping .data/.bss.
  */
 void memory_init(void)
 {
-    uint8_t *heap_start = (uint8_t *)&__end__;
-    uint8_t *sram_end   = (uint8_t *)&__HeapLimit;
-
-    /* Align start to 8 bytes */
-    heap_start = (uint8_t *)(((uintptr_t)heap_start + 7) & ~(uintptr_t)7);
-
-    size_t available = (size_t)(sram_end - heap_start);
-    size_t k_size = KERNEL_HEAP_SIZE;
-    size_t i_size = INTERPRETER_HEAP_SIZE;
-
-    /* If not enough room, shrink proportionally */
-    if (k_size + i_size > available) {
-        k_size = available / 2;
-        i_size = available - k_size;
-    }
-
-    /* Kernel heap: starts right after BSS */
-    kernel_heap.start            = heap_start;
-    kernel_heap.end              = heap_start + k_size;
-    kernel_heap.current          = kernel_heap.start;
-    kernel_heap.max_size         = k_size;
+    /* Kernel heap */
+    kernel_heap.start            = k_heap_area;
+    kernel_heap.max_size         = KERNEL_HEAP_SIZE;
     kernel_heap.used_size        = 0;
     kernel_heap.peak_size        = 0;
     kernel_heap.allocation_count = 0;
     kernel_heap.name             = "KERNEL_HEAP";
 
-    /* Interpreter heap: follows kernel heap */
-    interpreter_heap.start            = kernel_heap.end;
-    interpreter_heap.end              = kernel_heap.end + i_size;
-    interpreter_heap.current          = interpreter_heap.start;
-    interpreter_heap.max_size         = i_size;
+    kernel_heap.free_list = (MemBlock *)k_heap_area;
+    kernel_heap.free_list->size = KERNEL_HEAP_SIZE - sizeof(MemBlock);
+    kernel_heap.free_list->is_free = true;
+    kernel_heap.free_list->next = NULL;
+
+    /* Interpreter heap */
+    interpreter_heap.start            = i_heap_area;
+    interpreter_heap.max_size         = INTERPRETER_HEAP_SIZE;
     interpreter_heap.used_size        = 0;
     interpreter_heap.peak_size        = 0;
     interpreter_heap.allocation_count = 0;
     interpreter_heap.name             = "INTERPRETER_HEAP";
+
+    interpreter_heap.free_list = (MemBlock *)i_heap_area;
+    interpreter_heap.free_list->size = INTERPRETER_HEAP_SIZE - sizeof(MemBlock);
+    interpreter_heap.free_list->is_free = true;
+    interpreter_heap.free_list->next = NULL;
 
     memory_initialized = true;
 }
@@ -130,31 +198,7 @@ void memory_init(void)
  */
 void *kernel_malloc(size_t size)
 {
-    if (size == 0 || size > SIZE_MAX - 7) {
-        return NULL;
-    }
-
-    /* Align to 8 bytes for proper alignment on ARM */
-    size = (size + 7) & ~(size_t)7;
-
-    /* Check if allocation would overflow */
-    if ((kernel_heap.current + size) > kernel_heap.end) {
-        return NULL;  /* Out of memory */
-    }
-
-    /* Get current position and advance */
-    void *ptr = (void *)kernel_heap.current;
-    kernel_heap.current += size;
-
-    /* Update statistics */
-    kernel_heap.used_size += size;
-    kernel_heap.allocation_count++;
-
-    if (kernel_heap.used_size > kernel_heap.peak_size) {
-        kernel_heap.peak_size = kernel_heap.used_size;
-    }
-
-    return ptr;
+    return block_allocate(&kernel_heap, size);
 }
 
 /**
@@ -207,6 +251,11 @@ void *kernel_malloc_debug(size_t size, const char *file, int line)
  * interpreter_heap_reset() to avoid fragmentation
  * ============================================================================ */
 
+void kernel_free(void *ptr)
+{
+    block_free(&kernel_heap, ptr);
+}
+
 /**
  * Allocate memory from interpreter heap
  * @param size Number of bytes to allocate
@@ -214,31 +263,7 @@ void *kernel_malloc_debug(size_t size, const char *file, int line)
  */
 void *interpreter_malloc(size_t size)
 {
-    if (size == 0 || size > SIZE_MAX - 7) {
-        return NULL;
-    }
-
-    /* Align to 8 bytes */
-    size = (size + 7) & ~(size_t)7;
-
-    /* Check overflow */
-    if ((interpreter_heap.current + size) > interpreter_heap.end) {
-        return NULL;  /* Out of memory */
-    }
-
-    /* Allocate */
-    void *ptr = (void *)interpreter_heap.current;
-    interpreter_heap.current += size;
-
-    /* Update statistics */
-    interpreter_heap.used_size += size;
-    interpreter_heap.allocation_count++;
-
-    if (interpreter_heap.used_size > interpreter_heap.peak_size) {
-        interpreter_heap.peak_size = interpreter_heap.used_size;
-    }
-
-    return ptr;
+    return block_allocate(&interpreter_heap, size);
 }
 
 /**
@@ -278,6 +303,11 @@ void *interpreter_malloc_debug(size_t size, const char *file, int line)
     return interpreter_malloc(size);
 }
 
+void interpreter_free(void *ptr)
+{
+    block_free(&interpreter_heap, ptr);
+}
+
 /**
  * Reset interpreter heap to free all allocations at once
  *
@@ -286,7 +316,11 @@ void *interpreter_malloc_debug(size_t size, const char *file, int line)
  */
 void interpreter_heap_reset(void)
 {
-    interpreter_heap.current = interpreter_heap.start;
+    interpreter_heap.free_list = (MemBlock *)i_heap_area;
+    interpreter_heap.free_list->size = INTERPRETER_HEAP_SIZE - sizeof(MemBlock);
+    interpreter_heap.free_list->is_free = true;
+    interpreter_heap.free_list->next = NULL;
+
     interpreter_heap.used_size = 0;
     interpreter_heap.allocation_count = 0;
 }
@@ -297,7 +331,15 @@ void interpreter_heap_reset(void)
  */
 size_t interpreter_heap_remaining(void)
 {
-    return (size_t)(interpreter_heap.end - interpreter_heap.current);
+    size_t remaining = 0;
+    MemBlock *curr = interpreter_heap.free_list;
+    while (curr != NULL) {
+        if (curr->is_free) {
+            remaining += curr->size;
+        }
+        curr = curr->next;
+    }
+    return remaining;
 }
 
 /* ============================================================================
@@ -372,6 +414,9 @@ void memory_print_stats(void)
     printf("╚════════════════════════════════════════════════════╝\n\n");
 }
 
+extern char __end__;         /* End of BSS - first free byte in SRAM */
+extern char __HeapLimit;     /* Top of usable SRAM (ORIGIN(RAM) + LENGTH(RAM)) */
+
 /**
  * Print memory layout diagram
  * Shows address ranges of heap and stack regions
@@ -387,10 +432,10 @@ void memory_print_layout(void)
                 (unsigned int)(uintptr_t)&__end__);
     printf("║ Kernel Heap:      0x%08x - 0x%08x        ║\n",
                 (unsigned int)(uintptr_t)kernel_heap.start,
-                (unsigned int)(uintptr_t)kernel_heap.end);
+                (unsigned int)(uintptr_t)(kernel_heap.start + kernel_heap.max_size));
     printf("║ Interpreter Heap: 0x%08x - 0x%08x        ║\n",
                 (unsigned int)(uintptr_t)interpreter_heap.start,
-                (unsigned int)(uintptr_t)interpreter_heap.end);
+                (unsigned int)(uintptr_t)(interpreter_heap.start + interpreter_heap.max_size));
     printf("║ SRAM top:         0x%08x                       ║\n",
                 (unsigned int)(uintptr_t)&__HeapLimit);
 
@@ -407,10 +452,10 @@ int memory_validate_layout(void)
     if (!memory_initialized) return 0;
 
     /* Check each region has valid bounds */
-    if (kernel_heap.start >= kernel_heap.end) {
+    if (kernel_heap.max_size == 0) {
         return 0;
     }
-    if (interpreter_heap.start >= interpreter_heap.end) {
+    if (interpreter_heap.max_size == 0) {
         return 0;
     }
 
@@ -420,12 +465,13 @@ int memory_validate_layout(void)
     }
 
     /* Check regions don't overlap each other */
-    if (kernel_heap.end > interpreter_heap.start) {
+    if ((kernel_heap.start + kernel_heap.max_size) > interpreter_heap.start &&
+        kernel_heap.start < (interpreter_heap.start + interpreter_heap.max_size)) {
         return 0;  /* Kernel heap overlaps interpreter heap! */
     }
 
     /* Interpreter heap must not exceed SRAM */
-    if (interpreter_heap.end > (uint8_t *)&__HeapLimit) {
+    if ((interpreter_heap.start + interpreter_heap.max_size) > (uint8_t *)&__HeapLimit) {
         return 0;  /* Exceeds SRAM! */
     }
 
@@ -500,7 +546,7 @@ int memory_check_collision(void)
     if (!memory_initialized) return 1;
 
     /* Check interpreter heap hasn't overrun */
-    if (interpreter_heap.current > interpreter_heap.end) {
+    if (interpreter_heap.used_size > interpreter_heap.max_size) {
         return 1;  /* OVERFLOW! */
     }
 

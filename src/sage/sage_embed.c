@@ -377,7 +377,7 @@ sage_result_t sage_repl(sage_context_t* ctx) {
     printf("Enhanced watchdog maintenance active\r\n");
     printf("Type 'exit' to quit\r\n\r\n");
 #else
-    printf("\nSageLang REPL v0.8.0\n");
+    printf("\nSageLang REPL v0.8.1\n");
     printf("Type 'exit' to quit\n\n");
 #endif
     

@@ -2,6 +2,16 @@
 
 All notable changes to littleOS. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.8.1] - 2026-05-08
+
+### Fixed
+- Fixed buffer over-read in `grep` command (`cmd_text.c`) to prevent memory leaks or faults.
+- Resolved race conditions in the Scheduler and IPC subystems using hardware spinlocks (`spin_lock_blocking`).
+- Fixed unsafe `task_terminate` mechanism to avoid memcpy shifts that caused crashes.
+- Fixed segmented memory manager (bump allocator replaced with first-fit block allocator in `.bss` instead of linker symbol overlaps). Added `kernel_free` and `interpreter_free`.
+- Prevented Core 1 conflicts between the Multicore driver script runner and the system Supervisor (`supervisor_init` vs `multicore_launch_script`).
+- Fixed bare-metal RISC-V build failures by stubbing out desktop-only `sagelang` modules (AOT, JIT, SGPU) and providing `dirent.h` fallbacks in `sage_compat.h`.
+
 ## [0.8.0] - 2026-03-20
 
 ### Added - F2FS Inline Data and Append
