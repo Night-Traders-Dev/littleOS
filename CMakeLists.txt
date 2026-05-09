@@ -64,6 +64,7 @@ option(LITTLEOS_EMULATOR "Build for emulator (skip hardware clock init)" OFF)
 if(LITTLEOS_EMULATOR)
     add_compile_definitions(PICO_RUNTIME_NO_INIT_CLOCKS=1 PICO_NO_RAM_VECTOR_TABLE=1)
     message(STATUS "Emulator mode: Skipping SDK clock init and RAM vector table")
+    set(LITTLEOS_PICO_W ON)
 endif()
 
 # TAP bridge auto-init: initialize CYW43 and start DHCP at boot.
@@ -76,6 +77,7 @@ set(LITTLEOS_TAP_BOOT_GW "" CACHE STRING "Gateway for TAP boot static IP")
 set(LITTLEOS_TAP_BOOT_MASK "255.255.255.0" CACHE STRING "Netmask for TAP boot static IP")
 if(LITTLEOS_TAP_BOOT)
     add_compile_definitions(LITTLEOS_TAP_BOOT=1)
+    set(LITTLEOS_PICO_W ON)
     if(NOT LITTLEOS_TAP_BOOT_IP STREQUAL "")
         add_compile_definitions(
             LITTLEOS_TAP_BOOT_IP="${LITTLEOS_TAP_BOOT_IP}"

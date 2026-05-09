@@ -258,5 +258,5 @@ SageLang scripts also respect the timeout - the eval loop checks `shell_cmd_abor
 
 ---
 
-**Version**: 0.8.1
+**Version**: 0.8.2
 **Last Updated**: March 2026

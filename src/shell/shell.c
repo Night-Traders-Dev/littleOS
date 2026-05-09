@@ -1072,7 +1072,7 @@ static int execute_single(int argc, char *argv[]) {
     }
 
     if (strcmp(argv[0], "version") == 0) {
-        printf("littleOS v0.8.1\r\n");
+        printf("littleOS v0.8.2\r\n");
         printf("With SageLang v0.13.0\r\n");
         printf("Supervisor: %s\r\n",
                supervisor_is_running() ? "Active" : "Inactive");

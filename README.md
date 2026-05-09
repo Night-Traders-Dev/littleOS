@@ -2,7 +2,7 @@
 
 **A feature-rich operating system for Raspberry Pi Pico, Pico 2, and Pico W with embedded SageLang scripting, WiFi networking, DVI video output, and 64+ shell commands**
 
-[![Version](https://img.shields.io/badge/version-0.8.1-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.8.2-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-RP2040%20%7C%20RP2350-red.svg)](https://www.raspberrypi.com/documentation/microcontrollers/)
 [![Pico W](https://img.shields.io/badge/Pico_W-WiFi-orange.svg)](https://www.raspberrypi.com/documentation/microcontrollers/)
@@ -108,7 +108,7 @@ Welcome to littleOS Shell!
 Type 'help' for available commands
 
 > version
-littleOS v0.8.1 - RP2350
+littleOS v0.8.2 - RP2350
 With SageLang v0.13.0
 Supervisor: Active
 
@@ -524,4 +524,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-**Built for embedded education | Powered by SageLang and littleOS Core | v0.8.1**
+**Built for embedded education | Powered by SageLang and littleOS Core | v0.8.2**

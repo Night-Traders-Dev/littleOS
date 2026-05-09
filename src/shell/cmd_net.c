@@ -10,8 +10,9 @@ static void cmd_net_usage(void) {
     printf("  net connect <ssid> <pass> - Connect to WiFi\r\n");
     printf("  net disconnect        - Disconnect from WiFi\r\n");
     printf("  net scan              - Scan for WiFi networks\r\n");
-    printf("  net tap <ip> <gw> [mask]  - Bring up TAP with static IP\r\n");
-    printf("  net tap dhcp          - Bring up TAP with DHCP\r\n");
+    printf("  net bridge <ip> <gw> [mask] - Bramble emulator bridge (static)\r\n");
+    printf("  net bridge dhcp       - Bramble emulator bridge (DHCP)\r\n");
+    printf("  net tap <ip> <gw> [mask]    - Alias for net bridge\r\n");
     printf("  net ping <ip>         - Ping an IP address\r\n");
     printf("  net dns <hostname>    - DNS lookup\r\n");
     printf("  net http <url>        - HTTP GET request\r\n");
@@ -90,26 +91,27 @@ int cmd_net(int argc, char *argv[]) {
         return r;
     }
 
-    if (strcmp(argv[1], "tap") == 0) {
+    if (strcmp(argv[1], "tap") == 0 || strcmp(argv[1], "bridge") == 0) {
+        const char* cmd_name = argv[1];
         if (argc < 3) {
-            printf("Usage: net tap <ip> <gateway> [netmask]\r\n");
-            printf("       net tap dhcp\r\n");
+            printf("Usage: net %s <ip> <gateway> [netmask]\r\n", cmd_name);
+            printf("       net %s dhcp\r\n", cmd_name);
             return -1;
         }
 
         if (strcmp(argv[2], "dhcp") == 0) {
-            printf("Starting DHCP on TAP interface...\r\n");
+            printf("Starting DHCP on %s interface...\r\n", cmd_name);
             int r = net_tap_dhcp();
             if (r == NET_OK) {
                 printf("DHCP started. Run 'net status' to check IP.\r\n");
             } else {
-                printf("TAP DHCP failed: %d\r\n", r);
+                printf("%s DHCP failed: %d\r\n", cmd_name, r);
             }
             return r;
         }
 
         if (argc < 4) {
-            printf("Usage: net tap <ip> <gateway> [netmask]\r\n");
+            printf("Usage: net %s <ip> <gateway> [netmask]\r\n", cmd_name);
             return -1;
         }
 
@@ -133,10 +135,10 @@ int cmd_net(int argc, char *argv[]) {
             nm.addr[2] = 255; nm.addr[3] = 0;
         }
 
-        printf("Configuring TAP: %s gw %s...\r\n", argv[2], argv[3]);
+        printf("Configuring %s: %s gw %s...\r\n", cmd_name, argv[2], argv[3]);
         int r = net_tap_up(ip, gw, nm);
         if (r == NET_OK) {
-            printf("TAP interface up\r\n");
+            printf("%s interface up\r\n", cmd_name);
             net_info_t info;
             if (net_get_info(&info) == NET_OK) {
                 char ip_str[16];
@@ -144,7 +146,7 @@ int cmd_net(int argc, char *argv[]) {
                 printf("IP: %s\r\n", ip_str);
             }
         } else {
-            printf("TAP setup failed: %d\r\n", r);
+            printf("%s setup failed: %d\r\n", cmd_name, r);
         }
         return r;
     }

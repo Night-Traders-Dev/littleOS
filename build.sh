@@ -269,39 +269,38 @@ else
     echo "  UART-only — connect via GP0/GP1 at 115200 baud"
 fi
 
-# TAP network boot (WiFi boards only, for emulator use)
+# TAP network boot (for emulator use)
 TAP_CMAKE_OPTS=()
-case "$BOARD" in
-    pico_w|pico2_w|pico2_w_riscv)
-        echo
-        echo "TAP network bridge (for Bramble emulator with -tap):"
-        read -rp "  Enable TAP auto-init at boot? [y/N] " tap_boot
-        if [[ "$tap_boot" =~ ^[Yy]$ ]]; then
-            read -rp "  Use DHCP or static IP? [dhcp/static] " tap_mode
-            tap_mode=${tap_mode:-dhcp}
-            if [[ "$tap_mode" == "static" ]]; then
-                read -rp "  TAP IP address [10.0.0.2]: " tap_ip
-                tap_ip=${tap_ip:-10.0.0.2}
-                read -rp "  TAP gateway [10.0.0.1]: " tap_gw
-                tap_gw=${tap_gw:-10.0.0.1}
-                read -rp "  TAP netmask [255.255.255.0]: " tap_mask
-                tap_mask=${tap_mask:-255.255.255.0}
-                TAP_CMAKE_OPTS=(
-                    "-DLITTLEOS_TAP_BOOT=ON"
-                    "-DLITTLEOS_TAP_BOOT_IP=${tap_ip}"
-                    "-DLITTLEOS_TAP_BOOT_GW=${tap_gw}"
-                    "-DLITTLEOS_TAP_BOOT_MASK=${tap_mask}"
-                )
-                echo "  TAP boot: static ${tap_ip} gw ${tap_gw} mask ${tap_mask}"
-            else
-                TAP_CMAKE_OPTS=("-DLITTLEOS_TAP_BOOT=ON")
-                echo "  TAP boot: DHCP"
-            fi
-        else
-            echo "  TAP disabled (use 'net tap' from shell if needed)"
-        fi
-        ;;
-esac
+echo
+echo "TAP network bridge (for Bramble emulator with -tap):"
+read -rp "  Enable TAP auto-init at boot? [y/N] " tap_boot
+if [[ "$tap_boot" =~ ^[Yy]$ ]]; then
+    # Force emulator mode and WiFi support for all boards (Bramble provides virtual CYW43)
+    TAP_CMAKE_OPTS=("-DLITTLEOS_EMULATOR=ON")
+    
+    read -rp "  Use DHCP or static IP? [dhcp/static] " tap_mode
+    tap_mode=${tap_mode:-dhcp}
+    if [[ "$tap_mode" == "static" ]]; then
+        read -rp "  TAP IP address [10.0.0.2]: " tap_ip
+        tap_ip=${tap_ip:-10.0.0.2}
+        read -rp "  TAP gateway [10.0.0.1]: " tap_gw
+        tap_gw=${tap_gw:-10.0.0.1}
+        read -rp "  TAP netmask [255.255.255.0]: " tap_mask
+        tap_mask=${tap_mask:-255.255.255.0}
+        TAP_CMAKE_OPTS+=(
+            "-DLITTLEOS_TAP_BOOT=ON"
+            "-DLITTLEOS_TAP_BOOT_IP=${tap_ip}"
+            "-DLITTLEOS_TAP_BOOT_GW=${tap_gw}"
+            "-DLITTLEOS_TAP_BOOT_MASK=${tap_mask}"
+        )
+        echo "  TAP boot: static ${tap_ip} gw ${tap_gw} mask ${tap_mask}"
+    else
+        TAP_CMAKE_OPTS+=("-DLITTLEOS_TAP_BOOT=ON")
+        echo "  TAP boot: DHCP"
+    fi
+else
+    echo "  TAP disabled (use 'net tap' from shell if needed)"
+fi
 
 # FAT filesystem info
 echo

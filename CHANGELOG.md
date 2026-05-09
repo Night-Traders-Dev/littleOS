@@ -2,6 +2,14 @@
 
 All notable changes to littleOS. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.8.2] - 2026-05-08
+
+### Added
+- Added full support for **Bramble Emulator Network Bridge**. 
+- Enabled networking stack (CYW43 + lwIP) for non-WiFi board targets (like `pico` and `pico2_riscv`) when building for emulator or enabling TAP boot.
+- Added `net bridge` shell command (and `net tap` alias) with explicit help for emulator users.
+- Updated `build.sh` to allow TAP network configuration for all board targets and automatically pass `-DLITTLEOS_EMULATOR=ON`.
+
 ## [0.8.1] - 2026-05-08
 
 ### Fixed
